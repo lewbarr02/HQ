@@ -1342,6 +1342,8 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
   const td = today();
   const done = routineLog[td] || {};
   const [attempted, setAttempted] = useState(false);
+  const [showBlockerModal, setShowBlockerModal] = useState(false);
+  const [blockers, setBlockers] = useState({});
   const [editing, setEditing] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemEmoji, setNewItemEmoji] = useState('');
@@ -1375,6 +1377,14 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
     if(!routineLog[td+'_start']) newLog[td+'_start'] = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
     setRoutineLog(newLog);
     save('routineLog', newLog);
+  }
+
+  function handleBlockerSubmit() {
+    var finishTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    var newLog = {...routineLog, [td+'_done']: finishTime, [td+'_partial']: true, [td+'_blockers']: blockers};
+    setRoutineLog(newLog);
+    save('routineLog', newLog);
+    onComplete();
   }
 
   function handleComplete() {
@@ -1493,18 +1503,63 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
         );
       }),
 
-      // Hard block warning
+      // Warning + move on anyway
       !editing && attempted && !allDone ? e('div', {style:{
         margin:'8px 0 16px', padding:'14px 16px',
         background:'rgba(255,100,100,0.08)', border:'1.5px solid rgba(255,100,100,0.25)',
         borderRadius:14,
       }},
         e('div', {style:{fontSize:14,fontWeight:700,color:'#FF6B6B',marginBottom:4}}, '⚠️ '+incomplete.length+' item'+(incomplete.length>1?'s':'')+' remaining'),
-        e('div', {style:{fontSize:13,color:MUTED,lineHeight:1.5}},
-          'Complete your full routine before moving on. You\'ve got this, Lewis! 💪🏽'
-        ),
-        e('div', {style:{marginTop:8,display:'flex',flexWrap:'wrap',gap:6}},
+        e('div', {style:{fontSize:13,color:MUTED,lineHeight:1.5,marginBottom:10}}, "You've got this Lewis! But if something's blocking you, that's okay too."),
+        e('div', {style:{marginBottom:10,display:'flex',flexWrap:'wrap',gap:6}},
           ...incomplete.map(function(h){return e('span',{key:h.id,style:{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:20,background:'rgba(255,100,100,0.1)',color:'#FF6B6B'}}, h.emoji+' '+h.name);})
+        ),
+        e('button', {
+          onClick: function(){ setShowBlockerModal(true); },
+          style:{width:'100%',padding:'12px',borderRadius:12,background:'rgba(255,100,100,0.12)',border:'1.5px solid rgba(255,100,100,0.3)',color:'#FF6B6B',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Move On Anyway →')
+      ) : null,
+
+      // Blocker modal
+      showBlockerModal ? e('div', {style:{
+        position:'fixed',top:0,left:0,right:0,bottom:0,
+        background:'rgba(0,0,0,0.5)',zIndex:999,
+        display:'flex',alignItems:'flex-end',justifyContent:'center',
+        paddingBottom:'env(safe-area-inset-bottom)',
+      }},
+        e('div', {style:{
+          background:'#fff',borderRadius:'24px 24px 0 0',
+          padding:'28px 20px 32px',width:'100%',maxWidth:480,
+        }},
+          e('div', {style:{fontSize:17,fontWeight:800,marginBottom:4}}, "What's the blocker?"),
+          e('div', {style:{fontSize:13,color:MUTED,marginBottom:20}}, "Tell me why each item didn't get done. This helps track patterns over time."),
+          ...incomplete.map(function(h){
+            return e('div', {key:h.id, style:{marginBottom:14}},
+              e('div', {style:{fontSize:13,fontWeight:700,marginBottom:6,display:'flex',alignItems:'center',gap:6}},
+                e('span',{},h.emoji), e('span',{},h.name)
+              ),
+              e('input', {
+                className:'input',
+                style:{marginBottom:0,fontSize:13},
+                placeholder:'What got in the way?',
+                value: blockers[h.id] || '',
+                onInput: function(ev){
+                  var val = ev.target.value;
+                  setBlockers(function(prev){ var n=Object.assign({},prev); n[h.id]=val; return n; });
+                }
+              })
+            );
+          }),
+          e('div', {style:{display:'flex',gap:10,marginTop:8}},
+            e('button', {
+              onClick: function(){ setShowBlockerModal(false); },
+              style:{flex:1,padding:'14px',borderRadius:14,border:'1.5px solid '+BORDER,background:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:MUTED}
+            }, 'Cancel'),
+            e('button', {
+              onClick: handleBlockerSubmit,
+              style:{flex:2,padding:'14px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:'#fff',fontSize:14,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}
+            }, 'Log & Move On')
+          )
         )
       ) : null
     ),
