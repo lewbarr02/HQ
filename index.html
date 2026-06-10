@@ -372,7 +372,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
 <script>
 'use strict';
 
-function HabitsScreen({habits, setHabits, habitLog, setHabitLog}) {
+function HabitsScreen({habits, setHabits, habitLog, setHabitLog, setTab}) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState(''), [emoji, setEmoji] = useState(''), [color, setColor] = useState(ACCENT);
   const now = new Date();
@@ -389,7 +389,10 @@ function HabitsScreen({habits, setHabits, habitLog, setHabitLog}) {
 
   return e('div', {className:'content'},
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}},
-      e('div', {style:{fontSize:22,fontWeight:800}}, 'My Habits'),
+      e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+        e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+        e('div', {style:{fontSize:22,fontWeight:800}}, 'My Habits')
+      ),
       e('button', {onClick:()=>setAdding(true), style:{fontSize:13,fontWeight:700,padding:'8px 16px',borderRadius:12,border:'1.5px solid '+ACCENT,background:'transparent',color:ACCENT,cursor:'pointer',fontFamily:'inherit'}}, '+ Add')
     ),
     ...habits.map(h => {
@@ -446,7 +449,7 @@ function HabitsScreen({habits, setHabits, habitLog, setHabitLog}) {
   );
 }
 
-function TimeScreen({timeLog, setTimeLog}) {
+function TimeScreen({timeLog, setTimeLog, setTab}) {
   const [selDate, setSelDate] = useState(today());
   const [view, setView] = useState('timeline');
   const [selectedCat, setSelectedCat] = useState(null);
@@ -508,6 +511,10 @@ function TimeScreen({timeLog, setTimeLog}) {
   var total = Object.values(log).reduce(function(s,v){return s+v;}, 0);
 
   return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:22,fontWeight:800}}, '⏱ Time')
+    ),
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
       e('button', {className:'time-btn', onClick:function(){shiftDate(-1);}}, '‹'),
       e('div', {style:{fontSize:16,fontWeight:700,color:isToday?ACCENT:TEXT}}, isToday?'Today':display),
@@ -614,7 +621,7 @@ function TimeScreen({timeLog, setTimeLog}) {
 }
 
 
-function GoalsScreen({goals, setGoals, projects, setProjects}) {
+function GoalsScreen({goals, setGoals, projects, setProjects, setTab}) {
   const [view, setView] = useState('goals');
   const [addingG, setAddingG] = useState(false), [gTitle, setGTitle] = useState(''), [gTarget, setGTarget] = useState(100), [gUnit, setGUnit] = useState('units');
   const [addingP, setAddingP] = useState(false), [pTitle, setPTitle] = useState(''), [pDesc, setPDesc] = useState(''), [pColor, setPColor] = useState(PURPLE);
@@ -636,6 +643,10 @@ function GoalsScreen({goals, setGoals, projects, setProjects}) {
   const activeP = projects.filter(p=>!p.done);
 
   return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:22,fontWeight:800}}, '🎯 Goals & Projects')
+    ),
     e('div', {style:{display:'flex',background:CARD2,borderRadius:14,padding:4,marginBottom:16,gap:4}},
       ...['goals','projects'].map(v => e('button', {key:v, onClick:()=>setView(v), style:{flex:1,padding:10,borderRadius:10,border:'none',background:view===v?'#fff':'transparent',color:view===v?TEXT:MUTED,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit',boxShadow:view===v?'0 1px 4px rgba(100,80,220,0.12)':'none'}},
         v==='goals'?'🎯 Goals':'🗂 Projects'
@@ -736,7 +747,7 @@ function GoalsScreen({goals, setGoals, projects, setProjects}) {
   );
 }
 
-function GroceryScreen({groceries, setGroceries}) {
+function GroceryScreen({groceries, setGroceries, setTab}) {
   const [newItem, setNewItem] = useState(''), [newCat, setNewCat] = useState('Produce'), [copied, setCopied] = useState(false);
   const CATS=['Produce','Protein','Dairy','Bakery','Pantry','Frozen','Drinks','Other'];
   const CC={Produce:'#00C864',Protein:'#FF6B35',Dairy:ACCENT,Bakery:'#FFB347',Pantry:PURPLE,Frozen:'#4FC3F7',Drinks:'#FF6B9D',Other:MUTED};
@@ -759,7 +770,10 @@ function GroceryScreen({groceries, setGroceries}) {
 
   return e('div', {className:'content'},
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}},
-      e('div', {style:{fontSize:22,fontWeight:800}}, '🛒 Grocery List'),
+      e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+        e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+        e('div', {style:{fontSize:22,fontWeight:800}}, '🛒 Grocery List')
+      ),
       e('div', {style:{display:'flex',gap:8}},
         active.length>0?e('button', {onClick:copyList, style:{fontSize:12,fontWeight:700,padding:'6px 14px',borderRadius:10,border:'1.5px solid '+(copied?'#00C864':ACCENT),color:copied?'#00C864':ACCENT,background:copied?'rgba(0,200,100,0.08)':'rgba(0,198,255,0.08)',cursor:'pointer',fontFamily:'inherit'}}, copied?'✓ Copied!':'📋 Copy'):null,
         done.length>0?e('button', {onClick:clearDone, style:{fontSize:12,fontWeight:700,padding:'6px 14px',borderRadius:10,border:'1.5px solid #FF6B9D',color:'#FF6B9D',background:'transparent',cursor:'pointer',fontFamily:'inherit'}}, 'Clear ('+done.length+')'):null
@@ -794,7 +808,7 @@ function GroceryScreen({groceries, setGroceries}) {
   );
 }
 
-function NotesScreen({notes, setNotes, brainDump, setBrainDump}) {
+function NotesScreen({notes, setNotes, brainDump, setBrainDump, setTab}) {
   const [adding, setAdding] = useState(false), [newNote, setNewNote] = useState(''), [colorIdx, setColorIdx] = useState(0);
   const [dumpSaved, setDumpSaved] = useState(false), [dumpTimer, setDumpTimer] = useState(null);
   const [noteSaved, setNoteSaved] = useState(false), [noteTimer, setNoteTimer] = useState(null);
@@ -802,6 +816,10 @@ function NotesScreen({notes, setNotes, brainDump, setBrainDump}) {
   function addNote(){if(!newNote.trim())return;const next=[...notes,{id:Date.now().toString(),text:newNote,color:colorIdx,created:today()}];setNotes(next);save('notes',next);setNewNote('');setAdding(false);setNoteSaved(true);if(noteTimer)clearTimeout(noteTimer);setNoteTimer(setTimeout(function(){setNoteSaved(false);},2000));}
   function deleteNote(id){const next=notes.filter(n=>n.id!==id);setNotes(next);save('notes',next);}
   return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:22,fontWeight:800}}, '📝 Notes')
+    ),
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Brain Dump'),
       e('div', {style:{position:'relative'}},
@@ -833,7 +851,7 @@ function NotesScreen({notes, setNotes, brainDump, setBrainDump}) {
   );
 }
 
-function ReviewScreen({habits, habitLog, timeLog, goals}) {
+function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, setTab}) {
   var now=new Date();
   var [year,setYear]=useState(now.getFullYear());
   var [month,setMonth]=useState(now.getMonth());
@@ -857,6 +875,10 @@ function ReviewScreen({habits, habitLog, timeLog, goals}) {
   function next(){if(month===11){setMonth(0);setYear(function(y){return y+1;});}else setMonth(function(m){return m+1;});}
 
   return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:22,fontWeight:800}}, '📊 Review')
+    ),
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
       e('button', {className:'time-btn', onClick:prev}, '‹'),
       e('div', {style:{fontSize:16,fontWeight:700}}, MONTHS[month]+' '+year),
@@ -907,7 +929,7 @@ function ReviewScreen({habits, habitLog, timeLog, goals}) {
   );
 }
 
-function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brainDump,setHabits,setHabitLog,setTimeLog,setGoals,setProjects,setNotes,setGroceries,setBrainDump}) {
+function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brainDump,setHabits,setHabitLog,setTimeLog,setGoals,setProjects,setNotes,setGroceries,setBrainDump,setTab}) {
   var [status, setStatus] = useState('');
   var [importing, setImporting] = useState(false);
   var [importText, setImportText] = useState('');
@@ -963,7 +985,10 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
   var totalItems = habits.length + goals.length + projects.length + notes.length + groceries.length + Object.keys(habitLog).length;
 
   return e('div', {className:'content'},
-    e('div', {style:{fontSize:22,fontWeight:800,marginBottom:6}}, '💾 Data'),
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:22,fontWeight:800}}, '💾 Data')
+    ),
     e('div', {style:{fontSize:14,color:MUTED,marginBottom:16}}, 'Export your data to back it up or move it to a new device.'),
 
     // Stats
@@ -1829,7 +1854,7 @@ const LIFE_AREAS = [
   { id:'ideas',    name:'Ideas',    emoji:'💡', color:'#FF9500' },
 ];
 
-function AreasScreen({ areasData, setAreasData }) {
+function AreasScreen({ areasData, setAreasData, setTab }) {
   const [openArea, setOpenArea] = useState(null);
 
   function getArea(id) { return areasData[id] || { tasks:[], notes:'', goals:[] }; }
@@ -1852,7 +1877,10 @@ function AreasScreen({ areasData, setAreasData }) {
 
   // Count totals per area for preview
   return e('div', {className:'content'},
-    e('div', {style:{fontSize:22,fontWeight:800,marginBottom:4}}, 'Life Areas'),
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:22,fontWeight:800}}, 'Life Areas')
+    ),
     e('div', {style:{fontSize:14,color:MUTED,marginBottom:20}}, 'Tap an area to open it'),
     e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}},
       ...LIFE_AREAS.map(function(area) {
@@ -2255,14 +2283,14 @@ function App() {
   function renderScreen() {
     switch(tab) {
       case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setMorningPhase});
-      case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog});
-    case 'areas': return e(AreasScreen, {areasData,setAreasData});
-      case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects});
-      case 'time': return e(TimeScreen, {timeLog,setTimeLog});
-      case 'grocery': return e(GroceryScreen, {groceries,setGroceries});
-      case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump});
-      case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog});
-      case 'data': return e(DataScreen, {habits,habitLog,timeLog,goals,projects,notes,groceries,brainDump,setHabits,setHabitLog,setTimeLog,setGoals,setProjects,setNotes,setGroceries,setBrainDump});
+      case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
+      case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
+      case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab});
+      case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
+      case 'grocery': return e(GroceryScreen, {groceries,setGroceries,setTab});
+      case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump,setTab});
+      case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,setTab});
+      case 'data': return e(DataScreen, {habits,habitLog,timeLog,goals,projects,notes,groceries,brainDump,setHabits,setHabitLog,setTimeLog,setGoals,setProjects,setNotes,setGroceries,setBrainDump,setTab});
       default: return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog});
     }
   }
