@@ -21,6 +21,7 @@
     .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;cursor:pointer;font-size:9px;font-family:inherit;font-weight:700;color:#8E8EAA;min-height:48px;justify-content:center;}
     .nav-btn.active{color:#00C6FF;}
     .nav-icon{font-size:22px;line-height:1;}
+    .nav-svg{display:flex;align-items:center;justify-content:center;}
     .input{width:100%;padding:14px 16px;border-radius:12px;border:1.5px solid rgba(100,80,220,0.18);background:#F0F2F8;color:#1A1833;font-size:16px;font-family:inherit;outline:none;margin-bottom:10px;-webkit-appearance:none;display:block;}
     .input:focus{border-color:#00C6FF;background:#fff;}
     .btn-primary{padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:none;font-family:inherit;min-height:48px;background:linear-gradient(135deg,#00C6FF,#7B2FFF);color:white;width:100%;}
@@ -118,6 +119,29 @@ function calcStreak(habits,log){
 <script>
 'use strict';
 // ── SCREENS ──────────────────────────────────────────────────────────────────
+
+var NAV_ICONS = {
+  home:   '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  grid:   '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  clock:  '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  more:   '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+};
+
+function NavIcon({ name, size, color }) {
+  return e('svg', {
+    xmlns:'http://www.w3.org/2000/svg',
+    width: size||22, height: size||22,
+    viewBox:'0 0 24 24',
+    fill:'none',
+    stroke: color||'currentColor',
+    strokeWidth: 2,
+    strokeLinecap:'round',
+    strokeLinejoin:'round',
+    className:'nav-svg',
+    dangerouslySetInnerHTML:{ __html: NAV_ICONS[name]||'' }
+  });
+}
 
 function Splash() {
   return e('div', {className:'splash'},
@@ -2267,11 +2291,11 @@ function App() {
   const dateStr = now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 
   const NAV = [
-    {id:'today',icon:'🏠',label:'Home'},
-    {id:'areas',icon:'⬡',label:'Areas'},
-    {id:'goals',icon:'🎯',label:'Goals'},
-    {id:'time',icon:'⏱',label:'Time'},
-    {id:'more',icon:'···',label:'More'},
+    {id:'today', icon:'home',   label:'Home'},
+    {id:'areas', icon:'grid',   label:'Areas'},
+    {id:'goals', icon:'target', label:'Goals'},
+    {id:'time',  icon:'clock',  label:'Time'},
+    {id:'more',  icon:'more',   label:'More'},
   ];
   const MORE_ITEMS = [
     {id:'grocery',icon:'🛒',label:'Grocery List'},
@@ -2370,11 +2394,15 @@ function App() {
       ) : null
     ),
     e('nav', {className:'nav'},
-      ...NAV.map(n => e('button', {key:n.id, className:'nav-btn'+((tab===n.id||(n.id==='more'&&moreOpen))?' active':''),
-        onClick:()=>{if(n.id==='more'){setMoreOpen(o=>!o);}else{setTab(n.id);setMoreOpen(false);}}},
-        e('span', {className:'nav-icon', style:{fontSize:n.id==='more'?14:22,letterSpacing:n.id==='more'?1:0}}, n.icon),
-        n.label
-      ))
+      ...NAV.map(n => {
+        var active = tab===n.id||(n.id==='more'&&moreOpen);
+        var color = active ? ACCENT : '#8E8EAA';
+        return e('button', {key:n.id, className:'nav-btn'+(active?' active':''),
+          onClick:()=>{if(n.id==='more'){setMoreOpen(o=>!o);}else{setTab(n.id);setMoreOpen(false);}}},
+          e(NavIcon, {name:n.icon, size:22, color:color}),
+          n.label
+        );
+      })
     )
   );
 }
