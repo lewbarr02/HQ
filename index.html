@@ -80,7 +80,7 @@ function calcMorningStreak(routineLog){
   var d = new Date();
   while(streak < 365) {
     var dk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    if(!routineLog[dk+'_done']) break;
+    if(!routineLog[dk+'_done'] || routineLog[dk+'_test']) break;
     streak++;
     d.setDate(d.getDate()-1);
   }
@@ -1031,8 +1031,8 @@ const ENERGY_OPTS = [
 ];
 
 function MorningHistory({ onBack, routineLog, wakeLog }) {
-  // Collect all completed days from routineLog keys ending in _done
-  var completedDays = Object.keys(routineLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).sort();
+  // Collect all completed days, excluding test runs
+  var completedDays = Object.keys(routineLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !routineLog[d+'_test']; }).sort();
 
   // Current streak
   var currentStreak = calcMorningStreak(routineLog);
@@ -1073,7 +1073,7 @@ function MorningHistory({ onBack, routineLog, wakeLog }) {
   for(var i=29;i>=0;i--){
     var dd = new Date(); dd.setDate(dd.getDate()-i);
     var dk = dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
-    dots.push({dk:dk, done:!!routineLog[dk+'_done']});
+    dots.push({dk:dk, done:!!routineLog[dk+'_done'] && !routineLog[dk+'_test']});
   }
 
   // 30-day completion rate
@@ -1082,13 +1082,13 @@ function MorningHistory({ onBack, routineLog, wakeLog }) {
   // Total completions
   var totalDone = completedDays.length;
 
-  var statStyle = {background:'#1a1a2e',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid #2a2a4a'};
+  var statStyle = {background:'#fff',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid '+BORDER,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'};
   var valStyle = {fontSize:28,fontWeight:800,marginBottom:4};
   var lblStyle = {fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED};
 
   return e('div', {style:{
     height:'100dvh', display:'flex', flexDirection:'column',
-    background:'#0d0d1a',
+    background:'#F7F8FC',
     paddingTop:'env(safe-area-inset-top)',
     paddingBottom:'env(safe-area-inset-bottom)',
     overflowY:'auto',
@@ -1097,7 +1097,7 @@ function MorningHistory({ onBack, routineLog, wakeLog }) {
     e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'20px 20px 8px'}},
       e('button', {onClick:onBack, style:{background:'none',border:'none',color:MUTED,fontSize:22,cursor:'pointer',padding:4,lineHeight:1}}, '←'),
       e('div', {},
-        e('div', {style:{fontSize:18,fontWeight:800,color:'#fff'}}, '🌅 Morning Routine'),
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🌅 Morning Routine'),
         e('div', {style:{fontSize:12,color:MUTED}}, 'Historical Performance')
       )
     ),
@@ -1149,7 +1149,7 @@ function MorningHistory({ onBack, routineLog, wakeLog }) {
       // Total completions
       e('div', {style:{...statStyle,display:'flex',alignItems:'center',justifyContent:'space-between',textAlign:'left'}},
         e('div', {},
-          e('div', {style:{fontSize:13,fontWeight:700,color:'#fff'}}, 'Total Completions'),
+          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, 'Total Completions'),
           e('div', {style:{fontSize:11,color:MUTED,marginTop:2}}, 'All-time mornings logged')
         ),
         e('div', {style:{fontSize:32,fontWeight:800,color:ACCENT}}, totalDone)
@@ -1162,7 +1162,7 @@ function MorningHistory({ onBack, routineLog, wakeLog }) {
           ...dots.map(function(d,i){
             return e('div', {key:i, title:d.dk, style:{
               aspectRatio:'1', borderRadius:5,
-              background: d.done ? 'linear-gradient(135deg,'+ACCENT+','+PURPLE+')' : '#2a2a4a',
+              background: d.done ? 'linear-gradient(135deg,'+ACCENT+','+PURPLE+')' : '#E8E8F0',
               boxShadow: d.done ? '0 2px 8px '+ACCENT+'40' : 'none',
             }});
           })
@@ -1173,7 +1173,7 @@ function MorningHistory({ onBack, routineLog, wakeLog }) {
             'Completed'
           ),
           e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
-            e('div',{style:{width:10,height:10,borderRadius:3,background:'#2a2a4a'}}),
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'#E8E8F0'}}),
             'Missed'
           )
         )
@@ -1302,6 +1302,7 @@ function MorningGreeting({ onStart, wakeLog }) {
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
   const td = today();
   const alreadyDone = wakeLog[td];
+  const [testMode, setTestMode] = useState(false);
 
   return e('div', {style:{
     height:'100dvh', display:'flex', flexDirection:'column',
@@ -1321,18 +1322,47 @@ function MorningGreeting({ onStart, wakeLog }) {
         : 'Are you ready to start your morning routine?'
     ),
     e('button', {
-      onClick: onStart,
+      onClick: function(){ onStart(testMode); },
       style:{
         padding:'18px 48px', borderRadius:18,
-        background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',
-        border:'none', color:'white', fontSize:17, fontWeight:800,
+        background: testMode ? '#FF950020' : 'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',
+        border: testMode ? '2px solid #FF9500' : 'none',
+        color: testMode ? '#FF9500' : 'white',
+        fontSize:17, fontWeight:800,
         cursor:'pointer', fontFamily:'inherit', letterSpacing:0.3,
-        boxShadow:'0 8px 24px rgba(0,198,255,0.35)',
+        boxShadow: testMode ? 'none' : '0 8px 24px rgba(0,198,255,0.35)',
         width:'100%', maxWidth:300,
       }
-    }, alreadyDone ? "Let's Go →" : "Let's Start →"),
+    }, testMode ? '🧪 Start Test Run' : (alreadyDone ? "Let's Go →" : "Let's Start →")),
+
+    // Test mode toggle
     e('button', {
-      onClick: onStart,
+      onClick: function(){ setTestMode(function(v){return !v;}); },
+      style:{
+        display:'flex', alignItems:'center', gap:8,
+        padding:'10px 18px', borderRadius:20,
+        border:'1.5px solid '+(testMode?'#FF9500':'#E0E0F0'),
+        background: testMode ? '#FF950012' : '#F7F8FC',
+        color: testMode ? '#FF9500' : MUTED,
+        fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+      }
+    },
+      e('div', {style:{
+        width:32, height:18, borderRadius:9, position:'relative',
+        background: testMode ? '#FF9500' : '#D0D0E0',
+        transition:'background 0.2s', flexShrink:0,
+      }},
+        e('div', {style:{
+          position:'absolute', top:2, left: testMode?14:2,
+          width:14, height:14, borderRadius:'50%', background:'#fff',
+          transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.2)',
+        }})
+      ),
+      testMode ? '🧪 Test Mode ON — won\'t count toward stats' : 'Test Mode'
+    ),
+
+    e('button', {
+      onClick: function(){ onStart(false); },
       style:{fontSize:13,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:8}
     }, 'Skip to dashboard')
   );
@@ -2237,13 +2267,21 @@ function App() {
     }
   }
 
-  function handleMorningStart() {
+  function handleMorningStart(isTest) {
     var td = (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
     var wakeTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    var newWakeLog = Object.assign({}, wakeLog);
-    newWakeLog[td] = wakeTime;
-    setWakeLog(newWakeLog);
-    save('wakeLog', newWakeLog);
+    if(!isTest) {
+      var newWakeLog = Object.assign({}, wakeLog);
+      newWakeLog[td] = wakeTime;
+      setWakeLog(newWakeLog);
+      save('wakeLog', newWakeLog);
+    }
+    if(isTest) {
+      var newLog = Object.assign({}, routineLog);
+      newLog[td+'_test'] = true;
+      setRoutineLog(newLog);
+      save('routineLog', newLog);
+    }
     setMorningPhase('checklist');
   }
 
