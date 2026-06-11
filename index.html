@@ -423,6 +423,25 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
           e('button', {className:'time-btn', style:{width:32,height:32,fontSize:16,opacity:qlIsToday?0.3:1}, onClick:()=>shiftQl(1), disabled:qlIsToday}, '›')
         )
       ),
+      (function(){
+        var qlFocus  = routineLog && routineLog[qlDate+'_focus'];
+        var qlEnergy = routineLog && routineLog[qlDate+'_energy'];
+        var energyOpt = qlEnergy ? ENERGY_OPTS.find(function(o){return o.val===qlEnergy;}) : null;
+        if(!qlFocus && !qlEnergy) return null;
+        return e('div', {style:{marginBottom:14,padding:'12px 14px',background:'linear-gradient(135deg,'+ACCENT+'0D,'+PURPLE+'08)',borderRadius:14,border:'1px solid '+ACCENT+'25'}},
+          e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:ACCENT,marginBottom:8}}, '🌅 Morning Intention'),
+          e('div', {style:{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
+            energyOpt ? e('div', {style:{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,background:'#fff',border:'1px solid '+BORDER}},
+              e('span',{style:{fontSize:16}}, energyOpt.emoji),
+              e('span',{style:{fontSize:11,fontWeight:700,color:TEXT}}, energyOpt.label)
+            ) : null,
+            qlFocus ? e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,flex:1,minWidth:0}},
+              e('span',{style:{color:MUTED,fontSize:11,fontWeight:600,marginRight:4}}, '#1:'),
+              qlFocus
+            ) : null
+          )
+        );
+      })(),
       e('div', {style:{marginBottom:14}},
         e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '✅ HABITS'),
         e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
@@ -1321,6 +1340,35 @@ function MorningHistory({ onBack, routineLog, wakeLog }) {
           )
         )
       ),
+
+      // Daily Intentions log
+      (function(){
+        var intentionDays = completedDays.slice().reverse().filter(function(d){
+          return routineLog[d+'_focus'] || routineLog[d+'_energy'];
+        }).slice(0,14);
+        if(intentionDays.length === 0) return null;
+        return e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Morning Intentions'),
+          e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            ...intentionDays.map(function(d){
+              var focusTxt = routineLog[d+'_focus'];
+              var energyVal = routineLog[d+'_energy'];
+              var energyOpt = energyVal ? ENERGY_OPTS.find(function(o){return o.val===energyVal;}) : null;
+              var dateLabel = new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+              return e('div', {key:d, style:{display:'flex',alignItems:'flex-start',gap:10,paddingBottom:8,borderBottom:'1px solid '+BORDER}},
+                e('div', {style:{fontSize:10,fontWeight:700,color:MUTED,minWidth:72,paddingTop:2}}, dateLabel),
+                e('div', {style:{flex:1,display:'flex',flexWrap:'wrap',alignItems:'center',gap:6}},
+                  energyOpt ? e('span',{style:{fontSize:14,lineHeight:1}},energyOpt.emoji) : null,
+                  focusTxt ? e('div',{style:{fontSize:12,fontWeight:600,color:TEXT,lineHeight:1.4}},
+                    e('span',{style:{color:MUTED,fontSize:10,marginRight:3}},'#1:'),
+                    focusTxt
+                  ) : null
+                )
+              );
+            })
+          )
+        );
+      })(),
 
       e('button', {
         onClick:onBack,
