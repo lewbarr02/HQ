@@ -200,6 +200,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
   const [intentEditing, setIntentEditing] = useState(false);
   const [intentFocusDraft, setIntentFocusDraft] = useState('');
   const [intentEnergyDraft, setIntentEnergyDraft] = useState(null);
+  const [emailToast, setEmailToast] = useState(null);
 
   useEffect(() => {
     setWorkoutNote(localStorage.getItem('hq_wn_'+qlDate)||'');
@@ -208,6 +209,24 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
     setWater(wv <= 12 && wv > 0 ? Math.round(wv/12*100) : wv);
     setSleep(parseFloat(localStorage.getItem('hq_sleep_'+qlDate)||'0'));
   }, [qlDate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const task = params.get('task');
+    const from = params.get('from');
+    const cat = params.get('cat') || 'Email';
+    if (!task) return;
+    const label = task.trim();
+    const catColor = CAT_COLORS[cat] || '#00C6FF';
+    const newP = {id: Date.now().toString(), name: label, cat: cat, time: '', done: false, color: catColor, source: from || null};
+    const current = load('priorities') || priorities;
+    const next = [...current, newP];
+    save('priorities', next);
+    setPriorities(next);
+    setEmailToast(label);
+    window.history.replaceState({}, '', window.location.pathname);
+    setTimeout(() => setEmailToast(null), 4000);
+  }, []);
 
   function savePriorities(next){setPriorities(next);save('priorities',next);}
   function toggleHabit(id){const next={...habitLog,[td]:{...done,[id]:!done[id]}};setHabitLog(next);save('habitLog',next);}
@@ -222,8 +241,8 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
   const qlIsToday = qlDate===today();
   const qlDisplay = new Date(qlDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   const NUTRI = [{label:'🔴 Off track',val:'off',color:'#FF6B6B'},{label:'🟡 So-so',val:'ok',color:'#FFB347'},{label:'🟢 On point',val:'good',color:'#00C864'}];
-  const CAT_OPTS = ['Work','Health','Personal Growth','Learning','Personal'];
-  const CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D'};
+  const CAT_OPTS = ['Work','Health','Personal Growth','Learning','Personal','Job Search','Finance','Shopping','Email'];
+  const CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D','Job Search':'#FF6B6B',Finance:'#10B981',Shopping:'#F59E0B',Email:'#8E8EAA'};
 
   var yesterday = (function(){var d=new Date();d.setDate(d.getDate()-1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
   var cpapDone = !!(cpapLog && cpapLog[yesterday]);
@@ -243,6 +262,11 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
   })();
 
   return e('div', {className:'content'},
+    emailToast ? e('div', {style:{position:'fixed',top:20,left:'50%',transform:'translateX(-50%)',zIndex:9999,background:'#1A1833',color:'white',padding:'12px 20px',borderRadius:14,fontSize:14,fontWeight:600,boxShadow:'0 4px 24px rgba(0,0,0,0.25)',display:'flex',alignItems:'center',gap:10,maxWidth:'90vw',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},
+      e('span', {style:{fontSize:18}}, '📧'),
+      e('span', {}, 'Added to priorities: '),
+      e('span', {style:{color:'#00C6FF',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}, emailToast)
+    ) : null,
     e('div', {style:{marginBottom:16}},
       e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
       e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
