@@ -166,23 +166,28 @@ Muscle groups tracked:
 
 ---
 
-## Features Planned / Not Yet Built
+## Build Backlog (Checklist)
 
-### High priority
-- [ ] **Fitness: Daily macro + calorie logger** — calories, protein, carbs, fat per day
-- [ ] **Fitness: Weekly food pipeline** — Plan → Shop → Prep checkpoint tracker
-- [ ] **Fitness: Progress photos** — weekly check-in photo log
-- [ ] **Fitness: AI fitness coach** — analyzes balance + nutrition trends, gives recommendations
-- [ ] **Midday check-in routine** — second routine flow midday
-- [ ] **Push notifications** — requires Supabase backend
-- [ ] **Blocker trend analysis** — data is logged, display not built
+Work through this in order. Check off items as they are completed.
 
-### Medium priority
-- [ ] **HQ day view calendar** — visual timeline of the day showing events/habits checked off as day progresses
-- [ ] **Google Calendar sync** — OAuth + backend, builds on top of day view
+### 💪 FITNESS
+- [x] **Muscle group balance tracker** — Log workouts by body part, flag imbalances (e.g. "6 back sessions, 0 chest this month")
+- [ ] **Daily macro + calorie logger** — Log meals, track calories, protein, carbs, fat. Daily totals vs targets. Poor man's Carb Manager.
+- [ ] **Weekly food pipeline** — Three recurring checkpoints: Plan day, Shop day, Prep day. The logistics system that makes the diet actually work.
+- [ ] **Progress photo check-in** — Weekly photo log stored on device. Visual record of body composition over time.
+- [ ] **AI fitness coach** — Reads workout balance + food logs + current weight + goal, then gives a written weekly analysis: what to do more of, what to cut, on-track date.
 
-### Nice to have
-- [ ] **Blocker trend analysis** — patterns across missed morning routine items
+### 📅 CALENDAR & SCHEDULE
+- [ ] **HQ day view** — Visual timeline of the day — routines, habits, and priorities laid out as events that get checked off as the day goes on.
+- [ ] **Google Calendar sync** — Pull in real calendar appointments and overlay them on the HQ day view. Requires OAuth + backend — bigger lift, builds on top of day view.
+
+### 🔁 ROUTINES
+- [ ] **Midday check-in routine** — A second routine flow midday — quick pulse check, priority reset, catch anything that slipped in the morning.
+- [x] **Evening routine + CPAP reminder** — Wind-down checklist. CPAP goes on as a hard step — foundational to 5am wake goal.
+
+### 🔔 NOTIFICATIONS & INTELLIGENCE
+- [ ] **Push notifications** — Aggressive, frequent, visual. Requires Supabase backend. Morning alarm, habit nudges, momentum warnings.
+- [ ] **Blocker trend analysis** — Data is already being logged when morning routine steps are skipped. Dashboard view to surface what keeps blocking you.
 
 ---
 
