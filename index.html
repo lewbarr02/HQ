@@ -45,6 +45,10 @@
     input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#00C6FF,#7B2FFF);cursor:pointer;}
     .priority-check{width:22px;height:22px;border-radius:50%;border:2px solid rgba(100,80,220,0.3);background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;flex-shrink:0;}
     .priority-check.done{background:linear-gradient(135deg,#00C6FF,#7B2FFF);border-color:transparent;color:white;}
+    @media(min-width:768px){#root{max-width:none;margin:0;}}
+    .sidebar{width:72px;background:#F0F2F8;border-right:1px solid rgba(100,80,220,0.1);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:2px;flex-shrink:0;}
+    .sidebar-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 6px;border-radius:12px;width:60px;border:none;cursor:pointer;font-size:9px;font-family:inherit;font-weight:700;background:transparent;}
+    .sidebar-btn.active{background:white;box-shadow:0 1px 6px rgba(100,80,220,0.12);}
   </style>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
@@ -156,7 +160,24 @@ function Splash() {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setMorningPhase}) {
+function Sidebar({tab, setTab, moreOpen, setMoreOpen, NAV, dateStr}) {
+  return e('div', {className:'sidebar'},
+    e('img', {src:LOGO, style:{width:42,height:42,objectFit:'contain',marginBottom:10}}),
+    ...NAV.map(n => {
+      var active = tab===n.id||(n.id==='more'&&moreOpen);
+      var color = active ? ACCENT : '#8E8EAA';
+      return e('button', {key:n.id, className:'sidebar-btn'+(active?' active':''),
+        onClick:()=>{if(n.id==='more'){setMoreOpen(o=>!o);}else{setTab(n.id);setMoreOpen(false);}}},
+        e(NavIcon, {name:n.icon, size:20, color:color}),
+        e('span', {style:{color:color}}, n.label)
+      );
+    }),
+    e('div', {style:{flex:1}}),
+    e('div', {style:{fontSize:8,color:'#ccc',textAlign:'center',padding:'0 4px',lineHeight:1.4}}, dateStr)
+  );
+}
+
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -201,6 +222,23 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
   const CAT_OPTS = ['Work','Health','Personal Growth','Learning','Personal'];
   const CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D'};
 
+  var yesterday = (function(){var d=new Date();d.setDate(d.getDate()-1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
+  var cpapDone = !!(cpapLog && cpapLog[yesterday]);
+  var morningDone = !!(routineLog && routineLog[td+'_done']);
+  var todayJobs = jobLog ? (jobLog[td]||0) : 0;
+  var jobDone = todayJobs > 0;
+  var last7Days = Array.from({length:7},function(_,i){var d=new Date();d.setDate(d.getDate()-6+i);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');});
+  var weekJobCount = last7Days.reduce(function(s,d){return s+(jobLog?(jobLog[d]||0):0);},0);
+  var totalJobCount = Object.values(jobLog||{}).reduce(function(s,v){return s+(typeof v==='number'?v:0);},0);
+  var projPercent = (projectData&&projectData.percent!=null)?projectData.percent:80;
+  var projPhase = (projectData&&projectData.phase)||'Marketing Assets';
+  var daysSinceProject = (function(){
+    if(!projectData||!projectData.lastAction) return 999;
+    var last=new Date(projectData.lastAction+'T12:00:00');
+    var now=new Date();now.setHours(12,0,0,0);
+    return Math.max(0,Math.round((now-last)/(1000*60*60*24)));
+  })();
+
   return e('div', {className:'content'},
     e('div', {style:{marginBottom:16}},
       e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
@@ -244,6 +282,63 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         e('div', {style:{fontSize:22,fontWeight:800,color:t.color,lineHeight:1,marginBottom:2}}, t.val),
         e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, t.lbl)
       ))
+    ),
+    e('div', {style:{marginBottom:12}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, "Today's Non-Negotiables"),
+      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}},
+        e('div', {onClick:()=>{var n=Object.assign({},cpapLog);n[yesterday]=!cpapDone;setCpapLog(n);save('cpapLog',n);}, style:{background:cpapDone?'rgba(0,198,255,0.07)':'#fff',border:'1px solid '+(cpapDone?ACCENT+'50':BORDER),borderRadius:14,padding:'12px 8px',textAlign:'center',cursor:'pointer'}},
+          e('div', {style:{fontSize:22,marginBottom:4}}, '🌙'),
+          e('div', {style:{fontSize:10,fontWeight:700,color:cpapDone?ACCENT:MUTED,lineHeight:1.3}}, 'CPAP last night'),
+          e('div', {style:{fontSize:9,marginTop:3,color:cpapDone?ACCENT:'#ccc'}}, cpapDone?'✓ logged':'tap to log')
+        ),
+        e('div', {style:{background:morningDone?'rgba(0,229,204,0.07)':'#fff',border:'1px solid '+(morningDone?'#00E5CC50':BORDER),borderRadius:14,padding:'12px 8px',textAlign:'center'}},
+          e('div', {style:{fontSize:22,marginBottom:4}}, '🌅'),
+          e('div', {style:{fontSize:10,fontWeight:700,color:morningDone?'#00E5CC':MUTED,lineHeight:1.3}}, 'Morning routine'),
+          e('div', {style:{fontSize:9,marginTop:3,color:morningDone?'#00E5CC':'#ccc'}}, morningDone?'✓ complete':'not done yet')
+        ),
+        e('div', {onClick:()=>{var n=Object.assign({},jobLog);n[td]=(n[td]||0)+1;setJobLog(n);save('jobLog',n);}, style:{background:jobDone?'rgba(123,47,255,0.07)':'#fff',border:'1px solid '+(jobDone?PURPLE+'50':BORDER),borderRadius:14,padding:'12px 8px',textAlign:'center',cursor:'pointer'}},
+          e('div', {style:{fontSize:22,marginBottom:4}}, '💼'),
+          e('div', {style:{fontSize:10,fontWeight:700,color:jobDone?PURPLE:MUTED,lineHeight:1.3}}, '1 application'),
+          e('div', {style:{fontSize:9,marginTop:3,color:jobDone?PURPLE:'#ccc'}}, jobDone?'✓ '+todayJobs+' logged':'tap to log')
+        )
+      )
+    ),
+    e('div', {style:{display:'flex',gap:10,marginBottom:12}},
+      e('div', {style:{flex:1,background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
+        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Job Search'),
+          e('div', {style:{fontSize:11,fontWeight:700,color:jobDone?PURPLE:'#FFB347',background:jobDone?PURPLE+'15':'#FFB34715',padding:'3px 10px',borderRadius:10}}, 'Today: '+todayJobs)
+        ),
+        e('div', {style:{display:'flex',gap:14,marginBottom:8}},
+          e('div', {}, e('div', {style:{fontSize:20,fontWeight:800,color:TEXT,lineHeight:1}}, weekJobCount), e('div', {style:{fontSize:9,color:MUTED,marginTop:2}}, 'this week')),
+          e('div', {}, e('div', {style:{fontSize:20,fontWeight:800,color:TEXT,lineHeight:1}}, totalJobCount), e('div', {style:{fontSize:9,color:MUTED,marginTop:2}}, 'total'))
+        ),
+        e('div', {style:{display:'flex',gap:3,marginBottom:3}},
+          ...last7Days.map(function(d,i){var c=jobLog?(jobLog[d]||0):0;return e('div',{key:i,style:{flex:1,height:10,borderRadius:2,background:c>0?PURPLE:CARD2}});})
+        ),
+        e('div', {style:{fontSize:9,color:'#ccc'}}, 'last 7 days')
+      ),
+      e('div', {style:{flex:1,background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
+        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'The Project'),
+          e('div', {style:{fontSize:10,fontWeight:700,color:PURPLE,background:PURPLE+'15',padding:'3px 8px',borderRadius:10}}, 'Phase 1')
+        ),
+        e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}},
+          e('div', {style:{fontSize:11,color:MUTED,flex:1,marginRight:4}}, projPhase),
+          e('div', {style:{fontSize:18,fontWeight:800,color:PURPLE,flexShrink:0}}, projPercent+'%')
+        ),
+        e('div', {style:{height:6,background:CARD2,borderRadius:3,overflow:'hidden',marginBottom:8}},
+          e('div', {style:{height:'100%',width:projPercent+'%',background:'linear-gradient(90deg,'+ACCENT+','+PURPLE+')',borderRadius:3}})
+        ),
+        e('div', {style:{display:'flex',gap:6,marginBottom:8}},
+          e('button', {onClick:()=>{var p=Math.max(0,projPercent-5);var n=Object.assign({},projectData,{percent:p,lastAction:td});setProjectData(n);save('projectData',n);},style:{width:28,height:28,borderRadius:8,border:'1px solid '+BORDER,background:CARD2,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit'}},'−'),
+          e('button', {onClick:()=>{var p=Math.min(100,projPercent+5);var n=Object.assign({},projectData,{percent:p,lastAction:td});setProjectData(n);save('projectData',n);},style:{width:28,height:28,borderRadius:8,border:'1px solid '+BORDER,background:CARD2,cursor:'pointer',fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit'}},'+'),
+          e('button', {onClick:()=>{var n=Object.assign({},projectData,{lastAction:td});setProjectData(n);save('projectData',n);},style:{flex:1,fontSize:10,fontWeight:700,color:PURPLE,background:PURPLE+'12',border:'none',borderRadius:8,padding:'4px 6px',cursor:'pointer',fontFamily:'inherit'}},'Log action today')
+        ),
+        e('div', {style:{fontSize:10,color:daysSinceProject===0?'#00C864':daysSinceProject>5?'#FF6B6B':'#FFB347'}},
+          daysSinceProject===0?'✓ action logged today':daysSinceProject===999?'no actions logged yet':daysSinceProject+' days since last action'
+        )
+      )
     ),
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, "Today's Priorities"),
@@ -2263,9 +2358,13 @@ function App() {
   const [routineLog, setRoutineLog] = useState({});
   const [morningItems, setMorningItems] = useState(DEFAULT_MORNING_HABITS);
   const [wakeLog, setWakeLog] = useState({});
+  const [cpapLog, setCpapLog] = useState({});
+  const [jobLog, setJobLog] = useState({});
+  const [projectData, setProjectData] = useState({phase:'Marketing Assets', percent:80, lastAction:null});
+  const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
 
   useEffect(() => {
-    const keys = ['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump'];
+    const keys = ['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData'];
     keys.forEach(k => {
       const v = load(k);
       if(v!==null) {
@@ -2281,10 +2380,17 @@ function App() {
         else if(k==='wakeLog')setWakeLog(v);
         else if(k==='areasData')setAreasData(v);
         else if(k==='morningItems')setMorningItems(v);
+        else if(k==='cpapLog')setCpapLog(v);
+        else if(k==='jobLog')setJobLog(v);
+        else if(k==='projectData')setProjectData(v);
       }
     });
+    function handleResize(){setIsWide(window.innerWidth >= 768);}
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+    return ()=>{window.removeEventListener('resize',handleResize);window.removeEventListener('orientationchange',handleResize);};
   }, []);
 
   const now = new Date();
@@ -2306,7 +2412,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setMorningPhase});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
       case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab});
@@ -2370,6 +2476,41 @@ function App() {
     });
   }
 
+  var moreOverlay = moreOpen ? e('div', {style:{position:'absolute',inset:0,zIndex:80,background:'rgba(247,248,252,0.97)',backdropFilter:'blur(16px)',display:'flex',flexDirection:'column',padding:'20px 20px 0'}},
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}},
+      e('div', {style:{fontSize:20,fontWeight:800}}, 'More'),
+      e('button', {onClick:()=>setMoreOpen(false), style:{background:CARD2,border:'none',width:36,height:36,borderRadius:'50%',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}, '✕')
+    ),
+    ...MORE_ITEMS.map(item => e('button', {key:item.id, onClick:()=>{setTab(item.id);setMoreOpen(false);}, style:{display:'flex',alignItems:'center',gap:16,padding:'16px 4px',border:'none',borderBottom:'1px solid rgba(100,80,220,0.08)',background:'none',cursor:'pointer',textAlign:'left',fontFamily:'inherit'}},
+      e('span', {style:{fontSize:24,width:36,textAlign:'center'}}, item.icon),
+      e('span', {style:{fontSize:16,fontWeight:600,color:TEXT}}, item.label),
+      e('span', {style:{marginLeft:'auto',color:MUTED,fontSize:18}}, '›')
+    ))
+  ) : null;
+
+  if(isWide) {
+    return e('div', {id:'app-inner', style:{height:'100dvh',display:'flex',flexDirection:'row',width:'100%',background:'#F7F8FC',overflow:'hidden',position:'relative'}},
+      splash ? e(Splash) : null,
+      e(Sidebar, {tab, setTab, moreOpen, setMoreOpen, NAV, dateStr}),
+      e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}},
+        e('div', {className:'header'},
+          e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, 'Hi Lewis.'),
+          e('div', {style:{display:'flex',alignItems:'center',gap:10}},
+            e('div', {style:{fontSize:12,color:MUTED,fontWeight:600}}, dateStr),
+            wakeLog && wakeLog[now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')] ?
+              e('div', {style:{fontSize:11,fontWeight:700,color:ACCENT,background:ACCENT+'15',padding:'3px 10px',borderRadius:10}}, 'Wake: '+wakeLog[now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')]) : null,
+            calcMorningStreak(routineLog||{}) > 0 ?
+              e('div', {style:{fontSize:11,fontWeight:700,color:'#FFB347',background:'#FFB34715',padding:'3px 10px',borderRadius:10}}, '🔥 '+calcMorningStreak(routineLog||{})+'-day streak') : null
+          )
+        ),
+        e('div', {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',position:'relative'}},
+          renderScreen(),
+          moreOverlay
+        )
+      )
+    );
+  }
+
   return e('div', {id:'app-inner', style:{height:'100dvh',display:'flex',flexDirection:'column',maxWidth:480,margin:'0 auto',background:'#F7F8FC',overflow:'hidden',position:'relative'}},
     splash ? e(Splash) : null,
     e('div', {className:'header'},
@@ -2381,17 +2522,7 @@ function App() {
     ),
     e('div', {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',position:'relative'}},
       renderScreen(),
-      moreOpen ? e('div', {style:{position:'absolute',inset:0,zIndex:80,background:'rgba(247,248,252,0.97)',backdropFilter:'blur(16px)',display:'flex',flexDirection:'column',padding:'20px 20px 0'}},
-        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}},
-          e('div', {style:{fontSize:20,fontWeight:800}}, 'More'),
-          e('button', {onClick:()=>setMoreOpen(false), style:{background:CARD2,border:'none',width:36,height:36,borderRadius:'50%',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center'}}, '✕')
-        ),
-        ...MORE_ITEMS.map(item => e('button', {key:item.id, onClick:()=>{setTab(item.id);setMoreOpen(false);}, style:{display:'flex',alignItems:'center',gap:16,padding:'16px 4px',border:'none',borderBottom:'1px solid rgba(100,80,220,0.08)',background:'none',cursor:'pointer',textAlign:'left',fontFamily:'inherit'}},
-          e('span', {style:{fontSize:24,width:36,textAlign:'center'}}, item.icon),
-          e('span', {style:{fontSize:16,fontWeight:600,color:TEXT}}, item.label),
-          e('span', {style:{marginLeft:'auto',color:MUTED,fontSize:18}}, '›')
-        ))
-      ) : null
+      moreOverlay
     ),
     e('nav', {className:'nav'},
       ...NAV.map(n => {
