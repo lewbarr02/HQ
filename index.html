@@ -1492,6 +1492,8 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
   const td = today();
   const [energy, setEnergy] = useState(null);
   const [focus, setFocus] = useState('');
+  const [sleepHours, setSleepHours] = useState('');
+  const [sleepMins, setSleepMins] = useState('');
   const [show, setShow] = useState(false);
 
   useEffect(function(){ setTimeout(function(){setShow(true);}, 50); }, []);
@@ -1502,6 +1504,9 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
     if(focus.trim()) newLog[td+'_focus'] = focus.trim();
     setRoutineLog(newLog);
     save('routineLog', newLog);
+    var h = parseFloat(sleepHours)||0;
+    var m = parseFloat(sleepMins)||0;
+    if(h || m) localStorage.setItem('hq_sleep_'+td, String(h + m/60));
     onDone();
   }
 
@@ -1558,6 +1563,32 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
           onKeyDown:function(ev){if(ev.key==='Enter')handleDone();},
           maxLength:80,
         })
+      ),
+
+      // Sleep
+      e('div', {style:{marginBottom:32}},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT,marginBottom:12}}, 'How much did you sleep?'),
+        e('div', {style:{display:'flex',alignItems:'center',gap:10,justifyContent:'center'}},
+          e('div', {style:{display:'flex',alignItems:'center',gap:6}},
+            e('input', {
+              type:'number', min:0, max:14, placeholder:'7',
+              value:sleepHours,
+              onInput:function(ev){setSleepHours(ev.target.value);},
+              style:{width:64,padding:'10px 12px',borderRadius:12,border:'1.5px solid '+BORDER,fontSize:20,fontWeight:700,textAlign:'center',fontFamily:'inherit',background:'#fff',color:TEXT}
+            }),
+            e('span', {style:{fontSize:14,fontWeight:600,color:MUTED}}, 'hr')
+          ),
+          e('span', {style:{fontSize:20,color:MUTED,fontWeight:300}}, ':'),
+          e('div', {style:{display:'flex',alignItems:'center',gap:6}},
+            e('input', {
+              type:'number', min:0, max:59, placeholder:'30',
+              value:sleepMins,
+              onInput:function(ev){setSleepMins(ev.target.value);},
+              style:{width:64,padding:'10px 12px',borderRadius:12,border:'1.5px solid '+BORDER,fontSize:20,fontWeight:700,textAlign:'center',fontFamily:'inherit',background:'#fff',color:TEXT}
+            }),
+            e('span', {style:{fontSize:14,fontWeight:600,color:MUTED}}, 'min')
+          )
+        )
       ),
 
       // CTA
