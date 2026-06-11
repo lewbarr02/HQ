@@ -553,7 +553,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
             const isDone=!!((habitLog[qlDate]||{})[h.id]);
             return e('button', {key:h.id, onClick:()=>{
               const log=habitLog[qlDate]||{};const next={...habitLog,[qlDate]:{...log,[h.id]:!log[h.id]}};setHabitLog(next);save('habitLog',next);
-            }, style:{display:'flex',alignItems:'center',gap:6,padding:'7px 12px',borderRadius:20,border:'1.5px solid '+(isDone?h.color:BORDER),background:isDone?h.color+'12':CARD2,color:isDone?h.color:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},
+            }, style:{display:'flex',alignItems:'center',gap:6,padding:'7px 12px',borderRadius:20,border:'1.5px solid '+(isDone?h.color:BORDER),background:isDone?h.color:CARD2,color:isDone?'#fff':MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},
               h.emoji+' '+h.name+(isDone?' ✓':'')
             );
           })
