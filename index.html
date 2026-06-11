@@ -550,7 +550,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '✅ HABITS'),
         e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
           ...habits.map(h => {
-            const isDone=!!((habitLog[qlDate]||{})[h.id]);
+            const isDone=!!((habitLog[qlDate]||{})[h.id]) || (h.id==='h4' && (qlDate===td ? water : parseInt(localStorage.getItem('hq_water_'+qlDate)||'0')) >= 50);
             return e('button', {key:h.id, onClick:()=>{
               const log=habitLog[qlDate]||{};const next={...habitLog,[qlDate]:{...log,[h.id]:!log[h.id]}};setHabitLog(next);save('habitLog',next);
             }, style:{display:'flex',alignItems:'center',gap:6,padding:'7px 12px',borderRadius:20,border:'1.5px solid '+(isDone?h.color:BORDER),background:isDone?h.color:CARD2,color:isDone?'#fff':MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},
