@@ -177,7 +177,7 @@ function Sidebar({tab, setTab, moreOpen, setMoreOpen, NAV, dateStr}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -197,6 +197,9 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
     return v <= 12 && v > 0 ? Math.round(v/12*100) : v;
   });
   const [sleep, setSleep] = useState(() => parseFloat(localStorage.getItem('hq_sleep_'+td)||'0'));
+  const [intentEditing, setIntentEditing] = useState(false);
+  const [intentFocusDraft, setIntentFocusDraft] = useState('');
+  const [intentEnergyDraft, setIntentEnergyDraft] = useState(null);
 
   useEffect(() => {
     setWorkoutNote(localStorage.getItem('hq_wn_'+qlDate)||'');
@@ -427,10 +430,62 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         var qlFocus  = routineLog && routineLog[qlDate+'_focus'];
         var qlEnergy = routineLog && routineLog[qlDate+'_energy'];
         var energyOpt = qlEnergy ? ENERGY_OPTS.find(function(o){return o.val===qlEnergy;}) : null;
-        if(!qlFocus && !qlEnergy) return null;
-        return e('div', {style:{marginBottom:14,padding:'12px 14px',background:'linear-gradient(135deg,'+ACCENT+'0D,'+PURPLE+'08)',borderRadius:14,border:'1px solid '+ACCENT+'25'}},
-          e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:ACCENT,marginBottom:8}}, '🌅 Morning Intention'),
-          e('div', {style:{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
+        var hasData = !!(qlFocus || qlEnergy);
+
+        function openEdit() {
+          setIntentFocusDraft(qlFocus || '');
+          setIntentEnergyDraft(qlEnergy || null);
+          setIntentEditing(true);
+        }
+        function saveIntent() {
+          var newLog = Object.assign({}, routineLog);
+          if(intentFocusDraft.trim()) newLog[qlDate+'_focus'] = intentFocusDraft.trim();
+          else delete newLog[qlDate+'_focus'];
+          if(intentEnergyDraft) newLog[qlDate+'_energy'] = intentEnergyDraft;
+          else delete newLog[qlDate+'_energy'];
+          setRoutineLog(newLog);
+          save('routineLog', newLog);
+          setIntentEditing(false);
+        }
+
+        if(intentEditing) {
+          return e('div', {style:{marginBottom:14,padding:'14px',background:'linear-gradient(135deg,'+ACCENT+'0D,'+PURPLE+'08)',borderRadius:14,border:'1.5px solid '+ACCENT+'40'}},
+            e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:ACCENT,marginBottom:10}}, '🌅 Morning Intention'),
+            e('div', {style:{display:'flex',justifyContent:'space-between',gap:6,marginBottom:12}},
+              ...ENERGY_OPTS.map(function(opt){
+                var sel = intentEnergyDraft === opt.val;
+                return e('button', {key:opt.val, onClick:function(){setIntentEnergyDraft(opt.val);},
+                  style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'8px 2px',borderRadius:12,border:'2px solid '+(sel?ACCENT:BORDER),background:sel?ACCENT+'12':'#fff',cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s'}},
+                  e('span',{style:{fontSize:22,lineHeight:1}},opt.emoji),
+                  e('span',{style:{fontSize:9,fontWeight:700,color:sel?ACCENT:MUTED}},opt.label)
+                );
+              })
+            ),
+            e('input', {
+              className:'input', style:{marginBottom:10,fontSize:13},
+              placeholder:"Today's #1 focus...",
+              value:intentFocusDraft,
+              onInput:function(ev){setIntentFocusDraft(ev.target.value);},
+              onKeyDown:function(ev){if(ev.key==='Enter')saveIntent();},
+              maxLength:80,
+              autoFocus:true,
+            }),
+            e('div', {style:{display:'flex',gap:8}},
+              e('button', {onClick:function(){setIntentEditing(false);}, style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:MUTED}}, 'Cancel'),
+              e('button', {onClick:saveIntent, style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
+            )
+          );
+        }
+
+        return e('div', {
+          onClick: openEdit,
+          style:{marginBottom:14,padding:'12px 14px',background:'linear-gradient(135deg,'+ACCENT+'0D,'+PURPLE+'08)',borderRadius:14,border:'1px solid '+ACCENT+'25',cursor:'pointer'}
+        },
+          e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom: hasData ? 8 : 0}},
+            e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:ACCENT}}, '🌅 Morning Intention'),
+            e('div', {style:{fontSize:10,fontWeight:700,color:ACCENT,opacity:0.7}}, hasData ? '✏️ Edit' : '+ Add')
+          ),
+          hasData ? e('div', {style:{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
             energyOpt ? e('div', {style:{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,background:'#fff',border:'1px solid '+BORDER}},
               e('span',{style:{fontSize:16}}, energyOpt.emoji),
               e('span',{style:{fontSize:11,fontWeight:700,color:TEXT}}, energyOpt.label)
@@ -439,7 +494,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
               e('span',{style:{color:MUTED,fontSize:11,fontWeight:600,marginRight:4}}, '#1:'),
               qlFocus
             ) : null
-          )
+          ) : e('div', {style:{fontSize:12,color:MUTED}}, 'Tap to add your energy + #1 focus for the day')
         );
       })(),
       e('div', {style:{marginBottom:14}},
@@ -3183,7 +3238,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
       case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab});
