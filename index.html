@@ -3413,7 +3413,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         var prompt = buildPrompt();
         var resp = await fetch('https://bfgybytjjubdnciraksj.supabase.co/functions/v1/ai-coach', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmZ3lidHRqanViZG5jaXJha3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYzODA2NjYsImV4cCI6MjA2MTk1NjY2Nn0.k-EM6FfqbdEkHqt7az1DmXDhKJHFhhv1EXbfxPfCWLQ' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4' },
           body: JSON.stringify({ prompt: prompt })
         });
         if(!resp.ok) { var err = await resp.text(); throw new Error(err); }
