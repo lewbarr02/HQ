@@ -3307,6 +3307,181 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   );
 }
 
+function ProgressPhotosScreen({ setTab }) {
+  var [index, setIndex] = useState(function(){ return load('photoIndex') || []; });
+  var [viewing, setViewing] = useState(null); // {date, dataUrl, note}
+  var [adding, setAdding] = useState(false);
+  var [note, setNote] = useState('');
+  var [pending, setPending] = useState(null); // compressed dataUrl before saving
+  var [uploading, setUploading] = useState(false);
+  var fileRef = React.useRef(null);
+
+  function saveIndex(next) { setIndex(next); save('photoIndex', next); }
+
+  function compressImage(file, cb) {
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var img = new Image();
+      img.onload = function() {
+        var MAX = 600;
+        var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        var w = Math.round(img.width * scale);
+        var h = Math.round(img.height * scale);
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        cb(canvas.toDataURL('image/jpeg', 0.72));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleFile(ev) {
+    var file = ev.target.files && ev.target.files[0];
+    if(!file) return;
+    setUploading(true);
+    compressImage(file, function(dataUrl) {
+      setPending(dataUrl);
+      setUploading(false);
+      setAdding(true);
+    });
+    ev.target.value = '';
+  }
+
+  function savePhoto() {
+    if(!pending) return;
+    var dt = today();
+    localStorage.setItem('hq_photo_'+dt, pending);
+    var next = index.filter(function(e){ return e.date !== dt; });
+    next.unshift({date:dt, note:note.trim()});
+    saveIndex(next);
+    setPending(null);
+    setNote('');
+    setAdding(false);
+  }
+
+  function deletePhoto(date) {
+    localStorage.removeItem('hq_photo_'+date);
+    saveIndex(index.filter(function(e){ return e.date !== date; }));
+    setViewing(null);
+  }
+
+  function openPhoto(entry) {
+    var dataUrl = localStorage.getItem('hq_photo_'+entry.date);
+    if(dataUrl) setViewing({date:entry.date, dataUrl:dataUrl, note:entry.note});
+  }
+
+  var td = today();
+  var lastPhotoDate = index.length > 0 ? index[0].date : null;
+  var daysSincePhoto = lastPhotoDate
+    ? Math.round((new Date(td+'T12:00:00') - new Date(lastPhotoDate+'T12:00:00')) / 86400000)
+    : null;
+  var dueThisWeek = daysSincePhoto === null || daysSincePhoto >= 7;
+
+  // Lightbox
+  if(viewing) {
+    return e('div', {style:{
+      position:'fixed',inset:0,zIndex:200,background:'rgba(0,0,0,0.92)',
+      display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+      padding:'20px',paddingTop:'calc(20px + env(safe-area-inset-top))',
+      paddingBottom:'calc(20px + env(safe-area-inset-bottom))',
+    }},
+      e('div', {style:{display:'flex',alignItems:'center',width:'100%',maxWidth:480,marginBottom:12,gap:8}},
+        e('div', {style:{fontSize:13,fontWeight:700,color:'rgba(255,255,255,0.7)'}},
+          new Date(viewing.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'long',day:'numeric',year:'numeric'})
+        ),
+        e('div', {style:{flex:1}}),
+        e('button', {
+          onClick:function(){if(confirm('Delete this photo?'))deletePhoto(viewing.date);},
+          style:{background:'rgba(255,100,100,0.2)',border:'1px solid rgba(255,100,100,0.4)',color:'#FDA29B',borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Delete'),
+        e('button', {
+          onClick:function(){setViewing(null);},
+          style:{background:'rgba(255,255,255,0.1)',border:'none',color:'#fff',borderRadius:8,padding:'6px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginLeft:4}
+        }, '✕')
+      ),
+      e('img', {src:viewing.dataUrl, style:{maxWidth:'100%',maxHeight:'70vh',borderRadius:12,objectFit:'contain'}}),
+      viewing.note ? e('div', {style:{marginTop:12,fontSize:13,color:'rgba(255,255,255,0.7)',fontStyle:'italic',textAlign:'center',maxWidth:400}}, '"'+viewing.note+'"') : null
+    );
+  }
+
+  return e('div', {className:'content'},
+    e('input', {ref:fileRef, type:'file', accept:'image/*', capture:'environment', style:{display:'none'}, onChange:handleFile}),
+
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:20,fontWeight:800,color:TEXT}}, '📸 Progress Photos'),
+      e('div', {style:{marginLeft:'auto',fontSize:11,fontWeight:700,
+        color:dueThisWeek?'#FF6B6B':'#10B981',
+        background:dueThisWeek?'#FF6B6B15':'#10B98115',
+        padding:'3px 10px',borderRadius:10}},
+        dueThisWeek ? (daysSincePhoto===null?'No photos yet':'Due — '+daysSincePhoto+'d ago') : '✓ This week'
+      )
+    ),
+
+    // Add photo flow
+    !adding ? e('button', {
+      onClick:function(){ fileRef.current && fileRef.current.click(); },
+      style:{
+        width:'100%',padding:'16px',borderRadius:16,marginBottom:20,
+        background:'linear-gradient(135deg,#10B98120,#10B98108)',
+        border:'1.5px dashed #10B98160',
+        color:'#10B981',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+        display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+      }
+    }, uploading ? '⏳ Compressing...' : '📷 Take / Upload Photo') :
+    e('div', {style:{background:'#fff',borderRadius:16,border:'1.5px solid #10B98140',padding:'16px',marginBottom:20}},
+      e('img', {src:pending, style:{width:'100%',borderRadius:10,marginBottom:12,maxHeight:260,objectFit:'cover'}}),
+      e('input', {
+        className:'input', style:{marginBottom:12,fontSize:14},
+        placeholder:'Add a note (optional) — weight, how you feel...',
+        value:note,
+        onInput:function(ev){setNote(ev.target.value);},
+        maxLength:120,
+      }),
+      e('div', {style:{display:'flex',gap:8}},
+        e('button', {onClick:function(){setPending(null);setNote('');setAdding(false);},
+          style:{flex:1,padding:'12px',borderRadius:12,background:CARD2,border:'none',color:MUTED,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:14}
+        }, 'Cancel'),
+        e('button', {onClick:savePhoto,
+          style:{flex:2,padding:'12px',borderRadius:12,background:'#10B981',border:'none',color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:14}
+        }, 'Save Photo ✓')
+      )
+    ),
+
+    // Gallery
+    index.length === 0
+      ? e('div', {style:{textAlign:'center',color:MUTED,marginTop:40,fontSize:14}}, 'No photos yet. Take your first one above.')
+      : e('div', {},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, index.length+' photos'),
+          e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}},
+            ...index.map(function(entry){
+              var dataUrl = localStorage.getItem('hq_photo_'+entry.date);
+              if(!dataUrl) return null;
+              var d = new Date(entry.date+'T12:00:00');
+              var label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+              return e('div', {key:entry.date,
+                onClick:function(){openPhoto(entry);},
+                style:{borderRadius:10,overflow:'hidden',cursor:'pointer',position:'relative',aspectRatio:'1',background:CARD2}
+              },
+                e('img', {src:dataUrl, style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}}),
+                e('div', {style:{
+                  position:'absolute',bottom:0,left:0,right:0,
+                  background:'linear-gradient(transparent,rgba(0,0,0,0.6))',
+                  padding:'12px 6px 5px',
+                  fontSize:10,fontWeight:700,color:'#fff',textAlign:'center',
+                }}, label)
+              );
+            })
+          )
+        ),
+
+    e('div', {style:{height:20}})
+  );
+}
+
 function FoodPipelineScreen({ setTab }) {
   function getWeekKey(d) {
     var dt = d ? new Date(d) : new Date();
@@ -3962,6 +4137,7 @@ function App() {
   const MORE_ITEMS = [
     {id:'fitness',icon:'💪',label:'Fitness'},
     {id:'foodpipeline',icon:'🍽️',label:'Food Pipeline'},
+    {id:'photos',icon:'📸',label:'Progress Photos'},
     {id:'grocery',icon:'🛒',label:'Grocery List'},
     {id:'notes',icon:'📝',label:'Notes'},
     {id:'review',icon:'📊',label:'Review'},
@@ -3978,6 +4154,7 @@ function App() {
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog});
       case 'foodpipeline': return e(FoodPipelineScreen, {setTab});
+      case 'photos': return e(ProgressPhotosScreen, {setTab});
       case 'grocery': return e(GroceryScreen, {groceries,setGroceries,setTab});
       case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump,setTab});
       case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,eveningLog,middayLog,morningItems,eveningItems,setTab});
