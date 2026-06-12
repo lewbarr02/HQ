@@ -178,8 +178,15 @@ Work through this in order. Check off items as they are completed.
 - [ ] **AI fitness coach** — Reads workout balance + food logs + current weight + goal, then gives a written weekly analysis: what to do more of, what to cut, on-track date.
 
 ### 📅 CALENDAR & SCHEDULE
-- [ ] **HQ day view** — Visual timeline of the day — routines, habits, and priorities laid out as events that get checked off as the day goes on.
-- [ ] **Google Calendar sync** — Pull in real calendar appointments and overlay them on the HQ day view. Requires OAuth + backend — bigger lift, builds on top of day view.
+
+**Phase 1 — HQ Day View** *(Day 1 — 1 session, frontend only)*
+- [ ] **HQ day view** — Visual timeline of the day pulling from existing priorities + routines. Pure index.html, no backend needed.
+
+**Phase 2 — Google Calendar Sync** *(Days 2-4, requires Supabase backend)*
+- [ ] **Supabase setup + OAuth scaffolding** *(Day 2)* — Supabase project, Google OAuth app config, token storage.
+- [ ] **OAuth flow in HQ** *(Day 2)* — Connect/disconnect Google account, store + refresh access tokens.
+- [ ] **Calendar API + event display** *(Day 3)* — Fetch events, overlay on HQ day view alongside priorities.
+- [ ] **Conflict detection + time picker integration** *(Day 4)* — Grey out booked times, warn on conflicts, show next free slot in email time picker.
 
 ### 🔁 ROUTINES
 - [ ] **Midday check-in routine** — A second routine flow midday — quick pulse check, priority reset, catch anything that slipped in the morning.
@@ -188,6 +195,10 @@ Work through this in order. Check off items as they are completed.
 ### 🔔 NOTIFICATIONS & INTELLIGENCE
 - [ ] **Push notifications** — Aggressive, frequent, visual. Requires Supabase backend. Morning alarm, habit nudges, momentum warnings.
 - [ ] **Blocker trend analysis** — Data is already being logged when morning routine steps are skipped. Dashboard view to surface what keeps blocking you.
+
+### 📧 EMAIL → HQ
+- [x] **Email bookmarklet** — 1-click send any email to Today's Priorities. Auto-detects which Gmail account is active and tags the category (Job Search, Finance, Shopping, Work, Email).
+- [x] **Time picker on email toast** — When a task lands from the bookmarklet, show a quick time picker in the toast so it can be scheduled before the toast disappears. No extra steps needed later.
 
 ---
 

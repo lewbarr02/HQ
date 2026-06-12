@@ -147,6 +147,7 @@ var NAV_ICONS = {
   target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
   clock:  '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   more:   '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  day:    '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="8" y2="18"/>',
 };
 
 function NavIcon({ name, size, color }) {
@@ -191,6 +192,146 @@ function Sidebar({tab, setTab, moreOpen, setMoreOpen, NAV, dateStr}) {
     }),
     e('div', {style:{flex:1}}),
     e('div', {style:{fontSize:8,color:'#ccc',textAlign:'center',padding:'0 4px',lineHeight:1.4}}, dateStr)
+  );
+}
+
+function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, setEveningPhase, setTab}) {
+  const td = today();
+  const now = new Date();
+  const currentMinute = now.getHours() * 60 + now.getMinutes();
+  const priorities = load('priorities') || [];
+
+  // Timeline: 5 AM (300 min) to midnight (1440 min)
+  const START_MIN = 300;
+  const END_MIN = 1440;
+  const TOTAL = END_MIN - START_MIN;
+  const PX_PER_MIN = 2.2;
+  const totalHeight = TOTAL * PX_PER_MIN;
+
+  function parseTimeToMin(str) {
+    if (!str) return null;
+    var m = str.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!m) return null;
+    var h = parseInt(m[1]), mn = parseInt(m[2]), ap = m[3].toUpperCase();
+    if (ap === 'PM' && h !== 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    return h * 60 + mn;
+  }
+
+  function minToY(min) {
+    return Math.max(0, (min - START_MIN) * PX_PER_MIN);
+  }
+
+  function fmtHour(h) {
+    if (h === 0) return '12 AM';
+    if (h === 12) return '12 PM';
+    return h < 12 ? h + ' AM' : (h - 12) + ' PM';
+  }
+
+  // Morning routine block
+  var mStart = routineLog[td + '_start'];
+  var mDone = routineLog[td + '_done'];
+  var mStartMin = mStart ? parseTimeToMin(mStart) : null;
+  var mDoneMin = mDone ? parseTimeToMin(mDone) : null;
+
+  // Evening routine block
+  var eStart = eveningLog[td + '_start'];
+  var eDone = eveningLog[td + '_done'];
+  var eStartMin = eStart ? parseTimeToMin(eStart) : null;
+  var eDoneMin = eDone ? parseTimeToMin(eDone) : null;
+
+  // Timed priorities for today
+  var todayPriorities = (priorities || []).filter(p => p.time);
+  var untimedPriorities = (priorities || []).filter(p => !p.time);
+
+  // Hour markers
+  var hours = [];
+  for (var h = 5; h <= 24; h++) hours.push(h === 24 ? 0 : h);
+
+  var timelineWidth = 'calc(100% - 44px)';
+
+  function BlockItem({min, durationMin, color, label, sublabel, done, onClick}) {
+    var clamped = Math.max(START_MIN, Math.min(END_MIN - 15, min));
+    var dur = Math.max(30, durationMin || 45);
+    var y = minToY(clamped);
+    var h = dur * PX_PER_MIN;
+    return e('div', {
+      onClick: onClick,
+      style: {
+        position: 'absolute',
+        left: 44,
+        right: 8,
+        top: y,
+        height: h,
+        background: done ? color + '30' : color + '22',
+        borderLeft: '3px solid ' + color,
+        borderRadius: '0 8px 8px 0',
+        padding: '5px 10px',
+        cursor: onClick ? 'pointer' : 'default',
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+      }
+    },
+      e('div', {style: {fontSize: 12, fontWeight: 700, color: done ? MUTED : color, lineHeight: 1.2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}, label),
+      sublabel ? e('div', {style: {fontSize: 10, color: MUTED, marginTop: 2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}, sublabel) : null
+    );
+  }
+
+  return e('div', {className: 'content'},
+    e('div', {style: {display:'flex', alignItems:'center', gap:8, marginBottom:16, paddingTop:4}},
+      e('div', {style: {fontSize:18, fontWeight:800, color:TEXT}}, "Today's Schedule"),
+      e('div', {style: {fontSize:12, color:MUTED, marginLeft:'auto'}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}))
+    ),
+
+    // Untimed priorities at top
+    untimedPriorities.length > 0 ? e('div', {style:{marginBottom:16}},
+      e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:6}}, 'UNSCHEDULED'),
+      ...untimedPriorities.map(p =>
+        e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:p.done?CARD2:p.color+'15',border:'1px solid '+(p.done?'transparent':p.color+'40'),borderRadius:10,marginBottom:4,opacity:p.done?0.6:1}},
+          e('div', {style:{width:8,height:8,borderRadius:'50%',background:p.done?MUTED:p.color,flexShrink:0}}),
+          e('div', {style:{fontSize:13,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, p.name),
+          e('div', {style:{fontSize:10,color:MUTED,flexShrink:0}}, p.cat)
+        )
+      )
+    ) : null,
+
+    // Timeline
+    e('div', {style:{position:'relative', height: totalHeight, flexShrink:0}},
+
+      // Hour grid lines + labels
+      ...hours.map((h, i) => {
+        var min = (i === 0 ? 5 : h) === 0 ? 1440 : (i === 0 ? 5 : h) * 60;
+        if (i === 0) min = 300;
+        else min = (h === 0 ? 24 : h) * 60;
+        var y = minToY(min);
+        var isNow = currentMinute >= min && currentMinute < min + 60;
+        return e('div', {key:h+'-'+i, style:{position:'absolute',top:y,left:0,right:0,display:'flex',alignItems:'center',pointerEvents:'none'}},
+          e('div', {style:{width:36,fontSize:10,color:MUTED,textAlign:'right',paddingRight:8,flexShrink:0,fontWeight: isNow?700:400,color: isNow?ACCENT:MUTED}}, fmtHour(h === 0 && i > 0 ? 0 : (i === 0 ? 5 : h))),
+          e('div', {style:{flex:1,height:'0.5px',background: isNow?ACCENT+'60':'rgba(100,80,220,0.08)'}})
+        );
+      }),
+
+      // Morning routine block
+      mStartMin ? e(BlockItem, {key:'morning', min:mStartMin, durationMin: mDoneMin ? mDoneMin - mStartMin : 30, color:ACCENT, label:'☀️ Morning Routine', sublabel: mDone ? ('Done ' + mDone) : 'In progress', done:!!mDoneMin, onClick:()=>setMorningPhase('history')}) : null,
+
+      // Evening routine block
+      eStartMin ? e(BlockItem, {key:'evening', min:eStartMin, durationMin: eDoneMin ? eDoneMin - eStartMin : 30, color:NIGHT, label:'🌙 Evening Routine', sublabel: eDone ? ('Done ' + eDone) : 'In progress', done:!!eDoneMin, onClick:()=>setEveningPhase('history')}) : null,
+
+      // Timed priorities
+      ...todayPriorities.map(p => {
+        var min = parseTimeToMin(p.time);
+        if (!min || min < START_MIN || min >= END_MIN) return null;
+        return e(BlockItem, {key:p.id, min:min, durationMin:45, color:p.color||ACCENT, label:p.name, sublabel:p.time + ' · ' + p.cat, done:p.done});
+      }),
+
+      // Current time indicator
+      currentMinute >= START_MIN && currentMinute < END_MIN ? e('div', {style:{position:'absolute',top:minToY(currentMinute),left:36,right:0,zIndex:10,display:'flex',alignItems:'center',pointerEvents:'none'}},
+        e('div', {style:{width:8,height:8,borderRadius:'50%',background:ACCENT,flexShrink:0,marginLeft:-4}}),
+        e('div', {style:{flex:1,height:2,background:ACCENT}})
+      ) : null
+    ),
+
+    e('div', {style:{height:40}})
   );
 }
 
@@ -3300,9 +3441,9 @@ function App() {
 
   const NAV = [
     {id:'today', icon:'home',   label:'Home'},
+    {id:'day',   icon:'day',    label:'Day'},
     {id:'areas', icon:'grid',   label:'Areas'},
     {id:'goals', icon:'target', label:'Goals'},
-    {id:'time',  icon:'clock',  label:'Time'},
     {id:'more',  icon:'more',   label:'More'},
   ];
   const MORE_ITEMS = [
@@ -3316,6 +3457,7 @@ function App() {
   function renderScreen() {
     switch(tab) {
       case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase});
+      case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
       case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab});
