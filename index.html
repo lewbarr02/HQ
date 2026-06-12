@@ -1263,7 +1263,7 @@ function NotesScreen({notes, setNotes, brainDump, setBrainDump, setTab}) {
   );
 }
 
-function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, setTab}) {
+function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog, middayLog, morningItems, eveningItems, setTab}) {
   var now=new Date();
   var [year,setYear]=useState(now.getFullYear());
   var [month,setMonth]=useState(now.getMonth());
@@ -1337,7 +1337,92 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, setTab}) {
           );
         })
       )
-    )
+    ),
+
+    // ── Blocker Trend Analysis ──
+    (function(){
+      var safeM = morningItems || DEFAULT_MORNING_HABITS;
+      var safeE = eveningItems || DEFAULT_EVENING_HABITS;
+      var itemMap = {};
+      safeM.forEach(function(i){ itemMap[i.id] = {name:i.name, emoji:i.emoji, source:'AM'}; });
+      safeE.forEach(function(i){ itemMap[i.id] = {name:i.name, emoji:i.emoji, source:'PM'}; });
+
+      // Tally blocker counts from morning + evening logs
+      var counts = {}; // id -> {count, notes:[]}
+      function tallyLog(log) {
+        Object.keys(log||{}).forEach(function(k){
+          if(!k.endsWith('_blockers')) return;
+          var blockers = log[k];
+          if(!blockers || typeof blockers !== 'object') return;
+          Object.keys(blockers).forEach(function(id){
+            var reason = blockers[id];
+            if(!reason || !reason.trim()) return;
+            if(!counts[id]) counts[id] = {count:0, notes:[]};
+            counts[id].count++;
+            counts[id].notes.push(reason.trim());
+          });
+        });
+      }
+      tallyLog(routineLog);
+      tallyLog(eveningLog);
+
+      // Midday free-text blockers
+      var middayBlockers = [];
+      Object.keys(middayLog||{}).forEach(function(k){
+        if(k.includes('_')) return;
+        var entry = (middayLog||{})[k];
+        if(entry && entry.blocker) middayBlockers.push({date:k, text:entry.blocker});
+      });
+      middayBlockers.sort(function(a,b){ return b.date.localeCompare(a.date); });
+
+      var sorted = Object.keys(counts).sort(function(a,b){ return counts[b].count - counts[a].count; });
+      var maxCount = sorted.length > 0 ? counts[sorted[0]].count : 1;
+
+      return e('div', {className:'card', style:{marginTop:4}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, '⚠️ Blocker Trends'),
+
+        sorted.length === 0 && middayBlockers.length === 0
+          ? e('div', {style:{textAlign:'center',color:MUTED,fontSize:13,padding:'12px 0'}}, 'No blockers logged yet — nice work.')
+          : null,
+
+        sorted.length > 0 ? e('div', {style:{marginBottom:middayBlockers.length>0?20:0}},
+          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:10}}, 'Routine steps you skip most'),
+          ...sorted.map(function(id){
+            var item = itemMap[id] || {name:id, emoji:'•', source:'?'};
+            var pct = Math.round(counts[id].count / maxCount * 100);
+            var barColor = counts[id].count >= 3 ? '#FF6B6B' : counts[id].count >= 2 ? '#FFB347' : ACCENT;
+            return e('div', {key:id, style:{marginBottom:14}},
+              e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:5}},
+                e('span', {style:{fontSize:16}}, item.emoji),
+                e('div', {style:{flex:1,fontSize:13,fontWeight:700,color:TEXT}}, item.name),
+                e('div', {style:{fontSize:10,fontWeight:700,color:MUTED,background:CARD2,padding:'2px 7px',borderRadius:8}}, item.source),
+                e('div', {style:{fontSize:12,fontWeight:800,color:barColor,minWidth:24,textAlign:'right'}}, counts[id].count+'×')
+              ),
+              e('div', {style:{height:6,background:'#F0F2F8',borderRadius:3,overflow:'hidden'}},
+                e('div', {style:{height:'100%',width:pct+'%',background:barColor,borderRadius:3,transition:'width 0.4s'}})
+              ),
+              counts[id].notes.length > 0 ? e('div', {style:{marginTop:5}},
+                ...counts[id].notes.slice(-3).map(function(n,i){
+                  return e('div', {key:i, style:{fontSize:11,color:MUTED,padding:'3px 8px',background:'#F7F8FC',borderRadius:6,marginTop:3,fontStyle:'italic'}}, '"'+n+'"');
+                })
+              ) : null
+            );
+          })
+        ) : null,
+
+        middayBlockers.length > 0 ? e('div', {},
+          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:10}}, 'Midday blockers'),
+          ...middayBlockers.slice(0,5).map(function(b){
+            var d = new Date(b.date+'T12:00:00');
+            var label = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            return e('div', {key:b.date, style:{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 0',borderBottom:'1px solid rgba(100,80,220,0.06)'}},
+              e('div', {style:{fontSize:11,color:MUTED,minWidth:72,flexShrink:0,paddingTop:1}}, label),
+              e('div', {style:{fontSize:13,color:TEXT,fontStyle:'italic',flex:1}}, '"'+b.text+'"')
+            );
+          })
+        ) : null
+      );
+    })()
   );
 }
 
@@ -3660,7 +3745,7 @@ function App() {
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog});
       case 'grocery': return e(GroceryScreen, {groceries,setGroceries,setTab});
       case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump,setTab});
-      case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,setTab});
+      case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,eveningLog,middayLog,morningItems,eveningItems,setTab});
       case 'data': return e(DataScreen, {habits,habitLog,timeLog,goals,projects,notes,groceries,brainDump,setHabits,setHabitLog,setTimeLog,setGoals,setProjects,setNotes,setGroceries,setBrainDump,setTab});
       default: return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog});
     }

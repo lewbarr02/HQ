@@ -189,7 +189,7 @@ Work through this in order. Check off items as they are completed.
 - [ ] **Conflict detection + time picker integration** *(Day 4)* — Grey out booked times, warn on conflicts, show next free slot in email time picker.
 
 ### 🔁 ROUTINES
-- [ ] **Midday check-in routine** — A second routine flow midday — quick pulse check, priority reset, catch anything that slipped in the morning.
+- [x] **Midday check-in routine** — A second routine flow midday — quick pulse check, priority reset, catch anything that slipped in the morning.
 - [x] **Evening routine + CPAP reminder** — Wind-down checklist. CPAP goes on as a hard step — foundational to 5am wake goal.
 
 ### 🔔 NOTIFICATIONS & INTELLIGENCE
