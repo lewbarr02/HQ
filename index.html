@@ -70,6 +70,47 @@ const _SB = supabase.createClient(
   'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'
 );
 
+const VAPID_PUBLIC_KEY = 'BGFaXY74EeQQeLS9M2WveUDAi_zzXzzqJGRF6MxMT9087GKzKKJ433zHACbpXqGyrmGu7LuFuy38z7Z2FRBm37U';
+
+function urlBase64ToUint8Array(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var rawData = window.atob(base64);
+  var outputArray = new Uint8Array(rawData.length);
+  for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function subscribeToPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return {ok:false, reason:'not supported'};
+  var perm = await Notification.requestPermission();
+  if (perm !== 'granted') return {ok:false, reason:'denied'};
+  var reg = await navigator.serviceWorker.ready;
+  var existing = await reg.pushManager.getSubscription();
+  if (existing) await existing.unsubscribe();
+  var sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+  var subJson = sub.toJSON();
+  await _SB.from('push_subscriptions').upsert({
+    user_id: 'lewis',
+    endpoint: subJson.endpoint,
+    p256dh: subJson.keys.p256dh,
+    auth: subJson.keys.auth,
+    updated_at: new Date().toISOString(),
+  }, {onConflict: 'user_id'});
+  return {ok:true};
+}
+
+async function unsubscribeFromPush() {
+  if (!('serviceWorker' in navigator)) return;
+  var reg = await navigator.serviceWorker.ready;
+  var sub = await reg.pushManager.getSubscription();
+  if (sub) await sub.unsubscribe();
+  await _SB.from('push_subscriptions').delete().eq('user_id','lewis');
+}
+
 function save(k,v){
   try{localStorage.setItem("hq_"+k,JSON.stringify(v));}catch{}
   _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);});
@@ -3549,6 +3590,103 @@ function MacroScreen({ setTab }) {
   );
 }
 
+function NotificationsScreen({ setTab }) {
+  var [status, setStatus] = useState(function(){
+    if (!('Notification' in window)) return 'unsupported';
+    return Notification.permission; // 'default'|'granted'|'denied'
+  });
+  var [subscribed, setSubscribed] = useState(false);
+  var [loading, setLoading] = useState(false);
+  var [msg, setMsg] = useState('');
+
+  useEffect(function(){
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    navigator.serviceWorker.ready.then(function(reg){
+      reg.pushManager.getSubscription().then(function(sub){ setSubscribed(!!sub); });
+    });
+  }, []);
+
+  async function handleEnable() {
+    setLoading(true); setMsg('');
+    var result = await subscribeToPush();
+    setLoading(false);
+    if (result.ok) {
+      setStatus('granted'); setSubscribed(true);
+      setMsg('✅ Notifications enabled! You\'ll get nudges at 5 AM, 12 PM, and 9 PM.');
+    } else if (result.reason === 'denied') {
+      setStatus('denied');
+      setMsg('❌ Blocked — open your browser settings and allow notifications for this site, then try again.');
+    } else {
+      setMsg('❌ ' + (result.reason || 'Something went wrong. Try again.'));
+    }
+  }
+
+  async function handleDisable() {
+    setLoading(true);
+    await unsubscribeFromPush();
+    setSubscribed(false); setLoading(false);
+    setMsg('Notifications disabled.');
+  }
+
+  var SCHEDULES = [
+    {time:'5:00 AM',  emoji:'🌅', label:'Morning alarm',   desc:'Wake up + start your morning routine'},
+    {time:'12:00 PM', emoji:'☀️', label:'Midday check-in', desc:'Pulse check — how\'s the day going?'},
+    {time:'9:00 PM',  emoji:'🌙', label:'Evening routine', desc:'Wind down + CPAP reminder'},
+  ];
+
+  return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:20}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:20,fontWeight:800,color:TEXT}}, '🔔 Notifications')
+    ),
+
+    // Status card
+    e('div', {className:'card', style:{marginBottom:16,textAlign:'center'}},
+      e('div', {style:{fontSize:40,marginBottom:8}}, subscribed ? '🔔' : '🔕'),
+      e('div', {style:{fontSize:16,fontWeight:800,color:TEXT,marginBottom:4}},
+        subscribed ? 'Notifications are ON' : status === 'denied' ? 'Notifications blocked' : 'Notifications are off'
+      ),
+      e('div', {style:{fontSize:13,color:MUTED,marginBottom:20,lineHeight:1.5}},
+        subscribed ? 'You\'ll get nudges at the times below.' :
+        status === 'denied' ? 'You\'ve blocked notifications. Go to browser settings → site settings to allow.' :
+        status === 'unsupported' ? 'Push notifications aren\'t supported in this browser. Try Chrome or install as a PWA.' :
+        'Enable to get aggressive ADHD-friendly nudges throughout the day.'
+      ),
+      status !== 'unsupported' ? (
+        subscribed
+          ? e('button', {onClick:handleDisable, disabled:loading, style:{padding:'12px 28px',borderRadius:14,background:CARD2,border:'1px solid '+BORDER,color:MUTED,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:14}},
+              loading ? 'Disabling...' : 'Turn off notifications')
+          : e('button', {onClick:handleEnable, disabled:loading || status==='denied', style:{padding:'14px 32px',borderRadius:14,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',border:'none',color:'#fff',fontWeight:800,cursor: status==='denied'?'default':'pointer',fontFamily:'inherit',fontSize:15,opacity: status==='denied'?0.5:1,boxShadow:'0 6px 20px rgba(0,198,255,0.3)'}},
+              loading ? 'Enabling...' : '🔔 Enable Notifications')
+      ) : null,
+      msg ? e('div', {style:{marginTop:14,fontSize:13,color:msg.startsWith('✅')?'#10B981':'#FF6B6B',fontWeight:600,lineHeight:1.5}}, msg) : null
+    ),
+
+    // Schedule
+    e('div', {className:'card', style:{marginBottom:16}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Daily Schedule'),
+      ...SCHEDULES.map(function(s, i){
+        return e('div', {key:s.time, style:{display:'flex',alignItems:'center',gap:14,paddingBottom: i<2?14:0,marginBottom: i<2?14:0,borderBottom: i<2?'1px solid rgba(100,80,220,0.07)':'none'}},
+          e('div', {style:{fontSize:28,width:36,textAlign:'center',flexShrink:0}}, s.emoji),
+          e('div', {style:{flex:1}},
+            e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, s.time+' — '+s.label),
+            e('div', {style:{fontSize:12,color:MUTED,marginTop:2}}, s.desc)
+          ),
+          subscribed ? e('div', {style:{width:8,height:8,borderRadius:'50%',background:'#10B981',flexShrink:0}}) : null
+        );
+      })
+    ),
+
+    // PWA install hint
+    e('div', {style:{padding:'12px 16px',borderRadius:14,background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.2)'}},
+      e('div', {style:{fontSize:12,fontWeight:700,color:'#D97706',marginBottom:4}}, '💡 For best results'),
+      e('div', {style:{fontSize:12,color:MUTED,lineHeight:1.6}}, 'Install HQ to your home screen (Share → Add to Home Screen on iOS, or the install prompt on Android/Chrome). Notifications work more reliably from an installed PWA.')
+    ),
+
+    e('div', {style:{height:20}})
+  );
+}
+
 function ProgressPhotosScreen({ setTab }) {
   var [index, setIndex] = useState(function(){ return load('photoIndex') || []; });
   var [viewing, setViewing] = useState(null); // {date, dataUrl, note}
@@ -4384,6 +4522,7 @@ function App() {
     {id:'grocery',icon:'🛒',label:'Grocery List'},
     {id:'notes',icon:'📝',label:'Notes'},
     {id:'review',icon:'📊',label:'Review'},
+    {id:'notifications',icon:'🔔',label:'Notifications'},
     {id:'data',icon:'💾',label:'Import / Export Data'},
   ];
 
@@ -4399,6 +4538,7 @@ function App() {
       case 'macros': return e(MacroScreen, {setTab});
       case 'foodpipeline': return e(FoodPipelineScreen, {setTab});
       case 'photos': return e(ProgressPhotosScreen, {setTab});
+      case 'notifications': return e(NotificationsScreen, {setTab});
       case 'grocery': return e(GroceryScreen, {groceries,setGroceries,setTab});
       case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump,setTab});
       case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,eveningLog,middayLog,morningItems,eveningItems,setTab});
