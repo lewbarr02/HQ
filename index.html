@@ -3060,13 +3060,21 @@ function freshnessColor(days) {
 }
 
 function FitnessScreen({ workoutLog, setWorkoutLog }) {
-  const [view, setView] = useState('balance'); // balance | log | history
+  const [view, setView] = useState('balance'); // balance | log | history | coach
   const [logDate, setLogDate] = useState(today());
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [sessionNote, setSessionNote] = useState('');
   const [sessionSets, setSessionSets] = useState('');
   const [historyFilter, setHistoryFilter] = useState('all');
   const [expandedDay, setExpandedDay] = useState(null);
+  // Coach state
+  const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
+  const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
+  const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachAnalysis, setCoachAnalysis] = useState(function(){ return load('coachAnalysis') || null; });
+  const [coachAnalysisDate, setCoachAnalysisDate] = useState(function(){ return load('coachAnalysisDate') || null; });
+  const [coachError, setCoachError] = useState(null);
   const safeLog = workoutLog || {};
 
   // ── Balance view ──────────────────────────────────────────────────────────
@@ -3323,15 +3331,187 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     );
   }
 
+  // ── AI Coach ─────────────────────────────────────────────────────────────
+  function renderCoach() {
+    var weight = coachWeight, setWeight = setCoachWeight;
+    var goalWeight = coachGoalWeight, setGoalWeight = setCoachGoalWeight;
+    var goalBf = coachGoalBf, setGoalBf = setCoachGoalBf;
+    var loading = coachLoading, setLoading = setCoachLoading;
+    var analysis = coachAnalysis, setAnalysis = setCoachAnalysis;
+    var analysisDate = coachAnalysisDate, setAnalysisDate = setCoachAnalysisDate;
+    var error = coachError, setError = setCoachError;
+
+    function buildPrompt() {
+      // Last 30 days workout summary
+      var td = today();
+      var workoutSummary = [];
+      for(var i = 0; i < 30; i++) {
+        var dt = new Date(td+'T12:00:00');
+        dt.setDate(dt.getDate()-i);
+        var dk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+        var sessions = (safeLog[dk]||[]);
+        if(sessions.length > 0) {
+          sessions.forEach(function(s){
+            var groups = (s.groups||[]).map(function(gid){ var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;}); return g?g.name:gid; });
+            workoutSummary.push(dk+': '+groups.join(', ')+(s.sets?' ('+s.sets+' sets)':'')+(s.note?' — '+s.note:''));
+          });
+        }
+      }
+
+      // Last 7 days macro summary
+      var macroLog = load('macroLog') || {};
+      var targets = load('macroTargets') || {cal:2200,protein:180,carbs:200,fat:65};
+      var macroSummary = [];
+      for(var j = 0; j < 7; j++) {
+        var dt2 = new Date(td+'T12:00:00');
+        dt2.setDate(dt2.getDate()-j);
+        var dk2 = dt2.getFullYear()+'-'+String(dt2.getMonth()+1).padStart(2,'0')+'-'+String(dt2.getDate()).padStart(2,'0');
+        var meals = macroLog[dk2]||[];
+        if(meals.length > 0) {
+          var totals = meals.reduce(function(acc,m){ acc.cal+=parseFloat(m.cal)||0; acc.protein+=parseFloat(m.protein)||0; acc.carbs+=parseFloat(m.carbs)||0; acc.fat+=parseFloat(m.fat)||0; return acc; },{cal:0,protein:0,carbs:0,fat:0});
+          macroSummary.push(dk2+': '+Math.round(totals.cal)+'kcal, '+Math.round(totals.protein)+'g protein, '+Math.round(totals.carbs)+'g carbs, '+Math.round(totals.fat)+'g fat');
+        }
+      }
+
+      // Muscle group freshness
+      var freshness = MUSCLE_GROUPS.map(function(g){
+        var d = daysSince(safeLog, g.id);
+        return g.name+': '+(d===null?'never':d+'d ago');
+      });
+
+      return [
+        'You are a personal fitness coach. Give a concise, actionable weekly analysis.',
+        '',
+        'ATHLETE:',
+        '- Current weight: '+(weight||'unknown')+' lbs',
+        '- Goal: '+goalWeight+' lbs at '+goalBf+'% body fat',
+        '- Has ADHD — keep advice direct, numbered, visual',
+        '',
+        'WORKOUTS (last 30 days):',
+        workoutSummary.length > 0 ? workoutSummary.join('\n') : 'No workouts logged',
+        '',
+        'MUSCLE GROUP FRESHNESS:',
+        freshness.join(', '),
+        '',
+        'NUTRITION (last 7 days, targets: '+targets.cal+'kcal / '+targets.protein+'g protein):',
+        macroSummary.length > 0 ? macroSummary.join('\n') : 'No nutrition logged',
+        '',
+        'Write a weekly analysis with these sections:',
+        '1. **Overall Assessment** (2-3 sentences)',
+        '2. **Workout Focus This Week** (which muscle groups to prioritize and why)',
+        '3. **Nutrition Check** (how nutrition is tracking vs goals)',
+        '4. **3 Specific Actions** for the coming week (numbered, concrete)',
+        '5. **On-Track Date** (rough estimate for reaching goal weight at current trajectory)',
+        '',
+        'Be direct. No fluff. Acknowledge what is working before flagging gaps.',
+      ].join('\n');
+    }
+
+    async function generate() {
+      setLoading(true); setError(null);
+      try {
+        var prompt = buildPrompt();
+        var resp = await fetch('https://bfgybytjjubdnciraksj.supabase.co/functions/v1/ai-coach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmZ3lidHRqanViZG5jaXJha3NqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYzODA2NjYsImV4cCI6MjA2MTk1NjY2Nn0.k-EM6FfqbdEkHqt7az1DmXDhKJHFhhv1EXbfxPfCWLQ' },
+          body: JSON.stringify({ prompt: prompt })
+        });
+        if(!resp.ok) { var err = await resp.text(); throw new Error(err); }
+        var data = await resp.json();
+        var text = data.content;
+        var dateStr = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        setAnalysis(text); setAnalysisDate(dateStr);
+        save('coachAnalysis', text); save('coachAnalysisDate', dateStr);
+        save('coachWeight', weight); save('coachGoalWeight', goalWeight); save('coachGoalBf', goalBf);
+      } catch(err) {
+        setError(err.message || 'Failed to generate analysis');
+      }
+      setLoading(false);
+    }
+
+    // Render markdown-ish: bold **text**, numbered lists
+    function renderAnalysis(text) {
+      return text.split('\n').map(function(line, i) {
+        if(!line.trim()) return e('div',{key:i,style:{height:8}});
+        // Bold headers like **Overall Assessment**
+        var parts = line.split(/(\*\*[^*]+\*\*)/g);
+        var rendered = parts.map(function(p,pi){
+          if(p.startsWith('**')&&p.endsWith('**')) return e('strong',{key:pi,style:{color:TEXT}},p.slice(2,-2));
+          return p;
+        });
+        var isHeader = line.startsWith('**') || /^\d+\./.test(line.trim());
+        return e('div',{key:i,style:{
+          fontSize:14,lineHeight:1.7,color:isHeader?TEXT:'#444',
+          fontWeight:isHeader?700:400,marginBottom:isHeader?2:0,
+        }}, ...rendered);
+      });
+    }
+
+    return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      // Inputs card
+      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:12}}, '⚙️ Your Stats'),
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}},
+          e('div', {},
+            e('div', {style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}}, 'Current Weight'),
+            e('input', {className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:weight,onInput:function(ev){setWeight(ev.target.value);}})
+          ),
+          e('div', {},
+            e('div', {style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}}, 'Goal Weight'),
+            e('input', {className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:goalWeight,onInput:function(ev){setGoalWeight(ev.target.value);}})
+          ),
+          e('div', {},
+            e('div', {style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}}, 'Goal BF%'),
+            e('input', {className:'input',type:'number',placeholder:'%',style:{marginBottom:0},value:goalBf,onInput:function(ev){setGoalBf(ev.target.value);}})
+          )
+        )
+      ),
+
+      // Generate button
+      e('button', {
+        onClick: generate,
+        disabled: loading,
+        style:{
+          padding:'17px',borderRadius:16,
+          background: loading ? '#E8E8F0' : 'linear-gradient(135deg,#7B2FFF,#00C6FF)',
+          border:'none',color:loading?'#B0B0C0':'white',
+          fontSize:16,fontWeight:800,cursor:loading?'default':'pointer',
+          fontFamily:'inherit',
+          boxShadow:loading?'none':'0 8px 24px rgba(123,47,255,0.3)',
+          transition:'all 0.2s',
+        }
+      }, loading ? '🤖 Analyzing your data...' : '🤖 Generate Weekly Analysis'),
+
+      error ? e('div', {style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}}, '⚠️ '+error) : null,
+
+      // Analysis output
+      analysis ? e('div', {style:{background:'#fff',borderRadius:16,padding:'18px',border:'1px solid '+BORDER}},
+        e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
+          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, '📋 Weekly Analysis'),
+          analysisDate ? e('div', {style:{fontSize:11,color:MUTED}}, analysisDate) : null
+        ),
+        e('div', {style:{lineHeight:1.6}}, ...renderAnalysis(analysis)),
+        e('button', {
+          onClick:function(){setAnalysis(null);setAnalysisDate(null);save('coachAnalysis',null);save('coachAnalysisDate',null);},
+          style:{marginTop:14,background:'none',border:'1px solid '+BORDER,borderRadius:8,padding:'6px 14px',fontSize:12,color:MUTED,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Clear')
+      ) : !loading ? e('div', {style:{background:'#F8FAFC',borderRadius:16,padding:'24px',border:'1px dashed '+BORDER,textAlign:'center'}},
+        e('div', {style:{fontSize:32,marginBottom:8}}, '🤖'),
+        e('div', {style:{fontSize:14,fontWeight:600,color:TEXT,marginBottom:4}}, 'AI Fitness Coach'),
+        e('div', {style:{fontSize:13,color:MUTED}},'Reads your workout history, muscle balance, and nutrition logs — then gives a written weekly plan.')
+      ) : null
+    );
+  }
+
   return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
     // Header
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['balance','⚖️ Balance'], ['log','+ Log Workout'], ['history','📋 History'] ].map(function(item){
+        ...[ ['balance','⚖️ Balance'], ['log','+ Log Workout'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
-            flex:1,padding:'10px 4px',fontSize:12,fontWeight:700,
+            flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
             border:'none',borderBottom: active?'2.5px solid '+ACCENT:'2.5px solid transparent',
             background:'none',color:active?ACCENT:MUTED,cursor:'pointer',fontFamily:'inherit',
             transition:'all 0.15s',
@@ -3343,7 +3523,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch'}},
       view==='balance' ? renderBalance() :
       view==='log'     ? renderLog()     :
-      renderHistory()
+      view==='history' ? renderHistory() :
+      renderCoach()
     )
   );
 }
