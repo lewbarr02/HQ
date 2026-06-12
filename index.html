@@ -335,7 +335,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -464,6 +464,19 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         e('button', {
           onClick: function(){ setMorningPhase('history'); },
           style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'#FFB34715',border:'1.5px solid #FFB34740',color:'#FFB347',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        }, '📊 History')
+      )
+    ),
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '☀️ Midday'),
+      e('div', {style:{display:'flex',gap:6}},
+        e('button', {
+          onClick: function(){ setMiddayPhase && setMiddayPhase('checkin'); },
+          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'rgba(245,158,11,0.12)',border:'1.5px solid rgba(245,158,11,0.35)',color:'#D97706',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        }, '☀️ Check In'),
+        e('button', {
+          onClick: function(){ setMiddayPhase && setMiddayPhase('history'); },
+          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'rgba(245,158,11,0.08)',border:'1.5px solid rgba(245,158,11,0.2)',color:'#F59E0B',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
         }, '📊 History')
       )
     ),
@@ -2231,6 +2244,186 @@ function MorningComplete({ onContinue, routineLog, morningItems }) {
 
 
 
+// ─── MIDDAY CHECK-IN COMPONENTS ───────────────────────────────────────────────
+var MIDDAY = '#F59E0B';
+var MIDDAY2 = '#D97706';
+
+function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
+  const td = today();
+  const [energy, setEnergy] = useState(null);
+  const [focus, setFocus] = useState('');
+  const [blocker, setBlocker] = useState('');
+  const [show, setShow] = useState(false);
+  const priorities = load('priorities') || [];
+  const todayPriorities = priorities.filter(p => !p.done);
+  const [wins, setWins] = useState({});
+
+  useEffect(function(){ setTimeout(function(){ setShow(true); }, 50); }, []);
+
+  function handleDone() {
+    var time = new Date().toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+    var newLog = Object.assign({}, middayLog);
+    newLog[td] = {
+      energy: energy,
+      focus: focus.trim() || null,
+      blocker: blocker.trim() || null,
+      wins: wins,
+      time: time,
+    };
+    setMiddayLog(newLog);
+    save('middayLog', newLog);
+    onDone();
+  }
+
+  var fadeStyle = {
+    opacity: show ? 1 : 0,
+    transform: show ? 'none' : 'translateY(16px)',
+    transition: 'all 0.4s ease',
+  };
+
+  return e('div', {style:{
+    height:'100dvh', display:'flex', flexDirection:'column',
+    alignItems:'center', justifyContent:'center',
+    background:'#FFFBF0',
+    padding:'32px 28px',
+    paddingTop:'calc(32px + env(safe-area-inset-top))',
+    paddingBottom:'calc(32px + env(safe-area-inset-bottom))',
+    gap:0, overflowY:'auto',
+  }},
+    e('div', Object.assign({}, fadeStyle, {textAlign:'center', width:'100%', maxWidth:340}),
+
+      e('div', {style:{fontSize:40, marginBottom:8}}, '☀️'),
+      e('div', {style:{fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:MIDDAY2,marginBottom:4}}, 'Midday Check-in'),
+      e('div', {style:{fontSize:16,fontWeight:800,color:TEXT,marginBottom:28}}, 'How\'s the day going?'),
+
+      // Energy
+      e('div', {style:{marginBottom:24}},
+        e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:12,textAlign:'left'}}, 'Energy right now?'),
+        e('div', {style:{display:'flex',justifyContent:'space-between',gap:6}},
+          ...ENERGY_OPTS.map(function(opt) {
+            var sel = energy === opt.val;
+            return e('button', {key:opt.val, onClick:function(){setEnergy(opt.val);}, style:{
+              flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+              padding:'10px 4px', borderRadius:14,
+              border:'2px solid '+(sel?MIDDAY:'#E8E8F0'),
+              background: sel ? MIDDAY+'18' : '#fff',
+              cursor:'pointer', fontFamily:'inherit',
+            }},
+              e('span', {style:{fontSize:24, lineHeight:1}}, opt.emoji),
+              e('span', {style:{fontSize:9,fontWeight:700,color:sel?MIDDAY2:MUTED}}, opt.label)
+            );
+          })
+        )
+      ),
+
+      // Morning wins — quick checkbox of today's priorities
+      todayPriorities.length > 0 ? e('div', {style:{marginBottom:24}},
+        e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:10,textAlign:'left'}}, 'Morning wins — what got done?'),
+        ...todayPriorities.slice(0,5).map(function(p) {
+          var checked = !!wins[p.id];
+          return e('button', {key:p.id, onClick:function(){setWins(function(w){var n=Object.assign({},w);n[p.id]=!n[p.id];return n;});}, style:{
+            display:'flex', alignItems:'center', gap:10,
+            width:'100%', padding:'9px 12px', borderRadius:12,
+            border:'1.5px solid '+(checked?MIDDAY:'#E8E8F0'),
+            background: checked ? MIDDAY+'15' : '#fff',
+            cursor:'pointer', fontFamily:'inherit', marginBottom:6, textAlign:'left',
+          }},
+            e('div', {style:{
+              width:20, height:20, borderRadius:6, flexShrink:0,
+              background: checked ? MIDDAY : 'transparent',
+              border:'2px solid '+(checked?MIDDAY:'#D0D0E0'),
+              display:'flex', alignItems:'center', justifyContent:'center',
+            }}, checked ? e('span', {style:{color:'#fff',fontSize:12,fontWeight:700}}, '✓') : null),
+            e('span', {style:{fontSize:13,fontWeight:600,color:checked?MIDDAY2:TEXT,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, p.name)
+          );
+        })
+      ) : null,
+
+      // Afternoon focus
+      e('div', {style:{marginBottom:20}},
+        e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:10,textAlign:'left'}}, '#1 focus for the afternoon?'),
+        e('input', {
+          className:'input',
+          style:{marginBottom:0, fontSize:14},
+          placeholder:'What\'s the most important thing left?',
+          value:focus,
+          onInput:function(ev){setFocus(ev.target.value);},
+          maxLength:80,
+        })
+      ),
+
+      // Blocker
+      e('div', {style:{marginBottom:28}},
+        e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:10,textAlign:'left'}}, 'Any blockers? (optional)'),
+        e('input', {
+          className:'input',
+          style:{marginBottom:0, fontSize:14},
+          placeholder:'Stuck on anything?',
+          value:blocker,
+          onInput:function(ev){setBlocker(ev.target.value);},
+          maxLength:120,
+        })
+      ),
+
+      e('button', {
+        onClick:handleDone,
+        style:{
+          width:'100%', padding:'16px', borderRadius:16,
+          background:'linear-gradient(135deg,'+MIDDAY+','+MIDDAY2+')',
+          border:'none', color:'#fff', fontSize:16, fontWeight:800,
+          cursor:'pointer', fontFamily:'inherit',
+          boxShadow:'0 6px 20px rgba(245,158,11,0.35)',
+        }
+      }, 'Lock in the afternoon →'),
+
+      e('button', {
+        onClick:onDone,
+        style:{fontSize:13,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'12px 8px',marginTop:4}
+      }, 'Skip')
+    )
+  );
+}
+
+function MiddayHistory({ onBack, middayLog }) {
+  var entries = Object.keys(middayLog||{})
+    .filter(k => !k.includes('_'))
+    .sort()
+    .reverse()
+    .slice(0,14);
+
+  return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:20}},
+      e('button', {onClick:onBack, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:20,fontWeight:800,color:TEXT}}, 'Midday History')
+    ),
+
+    entries.length === 0 ? e('div', {style:{textAlign:'center',color:MUTED,marginTop:60}}, 'No check-ins yet.') :
+    entries.map(function(date) {
+      var entry = middayLog[date];
+      var dispDate = new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+      var energyOpt = ENERGY_OPTS.find(o=>o.val===entry.energy);
+      return e('div', {key:date, style:{
+        background:'#fff', borderRadius:14, padding:'14px 16px', marginBottom:12,
+        border:'1px solid rgba(245,158,11,0.2)',
+      }},
+        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, dispDate),
+          e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+            energyOpt ? e('span', {style:{fontSize:18}}, energyOpt.emoji) : null,
+            entry.time ? e('span', {style:{fontSize:11,color:MUTED}}, entry.time) : null
+          )
+        ),
+        entry.focus ? e('div', {style:{fontSize:13,color:TEXT,marginBottom:4}},
+          e('span', {style:{fontWeight:700,color:MIDDAY2}}, '🎯 '), entry.focus
+        ) : null,
+        entry.blocker ? e('div', {style:{fontSize:13,color:'#FF6B6B',marginBottom:4}},
+          e('span', {style:{fontWeight:700}}, '⚠️ '), entry.blocker
+        ) : null
+      );
+    })
+  );
+}
+
 // ─── EVENING ROUTINE COMPONENTS ───────────────────────────────────────────────
 var NIGHT = '#4F46E5';
 var NIGHT2 = '#7C3AED';
@@ -3410,7 +3603,9 @@ function App() {
   const [groceries, setGroceries] = useState([]);
   const [brainDump, setBrainDump] = useState('');
   const [areasData, setAreasData] = useState({});
-  const [morningPhase, setMorningPhase] = useState('done'); // greeting|checklist|complete|checkin|done // 'greeting' | 'checklist' | 'complete' | 'done'
+  const [morningPhase, setMorningPhase] = useState('done');
+  const [middayPhase, setMiddayPhase] = useState('done'); // checkin|history|done
+  const [middayLog, setMiddayLog] = useState({});
   const [routineLog, setRoutineLog] = useState({});
   const [morningItems, setMorningItems] = useState(DEFAULT_MORNING_HABITS);
   const [eveningPhase, setEveningPhase] = useState('done'); // greeting|checklist|complete|done
@@ -3428,8 +3623,8 @@ function App() {
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData','eveningLog','eveningItems','workoutLog'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='jobLog')setJobLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData','eveningLog','eveningItems','workoutLog','middayLog'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='jobLog')setJobLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -3456,7 +3651,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
@@ -3531,6 +3726,13 @@ function App() {
       save('eveningLog', newLog);
     }
     setEveningPhase('checklist');
+  }
+
+  if(!splash && middayPhase === 'checkin') {
+    return e(MiddayCheckin, {onDone:function(){setMiddayPhase('done');}, middayLog:middayLog, setMiddayLog:setMiddayLog});
+  }
+  if(!splash && middayPhase === 'history') {
+    return e(MiddayHistory, {onBack:function(){setMiddayPhase('done');}, middayLog:middayLog});
   }
 
   if(!splash && eveningPhase === 'greeting') {

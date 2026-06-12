@@ -180,7 +180,7 @@ Work through this in order. Check off items as they are completed.
 ### 📅 CALENDAR & SCHEDULE
 
 **Phase 1 — HQ Day View** *(Day 1 — 1 session, frontend only)*
-- [ ] **HQ day view** — Visual timeline of the day pulling from existing priorities + routines. Pure index.html, no backend needed.
+- [x] **HQ day view** — Visual timeline of the day pulling from existing priorities + routines. Pure index.html, no backend needed.
 
 **Phase 2 — Google Calendar Sync** *(Days 2-4, requires Supabase backend)*
 - [ ] **Supabase setup + OAuth scaffolding** *(Day 2)* — Supabase project, Google OAuth app config, token storage.
