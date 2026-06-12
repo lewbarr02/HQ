@@ -3307,6 +3307,248 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   );
 }
 
+function MacroScreen({ setTab }) {
+  var DEFAULT_TARGETS = {cal:2200, protein:180, carbs:200, fat:65};
+  var [macroLog, setMacroLog] = useState(function(){ return load('macroLog') || {}; });
+  var [targets, setTargets] = useState(function(){ return load('macroTargets') || DEFAULT_TARGETS; });
+  var [logDate, setLogDate] = useState(today());
+  var [adding, setAdding] = useState(false);
+  var [editTarget, setEditTarget] = useState(null); // 'cal'|'protein'|'carbs'|'fat'
+  var [targetDraft, setTargetDraft] = useState('');
+  var [form, setForm] = useState({name:'',cal:'',protein:'',carbs:'',fat:''});
+  var [editingMeal, setEditingMeal] = useState(null); // meal id being edited
+
+  var td = today();
+
+  function saveMacroLog(next){ setMacroLog(next); save('macroLog', next); }
+  function saveTargets(next){ setTargets(next); save('macroTargets', next); }
+
+  function shiftDate(d) {
+    var dt = new Date(logDate+'T12:00:00');
+    dt.setDate(dt.getDate()+d);
+    var dk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+    if(dk <= td) setLogDate(dk);
+  }
+
+  var meals = macroLog[logDate] || [];
+  var totals = meals.reduce(function(acc,m){
+    acc.cal += parseFloat(m.cal)||0;
+    acc.protein += parseFloat(m.protein)||0;
+    acc.carbs += parseFloat(m.carbs)||0;
+    acc.fat += parseFloat(m.fat)||0;
+    return acc;
+  }, {cal:0,protein:0,carbs:0,fat:0});
+
+  function addMeal() {
+    if(!form.name.trim()) return;
+    var meal = {
+      id: Date.now().toString(),
+      name: form.name.trim(),
+      cal: parseFloat(form.cal)||0,
+      protein: parseFloat(form.protein)||0,
+      carbs: parseFloat(form.carbs)||0,
+      fat: parseFloat(form.fat)||0,
+    };
+    var next = Object.assign({}, macroLog);
+    if(editingMeal) {
+      next[logDate] = (next[logDate]||[]).map(function(m){ return m.id===editingMeal ? meal : m; });
+      meal.id = editingMeal;
+      next[logDate] = (next[logDate]||[]).map(function(m){ return m.id===editingMeal ? Object.assign({},meal,{id:editingMeal}) : m; });
+    } else {
+      next[logDate] = (next[logDate]||[]).concat([meal]);
+    }
+    saveMacroLog(next);
+    setForm({name:'',cal:'',protein:'',carbs:'',fat:''});
+    setAdding(false);
+    setEditingMeal(null);
+  }
+
+  function deleteMeal(id) {
+    var next = Object.assign({}, macroLog);
+    next[logDate] = (next[logDate]||[]).filter(function(m){ return m.id!==id; });
+    saveMacroLog(next);
+  }
+
+  function startEdit(meal) {
+    setForm({name:meal.name,cal:String(meal.cal||''),protein:String(meal.protein||''),carbs:String(meal.carbs||''),fat:String(meal.fat||'')});
+    setEditingMeal(meal.id);
+    setAdding(true);
+  }
+
+  function commitTarget() {
+    var v = parseFloat(targetDraft);
+    if(!isNaN(v) && v > 0) {
+      var next = Object.assign({}, targets, {[editTarget]: Math.round(v)});
+      saveTargets(next);
+    }
+    setEditTarget(null);
+    setTargetDraft('');
+  }
+
+  var isToday = logDate === td;
+  var dispDate = isToday ? 'Today' : new Date(logDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+
+  var MACRO_BARS = [
+    {key:'cal',    label:'Calories', unit:'kcal', color:'#FF6B35'},
+    {key:'protein',label:'Protein',  unit:'g',    color:'#00C6FF'},
+    {key:'carbs',  label:'Carbs',    unit:'g',    color:'#FFB347'},
+    {key:'fat',    label:'Fat',      unit:'g',    color:'#7B2FFF'},
+  ];
+
+  return e('div', {className:'content'},
+    // Header
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:20,fontWeight:800,color:TEXT}}, '🥗 Macros'),
+      e('div', {style:{display:'flex',alignItems:'center',gap:4,marginLeft:'auto'}},
+        e('button', {onClick:function(){shiftDate(-1);}, style:{background:'none',border:'none',fontSize:18,color:MUTED,cursor:'pointer',padding:'2px 6px',lineHeight:1}}, '‹'),
+        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,minWidth:60,textAlign:'center'}}, dispDate),
+        e('button', {onClick:function(){shiftDate(1);}, disabled:isToday, style:{background:'none',border:'none',fontSize:18,color:isToday?'#ddd':MUTED,cursor:isToday?'default':'pointer',padding:'2px 6px',lineHeight:1}}, '›')
+      )
+    ),
+
+    // Progress bars
+    e('div', {className:'card', style:{marginBottom:16}},
+      ...MACRO_BARS.map(function(bar, i){
+        var val = Math.round(totals[bar.key]);
+        var tgt = targets[bar.key];
+        var pct = Math.min(100, Math.round(val/tgt*100));
+        var over = val > tgt;
+        return e('div', {key:bar.key, style:{marginBottom: i<3?14:0}},
+          e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:5}},
+            e('button', {
+              onClick:function(){ setEditTarget(bar.key); setTargetDraft(String(tgt)); },
+              style:{background:'none',border:'none',padding:0,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}
+            },
+              e('span', {style:{fontSize:12,fontWeight:700,color:TEXT}}, bar.label),
+              e('span', {style:{fontSize:10,color:MUTED,marginLeft:4}}, '(tap to edit target)')
+            ),
+            e('div', {style:{fontSize:12,fontWeight:800,color:over?'#FF6B6B':bar.color}},
+              val+' / '+tgt+' '+bar.unit,
+              over ? e('span',{style:{fontSize:10,marginLeft:4,color:'#FF6B6B'}}, '▲') : null
+            )
+          ),
+          e('div', {style:{height:10,background:'#F0F2F8',borderRadius:5,overflow:'hidden'}},
+            e('div', {style:{
+              height:'100%',
+              width:pct+'%',
+              background: over ? '#FF6B6B' : bar.color,
+              borderRadius:5,
+              transition:'width 0.3s',
+            }})
+          )
+        );
+      })
+    ),
+
+    // Edit target modal
+    editTarget ? e('div', {style:{
+      position:'fixed',inset:0,zIndex:100,background:'rgba(0,0,0,0.4)',
+      display:'flex',alignItems:'center',justifyContent:'center',padding:24,
+    }},
+      e('div', {style:{background:'#fff',borderRadius:20,padding:24,width:'100%',maxWidth:320}},
+        e('div', {style:{fontSize:16,fontWeight:800,color:TEXT,marginBottom:16}},
+          'Edit '+MACRO_BARS.find(function(b){return b.key===editTarget;}).label+' target'
+        ),
+        e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:20}},
+          e('input', {
+            type:'number', min:1,
+            value:targetDraft,
+            onInput:function(ev){setTargetDraft(ev.target.value);},
+            onKeyDown:function(ev){if(ev.key==='Enter')commitTarget();},
+            style:{flex:1,padding:'12px 14px',borderRadius:12,border:'1.5px solid '+BORDER,fontSize:20,fontWeight:700,textAlign:'center',fontFamily:'inherit',color:TEXT},
+            autoFocus:true,
+          }),
+          e('span', {style:{fontSize:14,color:MUTED}}, MACRO_BARS.find(function(b){return b.key===editTarget;}).unit)
+        ),
+        e('div', {style:{display:'flex',gap:8}},
+          e('button', {onClick:function(){setEditTarget(null);setTargetDraft('');}, style:{flex:1,padding:'12px',borderRadius:12,background:CARD2,border:'none',color:MUTED,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel'),
+          e('button', {onClick:commitTarget, style:{flex:2,padding:'12px',borderRadius:12,background:ACCENT,border:'none',color:'#1A1833',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
+        )
+      )
+    ) : null,
+
+    // Add meal button
+    !adding ? e('button', {
+      onClick:function(){ setForm({name:'',cal:'',protein:'',carbs:'',fat:''}); setEditingMeal(null); setAdding(true); },
+      style:{
+        width:'100%',padding:'14px',borderRadius:14,marginBottom:16,
+        background:'linear-gradient(135deg,'+ACCENT+'20,'+PURPLE+'15)',
+        border:'1.5px dashed '+ACCENT+'60',
+        color:ACCENT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+      }
+    }, '+ Log a meal') : null,
+
+    // Add/edit meal form
+    adding ? e('div', {style:{background:'#fff',borderRadius:16,border:'1.5px solid '+ACCENT+'40',padding:'16px',marginBottom:16}},
+      e('div', {style:{fontSize:14,fontWeight:800,color:TEXT,marginBottom:12}}, editingMeal ? 'Edit meal' : 'Log meal'),
+      e('input', {
+        className:'input', style:{marginBottom:10,fontSize:15},
+        placeholder:'Meal name (e.g. Chicken + rice)',
+        value:form.name,
+        onInput:function(ev){setForm(function(f){return Object.assign({},f,{name:ev.target.value});});},
+        autoFocus:true,
+      }),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}},
+        ...MACRO_BARS.map(function(bar){
+          return e('div', {key:bar.key},
+            e('div', {style:{fontSize:10,fontWeight:700,color:bar.color,marginBottom:4,textTransform:'uppercase',letterSpacing:0.5}}, bar.label+' ('+bar.unit+')'),
+            e('input', {
+              type:'number', min:0,
+              className:'input',
+              style:{marginBottom:0,fontSize:15,fontWeight:700,textAlign:'center'},
+              placeholder:'0',
+              value:form[bar.key],
+              onInput:function(ev){var v=ev.target.value;setForm(function(f){return Object.assign({},f,{[bar.key]:v});});},
+              onKeyDown:function(ev){if(ev.key==='Enter')addMeal();},
+            })
+          );
+        })
+      ),
+      e('div', {style:{display:'flex',gap:8}},
+        e('button', {onClick:function(){setAdding(false);setEditingMeal(null);setForm({name:'',cal:'',protein:'',carbs:'',fat:''});},
+          style:{flex:1,padding:'12px',borderRadius:12,background:CARD2,border:'none',color:MUTED,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        }, 'Cancel'),
+        e('button', {onClick:addMeal,
+          style:{flex:2,padding:'12px',borderRadius:12,background:ACCENT,border:'none',color:'#1A1833',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+        }, editingMeal ? 'Update' : 'Save meal')
+      )
+    ) : null,
+
+    // Meal list
+    meals.length === 0 && !adding
+      ? e('div', {style:{textAlign:'center',color:MUTED,marginTop:32,fontSize:14,lineHeight:1.7}}, 'No meals logged yet today.\nTap above to add your first one.')
+      : e('div', {},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, "Today's meals"),
+          ...meals.map(function(meal){
+            return e('div', {key:meal.id, style:{
+              background:'#fff',borderRadius:14,padding:'12px 14px',marginBottom:8,
+              border:'1px solid '+BORDER,display:'flex',alignItems:'flex-start',gap:10,
+            }},
+              e('div', {style:{flex:1}},
+                e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:5}}, meal.name),
+                e('div', {style:{display:'flex',gap:10,flexWrap:'wrap'}},
+                  ...MACRO_BARS.map(function(bar){
+                    var v = parseFloat(meal[bar.key])||0;
+                    if(!v && bar.key!=='cal') return null;
+                    return e('span', {key:bar.key, style:{fontSize:11,fontWeight:700,color:bar.color,background:bar.color+'12',padding:'2px 7px',borderRadius:6}},
+                      v+' '+bar.unit+(bar.key==='cal'?'':' '+bar.label.toLowerCase())
+                    );
+                  })
+                )
+              ),
+              e('div', {style:{display:'flex',gap:4,flexShrink:0}},
+                e('button', {onClick:function(){startEdit(meal);}, style:{background:'none',border:'none',color:MUTED,fontSize:14,cursor:'pointer',padding:'2px 4px',lineHeight:1}}, '✏️'),
+                e('button', {onClick:function(){deleteMeal(meal.id);}, style:{background:'none',border:'none',color:'#FDA29B',fontSize:16,cursor:'pointer',padding:'2px 4px',lineHeight:1}}, '×')
+              )
+            );
+          })
+        ),
+
+    e('div', {style:{height:24}})
+  );
+}
+
 function ProgressPhotosScreen({ setTab }) {
   var [index, setIndex] = useState(function(){ return load('photoIndex') || []; });
   var [viewing, setViewing] = useState(null); // {date, dataUrl, note}
@@ -4136,6 +4378,7 @@ function App() {
   ];
   const MORE_ITEMS = [
     {id:'fitness',icon:'💪',label:'Fitness'},
+    {id:'macros',icon:'🥗',label:'Macros'},
     {id:'foodpipeline',icon:'🍽️',label:'Food Pipeline'},
     {id:'photos',icon:'📸',label:'Progress Photos'},
     {id:'grocery',icon:'🛒',label:'Grocery List'},
@@ -4153,6 +4396,7 @@ function App() {
       case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab});
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog});
+      case 'macros': return e(MacroScreen, {setTab});
       case 'foodpipeline': return e(FoodPipelineScreen, {setTab});
       case 'photos': return e(ProgressPhotosScreen, {setTab});
       case 'grocery': return e(GroceryScreen, {groceries,setGroceries,setTab});
