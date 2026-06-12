@@ -3433,16 +3433,26 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     function renderAnalysis(text) {
       return text.split('\n').map(function(line, i) {
         if(!line.trim()) return e('div',{key:i,style:{height:8}});
-        // Bold headers like **Overall Assessment**
+        // Strip markdown heading prefixes
+        var h1 = line.match(/^#\s+(.+)/);
+        var h2 = line.match(/^##\s+(.+)/);
+        var h3 = line.match(/^###\s+(.+)/);
+        if(h1) return e('div',{key:i,style:{fontSize:17,fontWeight:800,color:TEXT,marginTop:8,marginBottom:2}}, h1[1]);
+        if(h2) return e('div',{key:i,style:{fontSize:15,fontWeight:800,color:TEXT,marginTop:10,marginBottom:2,borderBottom:'1px solid '+BORDER,paddingBottom:4}}, h2[1]);
+        if(h3) return e('div',{key:i,style:{fontSize:13,fontWeight:700,color:TEXT,marginTop:6,marginBottom:2}}, h3[1]);
+        // Bold **text**
         var parts = line.split(/(\*\*[^*]+\*\*)/g);
         var rendered = parts.map(function(p,pi){
           if(p.startsWith('**')&&p.endsWith('**')) return e('strong',{key:pi,style:{color:TEXT}},p.slice(2,-2));
           return p;
         });
-        var isHeader = line.startsWith('**') || /^\d+\./.test(line.trim());
+        var isNumbered = /^\d+\./.test(line.trim());
+        var isBullet = /^[-*]\s/.test(line.trim());
         return e('div',{key:i,style:{
-          fontSize:14,lineHeight:1.7,color:isHeader?TEXT:'#444',
-          fontWeight:isHeader?700:400,marginBottom:isHeader?2:0,
+          fontSize:14,lineHeight:1.7,color:'#444',
+          fontWeight:isNumbered?600:400,
+          marginBottom:isNumbered||isBullet?2:0,
+          paddingLeft:isBullet?12:0,
         }}, ...rendered);
       });
     }
