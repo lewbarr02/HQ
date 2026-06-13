@@ -70,7 +70,7 @@ const _SB = supabase.createClient(
   'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'
 );
 
-const VAPID_PUBLIC_KEY = 'BGFaXY74EeQQeLS9M2WveUDAi_zzXzzqJGRF6MxMT9087GKzKKJ433zHACbpXqGyrmGu7LuFuy38z7Z2FRBm37U';
+const VAPID_PUBLIC_KEY = 'lYVC-go6DgHI4n1-1fQyONiCN3d9dr9cNv13ilzVc-JtXdJF4BBGzNk5mRlPWOTxE0iTU-mv8bA-3J45aci-OA';
 
 // ── Google Calendar OAuth ──────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = '694107816016-fei91g54rfhk4ovr4rqpcjgtfjshl1sf.apps.googleusercontent.com';
@@ -3964,6 +3964,7 @@ function NotificationsScreen({ setTab }) {
   });
   var [subscribed, setSubscribed] = useState(false);
   var [loading, setLoading] = useState(false);
+  var [testLoading, setTestLoading] = useState(false);
   var [msg, setMsg] = useState('');
 
   useEffect(function(){
@@ -3993,6 +3994,23 @@ function NotificationsScreen({ setTab }) {
     await unsubscribeFromPush();
     setSubscribed(false); setLoading(false);
     setMsg('Notifications disabled.');
+  }
+
+  async function handleTest() {
+    setTestLoading(true); setMsg('');
+    try {
+      var resp = await fetch(SUPABASE_FN+'/send-push', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON},
+        body: JSON.stringify({type:'test'})
+      });
+      var data = await resp.json();
+      if (data.sent > 0) setMsg('✅ Test sent! Check for a notification.');
+      else setMsg('⚠️ No subscriptions found — try re-enabling notifications.');
+    } catch(err) {
+      setMsg('❌ Error: '+(err.message||'Could not reach server'));
+    }
+    setTestLoading(false);
   }
 
   var SCHEDULES = [
@@ -4043,6 +4061,13 @@ function NotificationsScreen({ setTab }) {
         );
       })
     ),
+
+    // Test button (only when subscribed)
+    subscribed ? e('div', {className:'card', style:{marginBottom:16,textAlign:'center'}},
+      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12}}, 'Verify everything is wired up'),
+      e('button', {onClick:handleTest, disabled:testLoading, style:{padding:'11px 24px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,color:TEXT,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:14}},
+        testLoading ? 'Sending...' : '🧪 Send test notification')
+    ) : null,
 
     // PWA install hint
     e('div', {style:{padding:'12px 16px',borderRadius:14,background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.2)'}},
