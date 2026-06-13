@@ -4062,12 +4062,12 @@ function NotificationsScreen({ setTab }) {
       })
     ),
 
-    // Test button (only when subscribed)
-    subscribed ? e('div', {className:'card', style:{marginBottom:16,textAlign:'center'}},
+    // Test button
+    e('div', {className:'card', style:{marginBottom:16,textAlign:'center'}},
       e('div', {style:{fontSize:13,color:MUTED,marginBottom:12}}, 'Verify everything is wired up'),
-      e('button', {onClick:handleTest, disabled:testLoading, style:{padding:'11px 24px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,color:TEXT,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:14}},
+      e('button', {onClick:handleTest, disabled:testLoading || !subscribed, style:{padding:'11px 24px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,color:subscribed?TEXT:MUTED,fontWeight:700,cursor:subscribed?'pointer':'default',fontFamily:'inherit',fontSize:14,opacity:subscribed?1:0.4}},
         testLoading ? 'Sending...' : '🧪 Send test notification')
-    ) : null,
+    ),
 
     // PWA install hint
     e('div', {style:{padding:'12px 16px',borderRadius:14,background:'rgba(245,158,11,0.08)',border:'1px solid rgba(245,158,11,0.2)'}},
