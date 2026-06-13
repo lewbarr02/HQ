@@ -3999,14 +3999,17 @@ function NotificationsScreen({ setTab }) {
   async function handleTest() {
     setTestLoading(true); setMsg('');
     try {
+      var reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription();
+      if (!sub) { setMsg('⚠️ No subscription found — try re-enabling notifications.'); setTestLoading(false); return; }
       var resp = await fetch(SUPABASE_FN+'/send-push', {
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON},
-        body: JSON.stringify({type:'test'})
+        body: JSON.stringify({type:'test', subscription: sub.toJSON()})
       });
       var data = await resp.json();
       if (data.sent > 0) setMsg('✅ Test sent! Check for a notification.');
-      else setMsg('⚠️ No subscriptions found — try re-enabling notifications.');
+      else setMsg('❌ Send failed: '+(data.errors?.[0]?.error||'unknown error'));
     } catch(err) {
       setMsg('❌ Error: '+(err.message||'Could not reach server'));
     }
