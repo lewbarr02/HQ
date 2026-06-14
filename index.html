@@ -474,7 +474,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -593,56 +593,51 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
       e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
       e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
     ),
-    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '🌅 Morning'),
-      e('div', {style:{display:'flex',gap:6}},
-        e('button', {
-          onClick: function(){ setMorningPhase('greeting'); },
-          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'linear-gradient(135deg,'+ACCENT+'20,'+PURPLE+'15)',border:'1.5px solid '+ACCENT+'40',color:ACCENT,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-        }, '🌅 Start'),
-        e('button', {
-          onClick: function(){ setMorningPhase('history'); },
-          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'#FFB34715',border:'1.5px solid #FFB34740',color:'#FFB347',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-        }, '📊 History')
+    e('div', {style:{marginBottom:16}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Routines'),
+      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}},
+        // Morning
+        (function(){
+          var amDone = !!(routineLog && routineLog[td+'_done']);
+          var DONE_C = '#10B981', TODO_C = '#EF4444';
+          return e('div', {key:'morning', className:'stat-tile', onClick:function(){ setMorningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(amDone?DONE_C+'60':TODO_C+'50'),background:amDone?DONE_C+'08':TODO_C+'06'}},
+            e('div', {style:{fontSize:20,marginBottom:4}}, '🌅'),
+            e('div', {style:{fontSize:22,fontWeight:800,color:amDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, amDone?'✓':'!'),
+            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Morning')
+          );
+        })(),
+        // Midday
+        (function(){
+          var mdDone = !!(middayLog && middayLog[td]);
+          var DONE_C = '#10B981', TODO_C = '#EF4444';
+          return e('div', {key:'midday', className:'stat-tile', onClick:function(){ setMiddayPhase && setMiddayPhase('checkin'); }, style:{cursor:'pointer',border:'1.5px solid '+(mdDone?DONE_C+'60':TODO_C+'50'),background:mdDone?DONE_C+'08':TODO_C+'06'}},
+            e('div', {style:{fontSize:20,marginBottom:4}}, '☀️'),
+            e('div', {style:{fontSize:22,fontWeight:800,color:mdDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, mdDone?'✓':'!'),
+            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Midday')
+          );
+        })(),
+        // Evening
+        (function(){
+          var evDone = !!(eveningLog && eveningLog[td+'_done']);
+          var DONE_C = '#10B981', TODO_C = '#EF4444';
+          return e('div', {key:'evening', className:'stat-tile', onClick:function(){ setEveningPhase && setEveningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(evDone?DONE_C+'60':TODO_C+'50'),background:evDone?DONE_C+'08':TODO_C+'06'}},
+            e('div', {style:{fontSize:20,marginBottom:4}}, '🌙'),
+            e('div', {style:{fontSize:22,fontWeight:800,color:evDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, evDone?'✓':'!'),
+            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Evening')
+          );
+        })(),
+        // Post Workout
+        (function(){
+          var safePwLog = pwLog || {};
+          var pwDone = !!(safePwLog[td+'_done']);
+          var DONE_C = '#10B981', TODO_C = '#EF4444';
+          return e('div', {key:'postworkout', className:'stat-tile', onClick:function(){ setPostWorkoutPhase && setPostWorkoutPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(pwDone?DONE_C+'60':TODO_C+'50'),background:pwDone?DONE_C+'08':TODO_C+'06'}},
+            e('div', {style:{fontSize:20,marginBottom:4}}, '🏋️'),
+            e('div', {style:{fontSize:22,fontWeight:800,color:pwDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, pwDone?'✓':'!'),
+            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Post Workout')
+          );
+        })()
       )
-    ),
-    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '☀️ Midday'),
-      e('div', {style:{display:'flex',gap:6}},
-        e('button', {
-          onClick: function(){ setMiddayPhase && setMiddayPhase('checkin'); },
-          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'rgba(245,158,11,0.12)',border:'1.5px solid rgba(245,158,11,0.35)',color:'#D97706',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-        }, '☀️ Check In'),
-        e('button', {
-          onClick: function(){ setMiddayPhase && setMiddayPhase('history'); },
-          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'rgba(245,158,11,0.08)',border:'1.5px solid rgba(245,158,11,0.2)',color:'#F59E0B',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-        }, '📊 History')
-      )
-    ),
-    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '🌙 Evening'),
-      e('div', {style:{display:'flex',gap:6}},
-        e('button', {
-          onClick: function(){ setEveningPhase && setEveningPhase('greeting'); },
-          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'linear-gradient(135deg,#4F46E520,#7C3AED15)',border:'1.5px solid #4F46E540',color:'#4F46E5',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-        }, '🌙 Start'),
-        e('button', {
-          onClick: function(){ setEveningPhase && setEveningPhase('history'); },
-          style:{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:20,background:'#7C3AED15',border:'1.5px solid #7C3AED40',color:'#7C3AED',fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
-        }, '📊 History')
-      )
-    ),
-    e('div', {style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:16}},
-      ...[
-        {icon:'✅',val:doneCount + (routineLog && routineLog[td] ? Object.values(routineLog[td]).filter(Boolean).length : 0),lbl:'Habits',color:ACCENT},
-        {icon:'🌅',val:calcMorningStreak(routineLog||{}),lbl:'AM Streak',color:'#FFB347'},
-        {icon:'🎯',val:goals.filter(g=>!g.done).length,lbl:'Goals',color:PURPLE},
-        {icon:'🔥',val:streak,lbl:'Streak',color:'#FF6B35'},
-      ].map(t => e('div', {key:t.lbl, className:'stat-tile'},
-        e('div', {style:{fontSize:20,marginBottom:4}}, t.icon),
-        e('div', {style:{fontSize:22,fontWeight:800,color:t.color,lineHeight:1,marginBottom:2}}, t.val),
-        e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, t.lbl)
-      ))
     ),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, "Today's Non-Negotiables"),
@@ -2984,6 +2979,371 @@ function EveningComplete({ onContinue, eveningLog, eveningItems }) {
   );
 }
 
+// ─── POST WORKOUT ROUTINE COMPONENTS ─────────────────────────────────────────
+var PW  = '#10B981';
+var PW2 = '#059669';
+
+const DEFAULT_POST_WORKOUT_HABITS = [
+  { id:'pw1', name:'Shower',     emoji:'🚿' },
+  { id:'pw2', name:'Lotion',     emoji:'🧴' },
+  { id:'pw3', name:'Manscape',   emoji:'✂️' },
+  { id:'pw4', name:'Deodorant',  emoji:'🌬️' },
+  { id:'pw5', name:'Cologne',    emoji:'💎' },
+  { id:'pw6', name:'Durag',      emoji:'👑' },
+];
+
+function calcPostWorkoutStreak(pwLog) {
+  var streak = 0;
+  var d = new Date();
+  for(var i=0;i<365;i++){
+    var dk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(!pwLog[dk+'_done'] || pwLog[dk+'_test']) break;
+    streak++; d.setDate(d.getDate()-1);
+  }
+  return streak;
+}
+
+function calcPostWorkoutTime(pwLog, date) {
+  var s = pwLog[date+'_start'], d = pwLog[date+'_done'];
+  if(!s || !d) return null;
+  function toMin(t){ var m=t.match(/(\d+):(\d+)\s*(AM|PM)/i);if(!m)return null;var h=parseInt(m[1]),mn=parseInt(m[2]),pm=m[3].toUpperCase()==='PM';if(pm&&h!==12)h+=12;if(!pm&&h===12)h=0;return h*60+mn; }
+  var sm=toMin(s), dm=toMin(d);
+  if(sm===null||dm===null)return null;
+  var diff=dm-sm; if(diff<0)diff+=1440; return diff;
+}
+
+function PostWorkoutGreeting({ onStart }) {
+  const [testMode, setTestMode] = useState(false);
+  return e('div', {style:{
+    height:'100dvh', display:'flex', flexDirection:'column',
+    alignItems:'center', justifyContent:'center',
+    background:'linear-gradient(160deg,'+PW+'0A,'+PW2+'06,#fff 70%)',
+    padding:'32px 28px',
+    paddingTop:'calc(32px + env(safe-area-inset-top))',
+    paddingBottom:'calc(32px + env(safe-area-inset-bottom))',
+    textAlign:'center', gap:24,
+  }},
+    e('div', {style:{fontSize:80,lineHeight:1}}, '🏋️'),
+    e('div', {style:{fontSize:28,fontWeight:800,color:TEXT,lineHeight:1.3}},
+      'Post Workout,', e('br'), e('span',{style:{background:'linear-gradient(135deg,'+PW+','+PW2+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'Lewis.')
+    ),
+    e('div', {style:{fontSize:16,color:MUTED,lineHeight:1.6,maxWidth:280}}, "You put in the work. Now lock in the recovery routine."),
+    e('button', {
+      onClick: function(){ onStart(testMode); },
+      style:{
+        padding:'18px 48px', borderRadius:18,
+        background: testMode ? '#FF950020' : 'linear-gradient(135deg,'+PW+','+PW2+')',
+        border: testMode ? '2px solid #FF9500' : 'none',
+        color: testMode ? '#FF9500' : 'white',
+        fontSize:17, fontWeight:800,
+        cursor:'pointer', fontFamily:'inherit', letterSpacing:0.3,
+        boxShadow: testMode ? 'none' : '0 8px 24px '+PW+'50',
+        width:'100%', maxWidth:300,
+      }
+    }, testMode ? '🧪 Start Test Run' : "Let's Clean Up →"),
+    e('button', {
+      onClick: function(){ setTestMode(function(v){return !v;}); },
+      style:{
+        display:'flex', alignItems:'center', gap:8,
+        padding:'10px 18px', borderRadius:20,
+        border:'1.5px solid '+(testMode?'#FF9500':'#E0E0F0'),
+        background: testMode ? '#FF950012' : '#F7F8FC',
+        color: testMode ? '#FF9500' : MUTED,
+        fontSize:12, fontWeight:700, cursor:'pointer', fontFamily:'inherit',
+      }
+    },
+      e('div', {style:{width:32,height:18,borderRadius:9,position:'relative',background:testMode?'#FF9500':'#D0D0E0',transition:'background 0.2s',flexShrink:0}},
+        e('div', {style:{position:'absolute',top:2,left:testMode?14:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left 0.2s',boxShadow:'0 1px 3px rgba(0,0,0,0.2)'}})
+      ),
+      testMode ? "🧪 Test Mode ON — won't count toward stats" : 'Test Mode'
+    ),
+    e('button', {
+      onClick: function(){ onStart(false); },
+      style:{fontSize:13,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:8}
+    }, 'Skip to dashboard')
+  );
+}
+
+function PostWorkoutChecklist({ onComplete, onSkipToDashboard, pwLog, setPwLog, pwItems, setPwItems }) {
+  const td = today();
+  const done = pwLog[td] || {};
+  const [attempted, setAttempted] = useState(false);
+  const [showBlockerModal, setShowBlockerModal] = useState(false);
+  const [blockers, setBlockers] = useState({});
+  const [editing, setEditing] = useState(false);
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemEmoji, setNewItemEmoji] = useState('');
+  var safeItems = pwItems || DEFAULT_POST_WORKOUT_HABITS;
+  const allDone = safeItems.every(function(h){return done[h.id];});
+  const doneCount = safeItems.filter(function(h){return done[h.id];}).length;
+  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','✂️','🧴','💎','👑','🌬️','🧹','💪🏽','🔌','🛁','👟','🎸','💻','📱'];
+
+  function addItem() {
+    if(!newItemName.trim()) return;
+    var newItem = {id:'pw'+Date.now(), name:newItemName.trim(), emoji:newItemEmoji||'✅'};
+    var next = [...safeItems, newItem];
+    setPwItems(next); save('postWorkoutItems', next);
+    setNewItemName(''); setNewItemEmoji('');
+  }
+  function removeItem(id) {
+    var next = safeItems.filter(function(h){return h.id!==id;});
+    setPwItems(next); save('postWorkoutItems', next);
+  }
+  function toggle(id) {
+    var next = {...done, [id]: !done[id]};
+    var newLog = {...pwLog, [td]: next};
+    if(!pwLog[td+'_start']) newLog[td+'_start'] = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    setPwLog(newLog);
+    save('postWorkoutLog', newLog);
+  }
+  function handleBlockerSubmit() {
+    var finishTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    var newLog = {...pwLog, [td+'_done']: finishTime, [td+'_partial']: true, [td+'_blockers']: blockers};
+    setPwLog(newLog);
+    save('postWorkoutLog', newLog);
+    onComplete();
+  }
+  function handleComplete() {
+    if(!allDone) { setAttempted(true); return; }
+    var finishTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    var newLog = {...pwLog, [td+'_done']: finishTime};
+    setPwLog(newLog);
+    save('postWorkoutLog', newLog);
+    onComplete();
+  }
+  var incomplete = safeItems.filter(function(h){return !done[h.id];});
+
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
+    e('div', {style:{padding:'16px 20px 12px',background:'#fff',borderBottom:'1px solid '+BORDER,display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800}}, '🏋️ Post Workout'),
+        e('div', {style:{fontSize:12,color:MUTED,marginTop:2}}, doneCount+' of '+safeItems.length+' complete')
+      ),
+      e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
+        e('button', {onClick:function(){setEditing(function(v){return !v;});}, style:{fontSize:12,fontWeight:700,color:editing?PW:MUTED,background:editing?PW+'10':'none',border:editing?'1.5px solid '+PW+'40':'none',borderRadius:16,padding:'4px 10px',cursor:'pointer',fontFamily:'inherit'}}, editing?'✓ Done':'✏️ Edit'),
+        e('button', {onClick:onSkipToDashboard, style:{fontSize:12,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Skip')
+      )
+    ),
+    e('div', {style:{height:4,background:CARD2,flexShrink:0}},
+      e('div', {style:{height:'100%',width:(doneCount/safeItems.length*100)+'%',background:'linear-gradient(90deg,'+PW+','+PW2+')',transition:'width 0.4s cubic-bezier(.34,1.56,.64,1)'}})
+    ),
+    e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'16px'}},
+      editing ? e('div', {style:{marginBottom:16}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Edit Routine Items'),
+        e('div', {style:{display:'flex',gap:8,marginBottom:10}},
+          e('input', {className:'input', style:{width:54,marginBottom:0,textAlign:'center',fontSize:18,padding:'8px'}, placeholder:'😀', value:newItemEmoji, onInput:function(ev){setNewItemEmoji(ev.target.value);}}),
+          e('input', {className:'input', style:{flex:1,marginBottom:0}, placeholder:'Add custom item...', value:newItemName, onInput:function(ev){setNewItemName(ev.target.value);}, onKeyDown:function(ev){if(ev.key==='Enter')addItem();}}),
+          e('button', {onClick:addItem, style:{padding:'0 14px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PW+','+PW2+')',color:'white',fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:48,flexShrink:0}}, '+')
+        ),
+        e('div', {style:{display:'flex',flexWrap:'wrap',gap:6,marginBottom:12}},
+          ...QUICK_EMOJIS.map(function(em){
+            return e('button',{key:em,onClick:function(){setNewItemEmoji(em);},style:{width:36,height:36,borderRadius:8,fontSize:18,border:'1.5px solid '+BORDER,background:newItemEmoji===em?PW+'15':CARD2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},em);
+          })
+        )
+      ) : null,
+      ...safeItems.map(function(h) {
+        var isDone = !!done[h.id];
+        return e('div', {key:h.id, style:{position:'relative',marginBottom:10}},
+          editing ? e('button', {onClick:function(){removeItem(h.id);}, style:{position:'absolute',top:8,right:8,zIndex:10,width:24,height:24,borderRadius:'50%',background:'#FF6B9D',border:'none',color:'white',fontSize:14,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',lineHeight:1}}, '×') : null,
+          e('button', {
+            onClick:function(){if(!editing)toggle(h.id);},
+            style:{display:'flex',alignItems:'center',gap:16,width:'100%',padding:'16px',marginBottom:0,borderRadius:16,border:'none',cursor:'pointer',background:isDone?('linear-gradient(135deg,'+PW+'12,'+PW2+'08)'):'#fff',boxShadow:isDone?('0 0 0 2px '+PW+'30'):'0 2px 8px rgba(100,80,220,0.06)',fontFamily:'inherit',textAlign:'left',transition:'all 0.2s'}
+          },
+            e('div', {style:{width:32,height:32,borderRadius:'50%',flexShrink:0,background:isDone?('linear-gradient(135deg,'+PW+','+PW2+')'):'transparent',border:isDone?'none':('2px solid '+BORDER),display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,color:'white',transition:'all 0.25s cubic-bezier(.34,1.56,.64,1)'}}, isDone ? '✓' : ''),
+            e('span', {style:{fontSize:20}}, h.emoji),
+            e('div', {}, e('div', {style:{fontSize:16,fontWeight:isDone?700:600,color:isDone?PW:TEXT}}, h.name))
+          )
+        );
+      }),
+      !editing && attempted && !allDone ? e('div', {style:{margin:'8px 0 16px',padding:'14px 16px',background:'rgba(255,100,100,0.08)',border:'1.5px solid rgba(255,100,100,0.25)',borderRadius:14}},
+        e('div', {style:{fontSize:14,fontWeight:700,color:'#FF6B6B',marginBottom:4}}, '⚠️ '+incomplete.length+' item'+(incomplete.length>1?'s':'')+' remaining'),
+        e('div', {style:{fontSize:13,color:MUTED,lineHeight:1.5,marginBottom:10}}, "Almost done! Log any blockers or move on."),
+        e('div', {style:{marginBottom:10,display:'flex',flexWrap:'wrap',gap:6}},
+          ...incomplete.map(function(h){return e('span',{key:h.id,style:{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:20,background:'rgba(255,100,100,0.1)',color:'#FF6B6B'}}, h.emoji+' '+h.name);})
+        ),
+        e('button', {onClick:function(){setShowBlockerModal(true);}, style:{width:'100%',padding:'12px',borderRadius:12,background:'rgba(255,100,100,0.12)',border:'1.5px solid rgba(255,100,100,0.3)',color:'#FF6B6B',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Move On Anyway →')
+      ) : null,
+      showBlockerModal ? e('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',zIndex:999,display:'flex',alignItems:'flex-end',justifyContent:'center',paddingBottom:'env(safe-area-inset-bottom)'}},
+        e('div', {style:{background:'#fff',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:480}},
+          e('div', {style:{fontSize:17,fontWeight:800,marginBottom:4}}, "What got in the way?"),
+          e('div', {style:{fontSize:13,color:MUTED,marginBottom:20}}, "Log what blocked you — helps track patterns over time."),
+          ...incomplete.map(function(h){
+            return e('div', {key:h.id, style:{marginBottom:14}},
+              e('div', {style:{fontSize:13,fontWeight:700,marginBottom:6,display:'flex',alignItems:'center',gap:6}}, e('span',{},h.emoji), e('span',{},h.name)),
+              e('input', {className:'input', style:{marginBottom:0,fontSize:13}, placeholder:'What got in the way?', value:blockers[h.id]||'', onInput:function(ev){var val=ev.target.value;setBlockers(function(prev){var n=Object.assign({},prev);n[h.id]=val;return n;});} })
+            );
+          }),
+          e('div', {style:{display:'flex',gap:10,marginTop:8}},
+            e('button', {onClick:function(){setShowBlockerModal(false);}, style:{flex:1,padding:'14px',borderRadius:14,border:'1.5px solid '+BORDER,background:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:MUTED}}, 'Cancel'),
+            e('button', {onClick:handleBlockerSubmit, style:{flex:2,padding:'14px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+PW+','+PW2+')',color:'#fff',fontSize:14,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, 'Log & Move On')
+          )
+        )
+      ) : null
+    ),
+    e('div', {style:{padding:'16px',paddingBottom:'calc(16px + env(safe-area-inset-bottom))',background:'#fff',borderTop:'1px solid '+BORDER,flexShrink:0}},
+      e('button', {
+        onClick:handleComplete,
+        style:{width:'100%',padding:18,borderRadius:16,background:allDone?('linear-gradient(135deg,'+PW+','+PW2+')'):'#E8E8F0',border:'none',color:allDone?'white':'#B0B0C0',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',letterSpacing:0.3,transition:'all 0.3s',boxShadow:allDone?('0 8px 24px '+PW+'40'):'none'}
+      }, allDone ? '💪 Complete Post Workout' : doneCount+'/'+safeItems.length+' — Keep Going!')
+    )
+  );
+}
+
+function PostWorkoutComplete({ onContinue, pwLog, pwItems }) {
+  var safeItems = pwItems || DEFAULT_POST_WORKOUT_HABITS;
+  const td = today();
+  const endTime = pwLog[td+'_done'] || new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  const [show, setShow] = useState(false);
+  const streak = calcPostWorkoutStreak(pwLog);
+  const timeTaken = calcPostWorkoutTime(pwLog, td);
+  useEffect(function(){ setTimeout(function(){setShow(true);}, 100); }, []);
+
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,'+PW+'12,'+PW2+'08,#fff 60%)',padding:'32px 28px',paddingTop:'calc(32px + env(safe-area-inset-top))',paddingBottom:'calc(32px + env(safe-area-inset-bottom))',textAlign:'center',gap:20}},
+    e('div', {style:{fontSize:80,lineHeight:1,transform:show?'scale(1)':'scale(0)',transition:'transform 0.5s cubic-bezier(.34,1.56,.64,1)'}}, '💪🏽'),
+    e('div', {style:{opacity:show?1:0,transform:show?'none':'translateY(20px)',transition:'all 0.5s ease 0.2s'}},
+      e('div', {style:{fontSize:26,fontWeight:800,marginBottom:6}}, 'Post Workout'),
+      e('div', {style:{fontSize:26,fontWeight:800,background:'linear-gradient(135deg,'+PW+','+PW2+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, 'Complete! ✓')
+    ),
+    e('div', {style:{opacity:show?1:0,transition:'opacity 0.5s ease 0.4s',color:MUTED,fontSize:15,lineHeight:1.6}}, "Clean, fresh, locked in. That's how it's done. 🏆"),
+    e('div', {style:{background:'#fff',borderRadius:20,padding:'20px 24px',width:'100%',maxWidth:340,boxShadow:'0 4px 20px '+PW+'20',border:'1px solid '+BORDER,opacity:show?1:0,transform:show?'none':'translateY(20px)',transition:'all 0.5s ease 0.5s'}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Post Workout'),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}},
+        e('div', {style:{textAlign:'center'}},
+          e('div',{style:{fontSize:26,fontWeight:800,color:PW}}, safeItems.length),
+          e('div',{style:{fontSize:11,color:MUTED,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}, 'Steps Done')
+        ),
+        e('div', {style:{textAlign:'center'}},
+          e('div',{style:{fontSize:26,fontWeight:800,color:PW2}}, endTime),
+          e('div',{style:{fontSize:11,color:MUTED,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}, 'Finished At')
+        ),
+        e('div', {style:{textAlign:'center'}},
+          e('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:4}},
+            e('span',{style:{fontSize:22}}, '🔥'),
+            e('span',{style:{fontSize:26,fontWeight:800,color:'#FFB347'}}, streak)
+          ),
+          e('div',{style:{fontSize:11,color:MUTED,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}, 'Workout Streak')
+        ),
+        timeTaken ? e('div', {style:{textAlign:'center'}},
+          e('div',{style:{fontSize:26,fontWeight:800,color:'#00C864'}}, timeTaken+'m'),
+          e('div',{style:{fontSize:11,color:MUTED,fontWeight:600,textTransform:'uppercase',letterSpacing:0.5}}, 'Time to Complete')
+        ) : null
+      ),
+      e('div', {style:{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}},
+        ...safeItems.map(function(h){
+          return e('div',{key:h.id,style:{fontSize:12,padding:'4px 10px',borderRadius:20,background:PW+'10',color:PW,fontWeight:600}}, h.emoji+' '+h.name);
+        })
+      )
+    ),
+    e('button', {
+      onClick:onContinue,
+      style:{padding:'18px 48px',borderRadius:18,background:'linear-gradient(135deg,'+PW+','+PW2+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+PW+'40',width:'100%',maxWidth:340,opacity:show?1:0,transition:'opacity 0.5s ease 0.8s'}
+    }, "Back to Dashboard →")
+  );
+}
+
+function PostWorkoutHistory({ onBack, pwLog }) {
+  var completedDays = Object.keys(pwLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !pwLog[d+'_test']; }).sort();
+  var currentStreak = calcPostWorkoutStreak(pwLog);
+  var bestStreak = 0, run = 0;
+  if(completedDays.length) {
+    var allDates = completedDays.slice().sort();
+    run = 1; bestStreak = 1;
+    for(var i=1;i<allDates.length;i++){
+      var prev = new Date(allDates[i-1]+'T12:00:00'), cur = new Date(allDates[i]+'T12:00:00');
+      var diff = Math.round((cur-prev)/(1000*60*60*24));
+      if(diff===1){ run++; if(run>bestStreak) bestStreak=run; } else { run=1; }
+    }
+  }
+  var times = completedDays.map(function(d){ return calcPostWorkoutTime(pwLog, d); }).filter(function(t){ return t && t > 0 && t < 300; });
+  var avgTime = times.length ? Math.round(times.reduce(function(a,b){return a+b;},0)/times.length) : null;
+  var fastestTime = times.length ? Math.min.apply(null,times) : null;
+  var dots = [];
+  for(var j=29;j>=0;j--){
+    var dd = new Date(); dd.setDate(dd.getDate()-j);
+    var dk = dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+    dots.push({dk:dk, done:!!pwLog[dk+'_done'] && !pwLog[dk+'_test']});
+  }
+  var rate30 = Math.round(dots.filter(function(d){return d.done;}).length/30*100);
+  var totalDone = completedDays.length;
+  var statStyle = {background:'#fff',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid '+BORDER,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'};
+  var valStyle = {fontSize:28,fontWeight:800,marginBottom:4};
+  var lblStyle = {fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED};
+
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'20px 20px 8px'}},
+      e('button', {onClick:onBack, style:{background:'none',border:'none',color:MUTED,fontSize:22,cursor:'pointer',padding:4,lineHeight:1}}, '←'),
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🏋️ Post Workout'),
+        e('div', {style:{fontSize:12,color:MUTED}}, 'Historical Performance')
+      )
+    ),
+    e('div', {style:{padding:'12px 20px 32px',display:'flex',flexDirection:'column',gap:16}},
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid #FFB34750'}},
+          e('div', {style:{...valStyle,background:'linear-gradient(135deg,#FFB347,#FF6B35)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
+          e('div', {style:lblStyle}, 'Current Streak'),
+          e('div', {style:{fontSize:10,color:'#FFB347',marginTop:4}}, currentStreak===1?'day':'days 🔥')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid #FFB34730'}},
+          e('div', {style:{...valStyle,color:'#FFB347'}}, bestStreak||'—'),
+          e('div', {style:lblStyle}, 'Best Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, bestStreak>1?bestStreak+' days':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+PW+'40'}},
+          e('div', {style:{...valStyle,color:PW}}, avgTime ? avgTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Avg Completion'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, avgTime?'minutes':'no data yet')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
+          e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime ? fastestTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Fastest Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, fastestTime?'personal best':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+PW2+'40'}},
+          e('div', {style:{...valStyle,color:PW2}}, completedDays.length ? rate30+'%' : '—'),
+          e('div', {style:lblStyle}, '30-Day Rate'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?dots.filter(function(d){return d.done;}).length+' of 30 days':'no data')
+        ),
+        e('div', {style:{...statStyle}},
+          e('div', {style:{...valStyle,color:PW}}, totalDone || '—'),
+          e('div', {style:lblStyle}, 'Total Sessions'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, totalDone?'all-time':'no data')
+        )
+      ),
+      e('div', {style:{...statStyle,textAlign:'left'}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Last 30 Sessions'),
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:5}},
+          ...dots.map(function(d,i){
+            return e('div', {key:i, title:d.dk, style:{
+              aspectRatio:'1', borderRadius:5,
+              background: d.done ? 'linear-gradient(135deg,'+PW+','+PW2+')' : '#E8E8F0',
+              boxShadow: d.done ? '0 2px 8px '+PW+'40' : 'none',
+            }});
+          })
+        ),
+        e('div', {style:{display:'flex',gap:16,marginTop:10}},
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'linear-gradient(135deg,'+PW+','+PW2+')'}}),
+            'Completed'
+          ),
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'#E8E8F0'}}),
+            'Missed'
+          )
+        )
+      ),
+      e('button', {
+        onClick:onBack,
+        style:{padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+PW+','+PW2+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+PW+'40'}
+      }, '← Back to Dashboard')
+    )
+  );
+}
+
 // ─── WATER RING ───────────────────────────────────────────────────────────────
 function WaterRing({ pct, color, size, showLabel }) {
   size = size || 160;
@@ -4879,6 +5239,9 @@ function App() {
   const [eveningPhase, setEveningPhase] = useState('done'); // greeting|checklist|complete|done
   const [eveningLog, setEveningLog] = useState({});
   const [eveningItems, setEveningItems] = useState(DEFAULT_EVENING_HABITS);
+  const [postWorkoutPhase, setPostWorkoutPhase] = useState('done'); // greeting|checklist|complete|history|done
+  const [pwLog, setPwLog] = useState({});
+  const [pwItems, setPwItems] = useState(DEFAULT_POST_WORKOUT_HABITS);
   const [workoutLog, setWorkoutLog] = useState({});
   const [wakeLog, setWakeLog] = useState({});
   const [cpapLog, setCpapLog] = useState({});
@@ -4916,8 +5279,8 @@ function App() {
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData','eveningLog','eveningItems','workoutLog','middayLog'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='jobLog')setJobLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='jobLog')setJobLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -4949,7 +5312,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
@@ -5060,6 +5423,38 @@ function App() {
   }
   if(!splash && eveningPhase === 'history') {
     return e(EveningHistory, {onBack: function(){setEveningPhase('done');}, eveningLog: eveningLog});
+  }
+
+  function handlePostWorkoutStart(isTest) {
+    var td = (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
+    if(isTest) {
+      var newLog = Object.assign({}, pwLog);
+      newLog[td+'_test'] = true;
+      setPwLog(newLog);
+      save('postWorkoutLog', newLog);
+    }
+    setPostWorkoutPhase('checklist');
+  }
+
+  if(!splash && postWorkoutPhase === 'greeting') {
+    return e(PostWorkoutGreeting, {onStart: handlePostWorkoutStart});
+  }
+  if(!splash && postWorkoutPhase === 'checklist') {
+    return e(PostWorkoutChecklist, {
+      onComplete: function(){setPostWorkoutPhase('complete');},
+      onSkipToDashboard: function(){setPostWorkoutPhase('done');},
+      pwLog: pwLog, setPwLog: setPwLog,
+      pwItems: pwItems, setPwItems: setPwItems,
+    });
+  }
+  if(!splash && postWorkoutPhase === 'complete') {
+    return e(PostWorkoutComplete, {
+      onContinue: function(){setPostWorkoutPhase('done');},
+      pwLog: pwLog, pwItems: pwItems,
+    });
+  }
+  if(!splash && postWorkoutPhase === 'history') {
+    return e(PostWorkoutHistory, {onBack: function(){setPostWorkoutPhase('done');}, pwLog: pwLog});
   }
 
   var moreOverlay = moreOpen ? e('div', {style:{position:'absolute',inset:0,zIndex:80,background:'rgba(247,248,252,0.97)',backdropFilter:'blur(16px)',display:'flex',flexDirection:'column',padding:'20px 20px 0'}},
