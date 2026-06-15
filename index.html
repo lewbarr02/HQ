@@ -367,13 +367,15 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   var hours = [];
   for (var h = 5; h <= 24; h++) hours.push(h === 24 ? 0 : h);
 
-  function BlockItem({min, durationMin, color, label, sublabel, done, onClick, onRemove}) {
+  function BlockItem({min, durationMin, color, label, sublabel, done, onClick, onRemove, onDragStart}) {
     var clamped = Math.max(START_MIN, Math.min(END_MIN - 15, min));
     var dur = Math.max(20, durationMin || 45);
     var y = minToY(clamped);
     var ht = dur * PX_PER_MIN;
     return e('div', {
       onClick: onClick,
+      draggable: !!onDragStart,
+      onDragStart: onDragStart || undefined,
       style: {
         position: 'absolute',
         left: 44,
@@ -384,7 +386,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         borderLeft: '3px solid ' + color,
         borderRadius: '0 8px 8px 0',
         padding: '5px 10px',
-        cursor: onClick ? 'pointer' : 'default',
+        cursor: onDragStart ? 'grab' : (onClick ? 'pointer' : 'default'),
         boxSizing: 'border-box',
         overflow: 'hidden',
         display: 'flex',
@@ -545,7 +547,11 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         }),
         ...scheduled.map(function(s) {
           return e(BlockItem, {key:'sched-'+s.schedId, min:s.minute, durationMin:s.durationMin, color:s.color, label:s.label, sublabel:minToTimeStr(s.minute), done:false,
-            onRemove:()=>removeScheduled(s.schedId)});
+            onRemove:()=>removeScheduled(s.schedId),
+            onDragStart:()=>{
+              setDragItem({id:s.id, label:s.label, color:s.color, durationMin:s.durationMin});
+              removeScheduled(s.schedId);
+            }});
         }),
         currentMinute >= START_MIN && currentMinute < END_MIN ? e('div', {style:{position:'absolute',top:minToY(currentMinute),left:36,right:0,zIndex:10,display:'flex',alignItems:'center',pointerEvents:'none'}},
           e('div', {style:{width:8,height:8,borderRadius:'50%',background:ACCENT,flexShrink:0,marginLeft:-4}}),
