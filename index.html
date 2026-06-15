@@ -308,7 +308,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [calEvents, setCalEvents] = useState([]);
   const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
   const [dragItem, setDragItem] = useState(null);
-  const [dropHighlight, setDropHighlight] = useState(false);
+  const [dragOverMinute, setDragOverMinute] = useState(null);
   const [splitView, setSplitView] = useState(() => load('daySplitView') !== false);
   const timelineRef = useRef(null);
 
@@ -418,16 +418,21 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
   function handleDragOver(ev) {
     ev.preventDefault();
-    setDropHighlight(true);
+    if (!timelineRef.current || !dragItem) return;
+    var rect = timelineRef.current.getBoundingClientRect();
+    var y = ev.clientY - rect.top;
+    var rawMin = START_MIN + y / PX_PER_MIN;
+    var snapped = Math.round(rawMin / 15) * 15;
+    setDragOverMinute(Math.max(START_MIN, Math.min(END_MIN - (dragItem.durationMin||30), snapped)));
   }
 
   function handleDragLeave() {
-    setDropHighlight(false);
+    setDragOverMinute(null);
   }
 
   function handleDrop(ev) {
     ev.preventDefault();
-    setDropHighlight(false);
+    setDragOverMinute(null);
     if (!dragItem || !timelineRef.current) return;
     var rect = timelineRef.current.getBoundingClientRect();
     var y = ev.clientY - rect.top;
@@ -547,14 +552,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           );
         })
       ) : null,
-      dragItem ? e('div', {style:{marginBottom:10,padding:'8px 12px',background:ACCENT+'10',border:'1.5px dashed '+ACCENT+'50',borderRadius:10,fontSize:12,color:ACCENT,fontWeight:600,textAlign:'center'}},
-        '↓ Drop "'+dragItem.label+'" onto the timeline'
-      ) : null,
-      e('div', {ref:timelineRef, style:{position:'relative', height: totalHeight, flexShrink:0,
-        outline: dropHighlight ? '2px dashed '+ACCENT+'60' : 'none',
-        borderRadius: dropHighlight ? 12 : 0,
-        transition: 'outline 0.1s',
-      }},
+      e('div', {ref:timelineRef, style:{position:'relative', height: totalHeight, flexShrink:0}},
         ...hours.map((h, i) => {
           var min;
           if (i === 0) min = 300;
@@ -596,6 +594,18 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
               removeScheduled(s.schedId);
             }});
         }),
+        // Ghost preview while dragging
+        dragItem && dragOverMinute ? e('div', {style:{
+          position:'absolute', left:44, right:8, top:minToY(dragOverMinute),
+          height: Math.max(20, (dragItem.durationMin||30)) * PX_PER_MIN,
+          background: (dragItem.color||ACCENT)+'30',
+          border: '2px dashed '+(dragItem.color||ACCENT),
+          borderRadius:8, boxSizing:'border-box', pointerEvents:'none', zIndex:20,
+          display:'flex', alignItems:'center', paddingLeft:10,
+        }},
+          e('div', {style:{fontSize:11,fontWeight:700,color:dragItem.color||ACCENT}}, dragItem.label + ' · ' + minToTimeStr(dragOverMinute))
+        ) : null,
+
         currentMinute >= START_MIN && currentMinute < END_MIN ? e('div', {style:{position:'absolute',top:minToY(currentMinute),left:36,right:0,zIndex:10,display:'flex',alignItems:'center',pointerEvents:'none'}},
           e('div', {style:{width:8,height:8,borderRadius:'50%',background:ACCENT,flexShrink:0,marginLeft:-4}}),
           e('div', {style:{flex:1,height:2,background:ACCENT}})
