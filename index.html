@@ -1130,7 +1130,7 @@ function ProjectsProgressScreen({projectItems, setProjectItems, projectLog, setP
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear()), [month, setMonth] = useState(now.getMonth());
   const COLORS = [PURPLE,ACCENT,'#FF6B9D','#00E5CC','#FFB347','#FF6B6B','#10B981','#F59E0B'];
-  const EMOJIS = ['🏠','🚀','💼','🌱','🎯','📦','🔧','🎨','💡','📋','🏗️','⚙️','🌍','🧩','📈','🤝'];
+  const EMOJIS = ['🏠','🚀','💼','🌱','🎯','📦','🔧','🎨','💡','📋','🏗️','⚙️','🌍','🧩','📈','🤝','🧹'];
   const days = getDIM(year,month);
 
   function addProject(){if(!name.trim())return;var p={id:'proj'+Date.now(),name,emoji:emoji||'🎯',color};var next=[...projectItems,p];setProjectItems(next);save('projectItems',next);setName('');setEmoji('');setAdding(false);}
