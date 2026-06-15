@@ -306,12 +306,16 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const currentMinute = now.getHours() * 60 + now.getMinutes();
   const priorities = load('priorities') || [];
   const [calEvents, setCalEvents] = useState([]);
+  const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
+  const [dragItem, setDragItem] = useState(null);
+  const [dropHighlight, setDropHighlight] = useState(false);
+  const [splitView, setSplitView] = useState(() => load('daySplitView') !== false);
+  const timelineRef = useRef(null);
 
   useEffect(() => {
     gcalFetchToday().then(function(evs) { setCalEvents(evs); });
   }, []);
 
-  // Timeline: 5 AM (300 min) to midnight (1440 min)
   const START_MIN = 300;
   const END_MIN = 1440;
   const TOTAL = END_MIN - START_MIN;
@@ -338,6 +342,14 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     return h < 12 ? h + ' AM' : (h - 12) + ' PM';
   }
 
+  function minToTimeStr(min) {
+    var h = Math.floor(min / 60);
+    var m = min % 60;
+    var ap = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12 || 12;
+    return h12 + ':' + String(m).padStart(2,'0') + ' ' + ap;
+  }
+
   // Morning routine block
   var mStart = routineLog[td + '_start'];
   var mDone = routineLog[td + '_done'];
@@ -350,21 +362,16 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   var eStartMin = eStart ? parseTimeToMin(eStart) : null;
   var eDoneMin = eDone ? parseTimeToMin(eDone) : null;
 
-  // Timed priorities for today
   var todayPriorities = (priorities || []).filter(p => p.time);
-  var untimedPriorities = (priorities || []).filter(p => !p.time);
 
-  // Hour markers
   var hours = [];
   for (var h = 5; h <= 24; h++) hours.push(h === 24 ? 0 : h);
 
-  var timelineWidth = 'calc(100% - 44px)';
-
-  function BlockItem({min, durationMin, color, label, sublabel, done, onClick}) {
+  function BlockItem({min, durationMin, color, label, sublabel, done, onClick, onRemove}) {
     var clamped = Math.max(START_MIN, Math.min(END_MIN - 15, min));
-    var dur = Math.max(30, durationMin || 45);
+    var dur = Math.max(20, durationMin || 45);
     var y = minToY(clamped);
-    var h = dur * PX_PER_MIN;
+    var ht = dur * PX_PER_MIN;
     return e('div', {
       onClick: onClick,
       style: {
@@ -372,7 +379,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         left: 44,
         right: 8,
         top: y,
-        height: h,
+        height: ht,
         background: done ? color + '30' : color + '22',
         borderLeft: '3px solid ' + color,
         borderRadius: '0 8px 8px 0',
@@ -380,98 +387,195 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         cursor: onClick ? 'pointer' : 'default',
         boxSizing: 'border-box',
         overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
       }
     },
-      e('div', {style: {fontSize: 12, fontWeight: 700, color: done ? MUTED : color, lineHeight: 1.2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}, label),
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+        e('div', {style: {fontSize: 12, fontWeight: 700, color: done ? MUTED : color, lineHeight: 1.2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1}}, label),
+        onRemove ? e('button', {onClick:(ev)=>{ev.stopPropagation();onRemove();}, style:{background:'none',border:'none',cursor:'pointer',color:MUTED,fontSize:14,lineHeight:1,padding:'0 0 0 4px',flexShrink:0}}, '×') : null
+      ),
       sublabel ? e('div', {style: {fontSize: 10, color: MUTED, marginTop: 2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}, sublabel) : null
     );
   }
 
-  return e('div', {className: 'content'},
-    e('div', {style: {display:'flex', alignItems:'center', gap:8, marginBottom:16, paddingTop:4}},
-      e('div', {style: {fontSize:18, fontWeight:800, color:TEXT}}, "Today's Schedule"),
-      e('div', {style: {fontSize:12, color:MUTED, marginLeft:'auto'}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}))
+  // Left panel draggable items
+  var routineItems = [
+    {id:'routine-morning', label:'☀️ Morning Routine', color: ACCENT, durationMin: 30},
+    {id:'routine-midday',  label:'🌤️ Midday Routine',  color: '#F59E0B', durationMin: 15},
+    {id:'routine-evening', label:'🌙 Evening Routine',  color: NIGHT, durationMin: 30},
+  ];
+  var habitItems = (habits || []).map(function(h) {
+    return {id:'habit-'+h.id, label: h.name, color: h.color || ACCENT, durationMin: 15};
+  });
+
+  function handleDragStart(item) {
+    setDragItem(item);
+  }
+
+  function handleDragOver(ev) {
+    ev.preventDefault();
+    setDropHighlight(true);
+  }
+
+  function handleDragLeave() {
+    setDropHighlight(false);
+  }
+
+  function handleDrop(ev) {
+    ev.preventDefault();
+    setDropHighlight(false);
+    if (!dragItem || !timelineRef.current) return;
+    var rect = timelineRef.current.getBoundingClientRect();
+    var y = ev.clientY - rect.top;
+    var rawMin = START_MIN + y / PX_PER_MIN;
+    var snapped = Math.round(rawMin / 15) * 15;
+    var minute = Math.max(START_MIN, Math.min(END_MIN - dragItem.durationMin, snapped));
+    var newBlock = {schedId: Date.now().toString(), id: dragItem.id, label: dragItem.label, color: dragItem.color, durationMin: dragItem.durationMin, minute: minute};
+    var next = scheduled.concat([newBlock]);
+    setScheduled(next);
+    save('dayScheduled', next);
+    setDragItem(null);
+  }
+
+  function removeScheduled(schedId) {
+    var next = scheduled.filter(function(s){ return s.schedId !== schedId; });
+    setScheduled(next);
+    save('dayScheduled', next);
+  }
+
+  function DraggableChip({item}) {
+    return e('div', {
+      draggable: true,
+      onDragStart: () => handleDragStart(item),
+      onDragEnd: () => setDragItem(null),
+      style:{
+        padding:'10px 12px',
+        borderRadius:10,
+        background: item.color+'12',
+        border: '1.5px solid '+item.color+'35',
+        marginBottom: 8,
+        cursor: 'grab',
+        userSelect: 'none',
+        opacity: dragItem && dragItem.id === item.id ? 0.4 : 1,
+        transition: 'opacity 0.15s',
+      }
+    },
+      e('div', {style:{fontSize:13,fontWeight:600,color:item.color,lineHeight:1.3}}, item.label),
+      e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, item.durationMin + ' min')
+    );
+  }
+
+  function ViewToggle() {
+    return e('button', {
+      onClick: () => {
+        var next = !splitView;
+        setSplitView(next);
+        save('daySplitView', next);
+      },
+      style:{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:splitView?ACCENT+'15':'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:splitView?ACCENT:MUTED,flexShrink:0}
+    },
+      e('span', {style:{fontSize:13}}, splitView ? '⊟' : '⊞'),
+      splitView ? 'Split' : 'Split'
+    );
+  }
+
+  // Single-column timeline panel (shared by both views)
+  function TimelinePanel({fullWidth}) {
+    return e('div', {style:{flex:1, overflowY:'auto', padding:'16px 12px'},
+      onDragOver: handleDragOver,
+      onDragLeave: handleDragLeave,
+      onDrop: handleDrop,
+    },
+      e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
+        e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, "Today's Schedule"),
+        e('div', {style:{fontSize:12,color:MUTED,marginLeft:'auto',marginRight:8}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+        e(ViewToggle)
+      ),
+      calEvents.filter(function(ev){ return ev.allDay; }).length > 0 ? e('div', {style:{marginBottom:12}},
+        e('div', {style:{fontSize:11,fontWeight:700,color:'#4285F4',letterSpacing:'0.05em',marginBottom:6}}, '📅 ALL DAY'),
+        ...calEvents.filter(function(ev){ return ev.allDay; }).map(function(ev) {
+          return e('div', {key:'allday-'+ev.id, style:{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',background:'#4285F415',border:'1px solid #4285F440',borderRadius:10,marginBottom:4}},
+            e('div', {style:{width:8,height:8,borderRadius:'50%',background:'#4285F4',flexShrink:0}}),
+            e('div', {style:{fontSize:13,fontWeight:600,color:TEXT,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, ev.title)
+          );
+        })
+      ) : null,
+      dragItem ? e('div', {style:{marginBottom:10,padding:'8px 12px',background:ACCENT+'10',border:'1.5px dashed '+ACCENT+'50',borderRadius:10,fontSize:12,color:ACCENT,fontWeight:600,textAlign:'center'}},
+        '↓ Drop "'+dragItem.label+'" onto the timeline'
+      ) : null,
+      e('div', {ref:timelineRef, style:{position:'relative', height: totalHeight, flexShrink:0,
+        outline: dropHighlight ? '2px dashed '+ACCENT+'60' : 'none',
+        borderRadius: dropHighlight ? 12 : 0,
+        transition: 'outline 0.1s',
+      }},
+        ...hours.map((h, i) => {
+          var min;
+          if (i === 0) min = 300;
+          else min = (h === 0 ? 24 : h) * 60;
+          var y = minToY(min);
+          var isNow = currentMinute >= min && currentMinute < min + 60;
+          return e('div', {key:h+'-'+i, style:{position:'absolute',top:y,left:0,right:0,display:'flex',alignItems:'center',pointerEvents:'none'}},
+            e('div', {style:{width:36,fontSize:10,textAlign:'right',paddingRight:8,flexShrink:0,fontWeight: isNow?700:400,color: isNow?ACCENT:MUTED}}, fmtHour(h === 0 && i > 0 ? 0 : (i === 0 ? 5 : h))),
+            e('div', {style:{flex:1,height:'0.5px',background: isNow?ACCENT+'60':'rgba(100,80,220,0.08)'}})
+          );
+        }),
+        mStartMin ? e(BlockItem, {key:'morning', min:mStartMin, durationMin: mDoneMin ? mDoneMin - mStartMin : 30, color:ACCENT, label:'☀️ Morning Routine', sublabel: mDone ? ('Done ' + mDone) : 'In progress', done:!!mDoneMin, onClick:()=>setMorningPhase('history')}) : null,
+        eStartMin ? e(BlockItem, {key:'evening', min:eStartMin, durationMin: eDoneMin ? eDoneMin - eStartMin : 30, color:NIGHT, label:'🌙 Evening Routine', sublabel: eDone ? ('Done ' + eDone) : 'In progress', done:!!eDoneMin, onClick:()=>setEveningPhase('history')}) : null,
+        ...todayPriorities.map(p => {
+          var min = parseTimeToMin(p.time);
+          if (!min || min < START_MIN || min >= END_MIN) return null;
+          var conflict = calEvents.some(function(ev) {
+            if (ev.allDay) return false;
+            var evStart = new Date(ev.start); var evEnd = new Date(ev.end);
+            var evStartMin = evStart.getHours()*60+evStart.getMinutes();
+            var evEndMin = evEnd.getHours()*60+evEnd.getMinutes();
+            return min < evEndMin && min + 45 > evStartMin;
+          });
+          return e(BlockItem, {key:p.id, min:min, durationMin:45, color:p.color||ACCENT, label:(conflict?'⚠️ ':'')+p.name, sublabel:p.time + ' · ' + p.cat + (conflict?' · conflicts with calendar':''), done:p.done});
+        }),
+        ...calEvents.filter(function(ev){ return !ev.allDay; }).map(function(ev) {
+          var s = new Date(ev.start); var en = new Date(ev.end);
+          var sMin = s.getHours()*60+s.getMinutes();
+          var eMin = en.getHours()*60+en.getMinutes();
+          if (sMin < START_MIN || sMin >= END_MIN) return null;
+          var fmt = function(d){ return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); };
+          return e(BlockItem, {key:'cal-'+ev.id, min:sMin, durationMin:Math.max(15, eMin-sMin), color:'#4285F4', label:'📅 '+ev.title, sublabel:fmt(s)+' – '+fmt(en)});
+        }),
+        ...scheduled.map(function(s) {
+          return e(BlockItem, {key:'sched-'+s.schedId, min:s.minute, durationMin:s.durationMin, color:s.color, label:s.label, sublabel:minToTimeStr(s.minute), done:false,
+            onRemove:()=>removeScheduled(s.schedId)});
+        }),
+        currentMinute >= START_MIN && currentMinute < END_MIN ? e('div', {style:{position:'absolute',top:minToY(currentMinute),left:36,right:0,zIndex:10,display:'flex',alignItems:'center',pointerEvents:'none'}},
+          e('div', {style:{width:8,height:8,borderRadius:'50%',background:ACCENT,flexShrink:0,marginLeft:-4}}),
+          e('div', {style:{flex:1,height:2,background:ACCENT}})
+        ) : null
+      ),
+      e('div', {style:{height:40}})
+    );
+  }
+
+  if (!splitView) {
+    return e(TimelinePanel, {fullWidth: true});
+  }
+
+  return e('div', {style:{flex:1, display:'flex', overflow:'hidden'}},
+
+    // LEFT PANEL — draggable items
+    e('div', {style:{width:200, flexShrink:0, borderRight:'1px solid '+BORDER, overflowY:'auto', padding:'16px 12px', background:'#FAFAFE'}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Routines'),
+      ...routineItems.map(function(item){ return e(DraggableChip, {key:item.id, item:item}); }),
+      (habits && habits.length > 0) ? e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10,marginTop:16}}, 'Habits') : null,
+      ...(habits || []).map(function(h){
+        var item = {id:'habit-'+h.id, label:h.name, color:h.color||ACCENT, durationMin:15};
+        return e(DraggableChip, {key:item.id, item:item});
+      }),
+      e('div', {style:{height:40}})
     ),
 
-    // All-day calendar events
-    calEvents.filter(function(ev){ return ev.allDay; }).length > 0 ? e('div', {style:{marginBottom:12}},
-      e('div', {style:{fontSize:11,fontWeight:700,color:'#4285F4',letterSpacing:'0.05em',marginBottom:6}}, '📅 ALL DAY'),
-      ...calEvents.filter(function(ev){ return ev.allDay; }).map(function(ev) {
-        return e('div', {key:'allday-'+ev.id, style:{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',background:'#4285F415',border:'1px solid #4285F440',borderRadius:10,marginBottom:4}},
-          e('div', {style:{width:8,height:8,borderRadius:'50%',background:'#4285F4',flexShrink:0}}),
-          e('div', {style:{fontSize:13,fontWeight:600,color:TEXT,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, ev.title)
-        );
-      })
-    ) : null,
-
-    // Untimed priorities at top
-    untimedPriorities.length > 0 ? e('div', {style:{marginBottom:16}},
-      e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:6}}, 'UNSCHEDULED'),
-      ...untimedPriorities.map(p =>
-        e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:p.done?CARD2:p.color+'15',border:'1px solid '+(p.done?'transparent':p.color+'40'),borderRadius:10,marginBottom:4,opacity:p.done?0.6:1}},
-          e('div', {style:{width:8,height:8,borderRadius:'50%',background:p.done?MUTED:p.color,flexShrink:0}}),
-          e('div', {style:{fontSize:13,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, p.name),
-          e('div', {style:{fontSize:10,color:MUTED,flexShrink:0}}, p.cat)
-        )
-      )
-    ) : null,
-
-    // Timeline
-    e('div', {style:{position:'relative', height: totalHeight, flexShrink:0}},
-
-      // Hour grid lines + labels
-      ...hours.map((h, i) => {
-        var min = (i === 0 ? 5 : h) === 0 ? 1440 : (i === 0 ? 5 : h) * 60;
-        if (i === 0) min = 300;
-        else min = (h === 0 ? 24 : h) * 60;
-        var y = minToY(min);
-        var isNow = currentMinute >= min && currentMinute < min + 60;
-        return e('div', {key:h+'-'+i, style:{position:'absolute',top:y,left:0,right:0,display:'flex',alignItems:'center',pointerEvents:'none'}},
-          e('div', {style:{width:36,fontSize:10,color:MUTED,textAlign:'right',paddingRight:8,flexShrink:0,fontWeight: isNow?700:400,color: isNow?ACCENT:MUTED}}, fmtHour(h === 0 && i > 0 ? 0 : (i === 0 ? 5 : h))),
-          e('div', {style:{flex:1,height:'0.5px',background: isNow?ACCENT+'60':'rgba(100,80,220,0.08)'}})
-        );
-      }),
-
-      // Morning routine block
-      mStartMin ? e(BlockItem, {key:'morning', min:mStartMin, durationMin: mDoneMin ? mDoneMin - mStartMin : 30, color:ACCENT, label:'☀️ Morning Routine', sublabel: mDone ? ('Done ' + mDone) : 'In progress', done:!!mDoneMin, onClick:()=>setMorningPhase('history')}) : null,
-
-      // Evening routine block
-      eStartMin ? e(BlockItem, {key:'evening', min:eStartMin, durationMin: eDoneMin ? eDoneMin - eStartMin : 30, color:NIGHT, label:'🌙 Evening Routine', sublabel: eDone ? ('Done ' + eDone) : 'In progress', done:!!eDoneMin, onClick:()=>setEveningPhase('history')}) : null,
-
-      // Timed priorities
-      ...todayPriorities.map(p => {
-        var min = parseTimeToMin(p.time);
-        if (!min || min < START_MIN || min >= END_MIN) return null;
-        // Conflict check against calendar events
-        var conflict = calEvents.some(function(ev) {
-          if (ev.allDay) return false;
-          var evStart = new Date(ev.start); var evEnd = new Date(ev.end);
-          var evStartMin = evStart.getHours()*60+evStart.getMinutes();
-          var evEndMin = evEnd.getHours()*60+evEnd.getMinutes();
-          return min < evEndMin && min + 45 > evStartMin;
-        });
-        return e(BlockItem, {key:p.id, min:min, durationMin:45, color:p.color||ACCENT, label:(conflict?'⚠️ ':'')+p.name, sublabel:p.time + ' · ' + p.cat + (conflict?' · conflicts with calendar':''), done:p.done});
-      }),
-
-      // Google Calendar events
-      ...calEvents.filter(function(ev){ return !ev.allDay; }).map(function(ev) {
-        var s = new Date(ev.start); var en = new Date(ev.end);
-        var sMin = s.getHours()*60+s.getMinutes();
-        var eMin = en.getHours()*60+en.getMinutes();
-        if (sMin < START_MIN || sMin >= END_MIN) return null;
-        var fmt = function(d){ return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); };
-        return e(BlockItem, {key:'cal-'+ev.id, min:sMin, durationMin:Math.max(15, eMin-sMin), color:'#4285F4', label:'📅 '+ev.title, sublabel:fmt(s)+' – '+fmt(en)});
-      }),
-
-      // Current time indicator
-      currentMinute >= START_MIN && currentMinute < END_MIN ? e('div', {style:{position:'absolute',top:minToY(currentMinute),left:36,right:0,zIndex:10,display:'flex',alignItems:'center',pointerEvents:'none'}},
-        e('div', {style:{width:8,height:8,borderRadius:'50%',background:ACCENT,flexShrink:0,marginLeft:-4}}),
-        e('div', {style:{flex:1,height:2,background:ACCENT}})
-      ) : null
-    ),
-
-    e('div', {style:{height:40}})
-  );
+    e(TimelinePanel)
+  ); // end split wrapper
 }
 
 function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog}) {
@@ -750,6 +854,21 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
       ),
       e('button', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:10,marginTop:2,fontSize:13,fontWeight:700,color:ACCENT,cursor:'pointer',border:'none',background:'none',width:'100%',fontFamily:'inherit'},onClick:()=>setTab('habits')},
         e('span',{},'View habit progress'), e('span',{},'›')
+      )
+    ),
+    e('div', {className:'card'},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Pillars'),
+      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}},
+        ...[
+          {name:'Fitness',emoji:'🏋️',color:'#FF6B35',onClick:()=>setTab('fitness')},
+          {name:'Waterproof',emoji:'☂️',color:'#3B82F6'},
+          {name:'Learning Center',emoji:'📚',color:'#8B5CF6'},
+          {name:'Family',emoji:'👨‍👩‍👦',color:'#EC4899'},
+          {name:'Home',emoji:'🏠',color:'#10B981'},
+        ].map(p => e('button', {key:p.name, onClick:p.onClick||undefined, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'14px 8px',borderRadius:16,background:p.color+'10',border:'1.5px solid '+p.color+'25',cursor:p.onClick?'pointer':'default',fontFamily:'inherit'}},
+          e('div',{style:{fontSize:28,lineHeight:1}},p.emoji),
+          e('div',{style:{fontSize:11,fontWeight:700,color:p.color,textAlign:'center',lineHeight:1.2}},p.name)
+        ))
       )
     ),
     e('div', {className:'card'},
