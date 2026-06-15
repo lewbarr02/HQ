@@ -469,6 +469,44 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     );
   }
 
+  function exportICS() {
+    var dateStr = td.replace(/-/g, '');
+    function toICSTime(minute) {
+      var h = Math.floor(minute / 60);
+      var m = minute % 60;
+      return dateStr + 'T' + String(h).padStart(2,'0') + String(m).padStart(2,'0') + '00';
+    }
+    var events = [];
+    // Logged morning routine
+    if (mStartMin) events.push({summary:'☀️ Morning Routine', start:mStartMin, end:mDoneMin||mStartMin+30});
+    // Logged evening routine
+    if (eStartMin) events.push({summary:'🌙 Evening Routine', start:eStartMin, end:eDoneMin||eStartMin+30});
+    // Timed priorities
+    todayPriorities.forEach(function(p) {
+      var min = parseTimeToMin(p.time);
+      if (min) events.push({summary:p.name, start:min, end:min+45});
+    });
+    // Dragged/scheduled blocks
+    scheduled.forEach(function(s) {
+      events.push({summary:s.label, start:s.minute, end:s.minute+s.durationMin});
+    });
+    if (events.length === 0) { alert('No scheduled events to export yet.'); return; }
+    var lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//HQ//Lewis Schedule//EN','CALSCALE:GREGORIAN'];
+    events.forEach(function(ev) {
+      lines.push('BEGIN:VEVENT');
+      lines.push('DTSTART:' + toICSTime(ev.start));
+      lines.push('DTEND:' + toICSTime(ev.end));
+      lines.push('SUMMARY:' + ev.summary);
+      lines.push('END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    var blob = new Blob([lines.join('\r\n')], {type:'text/calendar'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'lewis-schedule-' + td + '.ics';
+    a.click();
+  }
+
   function ViewToggle() {
     return e('button', {
       onClick: () => {
@@ -493,7 +531,12 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
         e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, "Today's Schedule"),
         e('div', {style:{fontSize:12,color:MUTED,marginLeft:'auto',marginRight:8}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-        e(ViewToggle)
+        e('button', {
+          onClick: exportICS,
+          title: 'Export to calendar file',
+          style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:MUTED,flexShrink:0,marginRight:4}
+        }, '📤 Export'),
+        ViewToggle({})
       ),
       calEvents.filter(function(ev){ return ev.allDay; }).length > 0 ? e('div', {style:{marginBottom:12}},
         e('div', {style:{fontSize:11,fontWeight:700,color:'#4285F4',letterSpacing:'0.05em',marginBottom:6}}, '📅 ALL DAY'),
