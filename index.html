@@ -1177,27 +1177,7 @@ function ProjectsProgressScreen({projectItems, setProjectItems, projectLog, setP
         e('button', {className:'btn-ghost', onClick:function(){setAdding(false);setName('');setEmoji('');}}, 'Cancel'),
         e('button', {className:'btn-primary', style:{background:PURPLE}, onClick:addProject}, 'Add Project')
       )
-    ) : e('button', {style:{width:'100%',padding:16,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:MUTED,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',minHeight:52}, onClick:function(){setAdding(true);}}, '+ Add New Project'),
-    e('div', {style:{marginTop:8}},
-      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
-        e('button', {className:'time-btn', onClick:prevMonth}, '‹'),
-        e('div', {style:{fontSize:16,fontWeight:700}}, MONTHS[month]+' '+year),
-        e('button', {className:'time-btn', onClick:nextMonth}, '›')
-      ),
-      e('div', {className:'card'},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Monthly Progress'),
-        ...projectItems.map(function(p){return e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
-          e('div', {style:{fontSize:12,fontWeight:600,width:76,flexShrink:0,color:p.color}}, p.emoji+' '+p.name),
-          e('div', {style:{display:'flex',gap:3,flexWrap:'wrap',flex:1}},
-            ...Array.from({length:days},function(_,i){
-              var dk=dateKey(year,month,i+1);
-              var isDone=!!((projectLog[dk]||{})[p.id]);
-              return e('div',{key:i,onClick:function(){toggleDot(p.id,dk);},style:{width:16,height:16,borderRadius:4,background:isDone?p.color:CARD2,opacity:isDone?1:0.5,cursor:'pointer'}});
-            })
-          )
-        );})
-      )
-    )
+    ) : e('button', {style:{width:'100%',padding:16,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:MUTED,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',minHeight:52}, onClick:function(){setAdding(true);}}, '+ Add New Project')
   );
 }
 
