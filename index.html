@@ -4635,6 +4635,7 @@ function NotificationsScreen({ setTab }) {
   var [subscribed, setSubscribed] = useState(false);
   var [loading, setLoading] = useState(false);
   var [testLoading, setTestLoading] = useState(false);
+  var [smsLoading, setSmsLoading] = useState(false);
   var [msg, setMsg] = useState('');
 
   useEffect(function(){
@@ -4686,6 +4687,23 @@ function NotificationsScreen({ setTab }) {
     setTestLoading(false);
   }
 
+  async function handleSmsTest() {
+    setSmsLoading(true); setMsg('');
+    try {
+      var resp = await fetch(SUPABASE_FN+'/send-sms', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON},
+        body: JSON.stringify({type:'test'})
+      });
+      var data = await resp.json();
+      if (data.sent) setMsg('✅ SMS sent! Check your phone.');
+      else setMsg('❌ SMS failed: '+(data.error||'unknown error'));
+    } catch(err) {
+      setMsg('❌ Error: '+(err.message||'Could not reach server'));
+    }
+    setSmsLoading(false);
+  }
+
   var SCHEDULES = [
     {time:'5:00 AM',  emoji:'🌅', label:'Morning alarm',   desc:'Wake up + start your morning routine'},
     {time:'12:00 PM', emoji:'☀️', label:'Midday check-in', desc:'Pulse check — how\'s the day going?'},
@@ -4735,11 +4753,15 @@ function NotificationsScreen({ setTab }) {
       })
     ),
 
-    // Test button
+    // Test buttons
     e('div', {className:'card', style:{marginBottom:16,textAlign:'center'}},
       e('div', {style:{fontSize:13,color:MUTED,marginBottom:12}}, 'Verify everything is wired up'),
-      e('button', {onClick:handleTest, disabled:testLoading || !subscribed, style:{padding:'11px 24px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,color:subscribed?TEXT:MUTED,fontWeight:700,cursor:subscribed?'pointer':'default',fontFamily:'inherit',fontSize:14,opacity:subscribed?1:0.4}},
-        testLoading ? 'Sending...' : '🧪 Send test notification')
+      e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
+        e('button', {onClick:handleTest, disabled:testLoading || !subscribed, style:{padding:'11px 24px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,color:subscribed?TEXT:MUTED,fontWeight:700,cursor:subscribed?'pointer':'default',fontFamily:'inherit',fontSize:14,opacity:subscribed?1:0.4}},
+          testLoading ? 'Sending...' : '🧪 Send test push notification'),
+        e('button', {onClick:handleSmsTest, disabled:smsLoading, style:{padding:'11px 24px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,color:TEXT,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:14}},
+          smsLoading ? 'Sending...' : '📱 Send test SMS')
+      )
     ),
 
     // PWA install hint
