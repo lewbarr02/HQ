@@ -1711,6 +1711,7 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog,
   var now=new Date();
   var [year,setYear]=useState(now.getFullYear());
   var [month,setMonth]=useState(now.getMonth());
+  var [activeTab,setActiveTab]=useState('overview');
   var days=getDIM(year,month);
 
   var habitData=habits.map(function(h){
@@ -1730,11 +1731,73 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog,
   function prev(){if(month===0){setMonth(11);setYear(function(y){return y-1;});}else setMonth(function(m){return m-1;});}
   function next(){if(month===11){setMonth(0);setYear(function(y){return y+1;});}else setMonth(function(m){return m+1;});}
 
+  // ── Blocker analysis (all-time, not month-filtered) ──
+  var safeM = morningItems || DEFAULT_MORNING_HABITS;
+  var safeE = eveningItems || DEFAULT_EVENING_HABITS;
+  var itemMap = {};
+  safeM.forEach(function(i){ itemMap[i.id]={name:i.name,emoji:i.emoji,source:'AM'}; });
+  safeE.forEach(function(i){ itemMap[i.id]={name:i.name,emoji:i.emoji,source:'PM'}; });
+
+  var counts = {}; // id -> {count, notes:[], dates:[]}
+  var dayOfWeekCounts = [0,0,0,0,0,0,0]; // Sun=0..Sat=6
+  var blockerDates = new Set();
+
+  function tallyLog(log) {
+    Object.keys(log||{}).forEach(function(k){
+      if(!k.endsWith('_blockers')) return;
+      var dateStr = k.replace('_blockers','');
+      var blockers = log[k];
+      if(!blockers || typeof blockers !== 'object') return;
+      var hasAny = false;
+      Object.keys(blockers).forEach(function(id){
+        var reason = blockers[id];
+        if(!reason || !reason.trim()) return;
+        hasAny = true;
+        if(!counts[id]) counts[id]={count:0,notes:[],dates:[]};
+        counts[id].count++;
+        counts[id].notes.push(reason.trim());
+        counts[id].dates.push(dateStr);
+      });
+      if(hasAny) {
+        blockerDates.add(dateStr);
+        var d = new Date(dateStr+'T12:00:00');
+        if(!isNaN(d)) dayOfWeekCounts[d.getDay()]++;
+      }
+    });
+  }
+  tallyLog(routineLog);
+  tallyLog(eveningLog);
+
+  var middayBlockers = [];
+  Object.keys(middayLog||{}).forEach(function(k){
+    if(k.includes('_')) return;
+    var entry=(middayLog||{})[k];
+    if(entry && entry.blocker) middayBlockers.push({date:k,text:entry.blocker});
+  });
+  middayBlockers.sort(function(a,b){return b.date.localeCompare(a.date);});
+
+  var sorted = Object.keys(counts).sort(function(a,b){return counts[b].count-counts[a].count;});
+  var maxCount = sorted.length>0 ? counts[sorted[0]].count : 1;
+  var totalBlockerDays = blockerDates.size;
+  var topBlocker = sorted.length>0 ? (itemMap[sorted[0]]||{name:sorted[0]}) : null;
+  var DOW_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var maxDow = Math.max.apply(null, dayOfWeekCounts) || 1;
+  var worstDow = dayOfWeekCounts.indexOf(Math.max.apply(null,dayOfWeekCounts));
+
   return e('div', {className:'content'},
     e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
       e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
       e('div', {style:{fontSize:22,fontWeight:800}}, '📊 Review')
     ),
+
+    // Tabs
+    e('div', {style:{display:'flex',gap:8,marginBottom:16}},
+      e('button', {onClick:function(){setActiveTab('overview');}, style:{flex:1,padding:'9px 0',borderRadius:12,border:'none',background:activeTab==='overview'?ACCENT:'#F0F2F8',color:activeTab==='overview'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '📈 Overview'),
+      e('button', {onClick:function(){setActiveTab('blockers');}, style:{flex:1,padding:'9px 0',borderRadius:12,border:'none',background:activeTab==='blockers'?'#FF6B6B':'#F0F2F8',color:activeTab==='blockers'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}},
+        '⚠️ Blockers'+(totalBlockerDays>0?' ('+totalBlockerDays+')':''))
+    ),
+
+    activeTab==='overview' ? e('div', {},
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
       e('button', {className:'time-btn', onClick:prev}, '‹'),
       e('div', {style:{fontSize:16,fontWeight:700}}, MONTHS[month]+' '+year),
@@ -1783,90 +1846,86 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog,
       )
     ),
 
-    // ── Blocker Trend Analysis ──
-    (function(){
-      var safeM = morningItems || DEFAULT_MORNING_HABITS;
-      var safeE = eveningItems || DEFAULT_EVENING_HABITS;
-      var itemMap = {};
-      safeM.forEach(function(i){ itemMap[i.id] = {name:i.name, emoji:i.emoji, source:'AM'}; });
-      safeE.forEach(function(i){ itemMap[i.id] = {name:i.name, emoji:i.emoji, source:'PM'}; });
+    e('div', {style:{height:20}})
+    ) : null,
 
-      // Tally blocker counts from morning + evening logs
-      var counts = {}; // id -> {count, notes:[]}
-      function tallyLog(log) {
-        Object.keys(log||{}).forEach(function(k){
-          if(!k.endsWith('_blockers')) return;
-          var blockers = log[k];
-          if(!blockers || typeof blockers !== 'object') return;
-          Object.keys(blockers).forEach(function(id){
-            var reason = blockers[id];
-            if(!reason || !reason.trim()) return;
-            if(!counts[id]) counts[id] = {count:0, notes:[]};
-            counts[id].count++;
-            counts[id].notes.push(reason.trim());
-          });
-        });
-      }
-      tallyLog(routineLog);
-      tallyLog(eveningLog);
+    // ── Blockers Tab ──
+    activeTab==='blockers' ? e('div', {},
 
-      // Midday free-text blockers
-      var middayBlockers = [];
-      Object.keys(middayLog||{}).forEach(function(k){
-        if(k.includes('_')) return;
-        var entry = (middayLog||{})[k];
-        if(entry && entry.blocker) middayBlockers.push({date:k, text:entry.blocker});
-      });
-      middayBlockers.sort(function(a,b){ return b.date.localeCompare(a.date); });
+      // Insight callout
+      sorted.length === 0 && middayBlockers.length === 0
+        ? e('div', {className:'card', style:{textAlign:'center',padding:'32px 16px'}},
+            e('div', {style:{fontSize:36,marginBottom:8}}, '🎉'),
+            e('div', {style:{fontSize:16,fontWeight:800,color:TEXT,marginBottom:6}}, 'No blockers logged yet'),
+            e('div', {style:{fontSize:13,color:MUTED}}, 'When you skip a routine step and log a reason, patterns will appear here.')
+          )
+        : null,
 
-      var sorted = Object.keys(counts).sort(function(a,b){ return counts[b].count - counts[a].count; });
-      var maxCount = sorted.length > 0 ? counts[sorted[0]].count : 1;
-
-      return e('div', {className:'card', style:{marginTop:4}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, '⚠️ Blocker Trends'),
-
-        sorted.length === 0 && middayBlockers.length === 0
-          ? e('div', {style:{textAlign:'center',color:MUTED,fontSize:13,padding:'12px 0'}}, 'No blockers logged yet — nice work.')
-          : null,
-
-        sorted.length > 0 ? e('div', {style:{marginBottom:middayBlockers.length>0?20:0}},
-          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:10}}, 'Routine steps you skip most'),
-          ...sorted.map(function(id){
-            var item = itemMap[id] || {name:id, emoji:'•', source:'?'};
-            var pct = Math.round(counts[id].count / maxCount * 100);
-            var barColor = counts[id].count >= 3 ? '#FF6B6B' : counts[id].count >= 2 ? '#FFB347' : ACCENT;
-            return e('div', {key:id, style:{marginBottom:14}},
-              e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:5}},
-                e('span', {style:{fontSize:16}}, item.emoji),
-                e('div', {style:{flex:1,fontSize:13,fontWeight:700,color:TEXT}}, item.name),
-                e('div', {style:{fontSize:10,fontWeight:700,color:MUTED,background:CARD2,padding:'2px 7px',borderRadius:8}}, item.source),
-                e('div', {style:{fontSize:12,fontWeight:800,color:barColor,minWidth:24,textAlign:'right'}}, counts[id].count+'×')
-              ),
-              e('div', {style:{height:6,background:'#F0F2F8',borderRadius:3,overflow:'hidden'}},
-                e('div', {style:{height:'100%',width:pct+'%',background:barColor,borderRadius:3,transition:'width 0.4s'}})
-              ),
-              counts[id].notes.length > 0 ? e('div', {style:{marginTop:5}},
-                ...counts[id].notes.slice(-3).map(function(n,i){
-                  return e('div', {key:i, style:{fontSize:11,color:MUTED,padding:'3px 8px',background:'#F7F8FC',borderRadius:6,marginTop:3,fontStyle:'italic'}}, '"'+n+'"');
-                })
-              ) : null
-            );
-          })
+      topBlocker ? e('div', {style:{padding:'16px',borderRadius:16,background:'rgba(255,107,107,0.08)',border:'1.5px solid rgba(255,107,107,0.2)',marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:'#FF6B6B',marginBottom:8}}, '🔍 Top Pattern'),
+          e('div', {style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:4}},
+            '"'+(topBlocker.emoji||'')+' '+topBlocker.name+'" has blocked you '+counts[sorted[0]].count+' time'+(counts[sorted[0]].count>1?'s':'')+' total.'
+          ),
+          dayOfWeekCounts[worstDow] > 1 ? e('div', {style:{fontSize:13,color:MUTED,marginTop:4}},
+            'Blockers hit most on '+DOW_LABELS[worstDow]+'s ('+dayOfWeekCounts[worstDow]+' times).'
+          ) : null
         ) : null,
 
-        middayBlockers.length > 0 ? e('div', {},
-          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:10}}, 'Midday blockers'),
-          ...middayBlockers.slice(0,5).map(function(b){
-            var d = new Date(b.date+'T12:00:00');
-            var label = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-            return e('div', {key:b.date, style:{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 0',borderBottom:'1px solid rgba(100,80,220,0.06)'}},
-              e('div', {style:{fontSize:11,color:MUTED,minWidth:72,flexShrink:0,paddingTop:1}}, label),
-              e('div', {style:{fontSize:13,color:TEXT,fontStyle:'italic',flex:1}}, '"'+b.text+'"')
+      // Day-of-week chart
+      totalBlockerDays > 0 ? e('div', {className:'card', style:{marginBottom:14}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Blockers by Day of Week'),
+        e('div', {style:{display:'flex',alignItems:'flex-end',gap:6,height:80}},
+          ...DOW_LABELS.map(function(label,i){
+            var h = Math.round(dayOfWeekCounts[i]/maxDow*60);
+            var isWorst = i===worstDow && dayOfWeekCounts[i]>0;
+            return e('div', {key:label, style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}},
+              dayOfWeekCounts[i]>0 ? e('div',{style:{fontSize:10,fontWeight:700,color:isWorst?'#FF6B6B':MUTED}},dayOfWeekCounts[i]) : null,
+              e('div', {style:{width:'100%',height:(h||2)+'px',background:isWorst?'#FF6B6B':ACCENT,borderRadius:'4px 4px 0 0',opacity:dayOfWeekCounts[i]===0?0.15:1,minHeight:2}}),
+              e('div', {style:{fontSize:10,color:isWorst?'#FF6B6B':MUTED,fontWeight:isWorst?800:600}}, label)
             );
           })
-        ) : null
-      );
-    })()
+        )
+      ) : null,
+
+      // Per-item breakdown
+      sorted.length > 0 ? e('div', {className:'card', style:{marginBottom:14}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Steps You Skip Most'),
+        ...sorted.map(function(id){
+          var item = itemMap[id]||{name:id,emoji:'•',source:'?'};
+          var pct = Math.round(counts[id].count/maxCount*100);
+          var barColor = counts[id].count>=3?'#FF6B6B':counts[id].count>=2?'#FFB347':ACCENT;
+          return e('div', {key:id, style:{marginBottom:16}},
+            e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+              e('span', {style:{fontSize:16}}, item.emoji),
+              e('div', {style:{flex:1,fontSize:13,fontWeight:700,color:TEXT}}, item.name),
+              e('div', {style:{fontSize:10,fontWeight:700,color:'#fff',background:item.source==='AM'?'#F59E0B':NIGHT,padding:'2px 7px',borderRadius:8}}, item.source),
+              e('div', {style:{fontSize:13,fontWeight:800,color:barColor}}, counts[id].count+'×')
+            ),
+            e('div', {style:{height:6,background:'#F0F2F8',borderRadius:3,overflow:'hidden',marginBottom:6}},
+              e('div', {style:{height:'100%',width:pct+'%',background:barColor,borderRadius:3}})
+            ),
+            ...counts[id].notes.slice(-3).map(function(n,i){
+              return e('div', {key:i, style:{fontSize:11,color:MUTED,padding:'4px 10px',background:'#F7F8FC',borderRadius:8,marginTop:3,fontStyle:'italic',borderLeft:'2px solid '+barColor}}, '"'+n+'"');
+            })
+          );
+        })
+      ) : null,
+
+      // Midday blockers
+      middayBlockers.length > 0 ? e('div', {className:'card', style:{marginBottom:14}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Midday Blockers'),
+        ...middayBlockers.slice(0,8).map(function(b,i){
+          var d = new Date(b.date+'T12:00:00');
+          var label = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+          return e('div', {key:b.date, style:{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 0',borderBottom:i<middayBlockers.slice(0,8).length-1?'1px solid rgba(100,80,220,0.07)':'none'}},
+            e('div', {style:{fontSize:11,color:MUTED,minWidth:76,flexShrink:0,paddingTop:2}}, label),
+            e('div', {style:{fontSize:13,color:TEXT,fontStyle:'italic',flex:1,lineHeight:1.5}}, '"'+b.text+'"')
+          );
+        })
+      ) : null,
+
+      e('div', {style:{height:20}})
+    ) : null
   );
 }
 
