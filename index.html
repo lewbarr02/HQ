@@ -872,7 +872,7 @@ function FlowCheckinModal({activeSession, flowLog, setFlowLog, onClose}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -940,17 +940,13 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
   const qlIsToday = qlDate===today();
   const qlDisplay = new Date(qlDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   const NUTRI = [{label:'🔴 Off track',val:'off',color:'#FF6B6B'},{label:'🟡 So-so',val:'ok',color:'#FFB347'},{label:'🟢 On point',val:'good',color:'#00C864'}];
-  const CAT_OPTS = ['Work','Health','Personal Growth','Learning','Personal','Job Search','Finance','Shopping','Email'];
-  const CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D','Job Search':'#FF6B6B',Finance:'#10B981',Shopping:'#F59E0B',Email:'#8E8EAA'};
+  const CAT_OPTS = ['Work','Health','Personal Growth','Learning','Personal','Finance','Shopping','Email'];
+  const CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D',Finance:'#10B981',Shopping:'#F59E0B',Email:'#8E8EAA'};
 
   var yesterday = (function(){var d=new Date();d.setDate(d.getDate()-1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
   var cpapDone = !!(cpapLog && cpapLog[yesterday]);
   var morningDone = !!(routineLog && routineLog[td+'_done']);
-  var todayJobs = jobLog ? (jobLog[td]||0) : 0;
-  var jobDone = todayJobs > 0;
   var last7Days = Array.from({length:7},function(_,i){var d=new Date();d.setDate(d.getDate()-6+i);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');});
-  var weekJobCount = last7Days.reduce(function(s,d){return s+(jobLog?(jobLog[d]||0):0);},0);
-  var totalJobCount = Object.values(jobLog||{}).reduce(function(s,v){return s+(typeof v==='number'?v:0);},0);
   var projPercent = (projectData&&projectData.percent!=null)?projectData.percent:80;
   var projPhase = (projectData&&projectData.phase)||'Marketing Assets';
   var daysSinceProject = (function(){
@@ -1066,7 +1062,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
     ),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, "Today's Non-Negotiables"),
-      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}},
+      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}},
         e('div', {onClick:()=>{var n=Object.assign({},cpapLog);n[yesterday]=!cpapDone;setCpapLog(n);save('cpapLog',n);}, style:{background:cpapDone?'rgba(0,198,255,0.07)':'#fff',border:'1px solid '+(cpapDone?ACCENT+'50':BORDER),borderRadius:14,padding:'12px 8px',textAlign:'center',cursor:'pointer'}},
           e('div', {style:{fontSize:22,marginBottom:4}}, '🌙'),
           e('div', {style:{fontSize:10,fontWeight:700,color:cpapDone?ACCENT:MUTED,lineHeight:1.3}}, 'CPAP last night'),
@@ -1076,31 +1072,12 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
           e('div', {style:{fontSize:22,marginBottom:4}}, '🌅'),
           e('div', {style:{fontSize:10,fontWeight:700,color:morningDone?'#00E5CC':MUTED,lineHeight:1.3}}, 'Morning routine'),
           e('div', {style:{fontSize:9,marginTop:3,color:morningDone?'#00E5CC':'#ccc'}}, morningDone?'✓ complete':'not done yet')
-        ),
-        e('div', {onClick:()=>{var n=Object.assign({},jobLog);n[td]=(n[td]||0)+1;setJobLog(n);save('jobLog',n);}, style:{background:jobDone?'rgba(123,47,255,0.07)':'#fff',border:'1px solid '+(jobDone?PURPLE+'50':BORDER),borderRadius:14,padding:'12px 8px',textAlign:'center',cursor:'pointer'}},
-          e('div', {style:{fontSize:22,marginBottom:4}}, '💼'),
-          e('div', {style:{fontSize:10,fontWeight:700,color:jobDone?PURPLE:MUTED,lineHeight:1.3}}, '1 application'),
-          e('div', {style:{fontSize:9,marginTop:3,color:jobDone?PURPLE:'#ccc'}}, jobDone?'✓ '+todayJobs+' logged':'tap to log')
         )
       )
     ),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
-    e('div', {style:{display:'flex',gap:10,marginBottom:12}},
-      e('div', {style:{flex:1,background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
-        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
-          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Job Search'),
-          e('div', {style:{fontSize:11,fontWeight:700,color:jobDone?PURPLE:'#FFB347',background:jobDone?PURPLE+'15':'#FFB34715',padding:'3px 10px',borderRadius:10}}, 'Today: '+todayJobs)
-        ),
-        e('div', {style:{display:'flex',gap:14,marginBottom:8}},
-          e('div', {}, e('div', {style:{fontSize:20,fontWeight:800,color:TEXT,lineHeight:1}}, weekJobCount), e('div', {style:{fontSize:9,color:MUTED,marginTop:2}}, 'this week')),
-          e('div', {}, e('div', {style:{fontSize:20,fontWeight:800,color:TEXT,lineHeight:1}}, totalJobCount), e('div', {style:{fontSize:9,color:MUTED,marginTop:2}}, 'total'))
-        ),
-        e('div', {style:{display:'flex',gap:3,marginBottom:3}},
-          ...last7Days.map(function(d,i){var c=jobLog?(jobLog[d]||0):0;return e('div',{key:i,style:{flex:1,height:10,borderRadius:2,background:c>0?PURPLE:CARD2}});})
-        ),
-        e('div', {style:{fontSize:9,color:'#ccc'}}, 'last 7 days')
-      ),
-      e('div', {style:{flex:1,background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
+    e('div', {style:{marginBottom:12}},
+      e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
           e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'The Project'),
           e('div', {style:{fontSize:10,fontWeight:700,color:PURPLE,background:PURPLE+'15',padding:'3px 8px',borderRadius:10}}, 'Phase 1')
@@ -6929,7 +6906,6 @@ function App() {
   const [workoutLog, setWorkoutLog] = useState({});
   const [wakeLog, setWakeLog] = useState({});
   const [cpapLog, setCpapLog] = useState({});
-  const [jobLog, setJobLog] = useState({});
   const [projectData, setProjectData] = useState({phase:'Marketing Assets', percent:80, lastAction:null});
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
   const [calendarConnected, setCalendarConnected] = useState(() => !!localStorage.getItem('hq_calTokens'));
@@ -6963,8 +6939,8 @@ function App() {
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='jobLog')setJobLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -7054,7 +7030,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});

@@ -32,12 +32,6 @@ const NOTIFICATION_SCHEDULES = {
     tag: 'hq-habits',
     requireInteraction: false,
   },
-  job_nudge: {
-    title: '💼 Job application reminder',
-    body: "You haven't logged a job app today yet. 1 a day keeps the search moving.",
-    tag: 'hq-job',
-    requireInteraction: false,
-  },
   test: {
     title: '✅ HQ Notifications work!',
     body: "You'll get morning, midday, and evening nudges from now on.",
