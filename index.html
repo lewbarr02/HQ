@@ -901,13 +901,17 @@ function FlowCheckinModal({activeSession, flowLog, setFlowLog, onClose}) {
 
 var IDEA_ACCENT = '#F59E0B';
 
-function QuickIdeasCard({ideaLog, setIdeaLog}) {
+function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects}) {
   var td = today();
   var [input, setInput] = React.useState('');
   var [expanded, setExpanded] = React.useState(false);
+  var [sortingIdea, setSortingIdea] = React.useState(null);
+  var [pickingProject, setPickingProject] = React.useState(false);
+  var [sentFlash, setSentFlash] = React.useState(null); // {text, dest}
   var inputRef = React.useRef(null);
 
   var todayIdeas = (ideaLog || []).filter(function(i){ return i.date === td; }).slice().reverse();
+  var unsortedCount = todayIdeas.filter(function(i){ return !i.sorted; }).length;
 
   function addIdea() {
     var text = input.trim();
@@ -934,11 +938,75 @@ function QuickIdeasCard({ideaLog, setIdeaLog}) {
     window.open('https://claude.ai/new', '_blank');
   }
 
-  return e('div', {style:{background:'#fff',border:'1px solid '+IDEA_ACCENT+'40',borderRadius:18,padding:14,marginBottom:12}},
+  function fileIdea(idea, dest, projectId) {
+    var text = idea.text;
+    if(dest === 'todo') {
+      var existing = load('priorities') || [];
+      var newP = {id: Date.now().toString(), name: text, cat: 'Personal', time: '', done: false, color: MUTED};
+      save('priorities', [...existing, newP]);
+    } else if(dest === 'grocery') {
+      var next = [...(groceries||[]), {id: Date.now().toString(), name: text, cat: 'Other', done: false}];
+      setGroceries(next); save('groceries', next);
+    } else if(dest === 'note') {
+      var next = [...(notes||[]), {id: Date.now().toString(), text: text, color: 0, created: td}];
+      setNotes(next); save('notes', next);
+    } else if(dest === 'project' && projectId) {
+      var next = (projects||[]).map(function(p){
+        return p.id === projectId ? {...p, tasks: [...(p.tasks||[]), {id: Date.now().toString(), text: text, done: false}]} : p;
+      });
+      setProjects(next); save('projects', next);
+    }
+    var destLabels = {todo:'Today\'s To-Do', grocery:'Grocery List', note:'Notes', project:'Project'};
+    setSentFlash({text: text, dest: destLabels[dest] || dest});
+    setTimeout(function(){ setSentFlash(null); }, 2200);
+    deleteIdea(idea.id);
+    setSortingIdea(null);
+    setPickingProject(false);
+  }
+
+  var SORT_DESTS = [
+    {id:'todo',   icon:'✅', label:"Today's To-Do"},
+    {id:'grocery',icon:'🛒', label:'Grocery List'},
+    {id:'note',   icon:'📝', label:'Notes'},
+    {id:'project',icon:'📁', label:'Project Task'},
+  ];
+
+  return e('div', {style:{background:'#fff',border:'1px solid '+IDEA_ACCENT+'40',borderRadius:18,padding:14,marginBottom:12,position:'relative'}},
+    sentFlash ? e('div', {style:{position:'absolute',top:0,left:0,right:0,bottom:0,borderRadius:18,background:'rgba(255,255,255,0.96)',zIndex:10,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}},
+      e('div', {style:{fontSize:26}}, '✓'),
+      e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, 'Sent to ' + sentFlash.dest)
+    ) : null,
+    sortingIdea ? e('div', {style:{position:'absolute',top:0,left:0,right:0,bottom:0,borderRadius:18,background:'rgba(255,255,255,0.97)',zIndex:10,padding:16,display:'flex',flexDirection:'column',gap:10}},
+      e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:2}}, 'SEND TO…'),
+      e('div', {style:{fontSize:13,color:TEXT,fontWeight:600,marginBottom:4,lineHeight:1.4}}, '"' + sortingIdea.text + '"'),
+      pickingProject
+        ? e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            e('div', {style:{fontSize:11,fontWeight:700,color:MUTED}}, 'PICK A PROJECT'),
+            ...(projects||[]).filter(function(p){return !p.done;}).map(function(p){
+              return e('button', {key:p.id, onClick:function(){ fileIdea(sortingIdea,'project',p.id); },
+                style:{padding:'10px 14px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,fontSize:13,fontWeight:600,color:TEXT,cursor:'pointer',textAlign:'left',fontFamily:'inherit'}},
+                p.title);
+            }),
+            (projects||[]).filter(function(p){return !p.done;}).length === 0
+              ? e('div', {style:{fontSize:13,color:MUTED}}, 'No projects yet — add one in Goals tab')
+              : null,
+            e('button', {onClick:function(){ setPickingProject(false); }, style:{marginTop:4,background:'none',border:'none',color:MUTED,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, '← Back')
+          )
+        : e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            ...SORT_DESTS.map(function(d){
+              return e('button', {key:d.id, onClick:function(){
+                  if(d.id==='project'){ setPickingProject(true); } else { fileIdea(sortingIdea, d.id); }
+                },
+                style:{padding:'10px 14px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,fontSize:13,fontWeight:600,color:TEXT,cursor:'pointer',textAlign:'left',fontFamily:'inherit',display:'flex',alignItems:'center',gap:10}},
+                e('span', {}, d.icon), d.label);
+            }),
+            e('button', {onClick:function(){ setSortingIdea(null); setPickingProject(false); }, style:{marginTop:4,background:'none',border:'none',color:MUTED,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
+          )
+    ) : null,
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
       e('div', {style:{display:'flex',alignItems:'center',gap:8}},
         e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '💡 Quick Ideas'),
-        todayIdeas.length > 0 ? e('div', {style:{fontSize:11,fontWeight:800,color:IDEA_ACCENT,background:IDEA_ACCENT+'18',borderRadius:8,padding:'2px 7px'}}, todayIdeas.length) : null
+        unsortedCount > 0 ? e('div', {style:{fontSize:11,fontWeight:800,color:'#F97316',background:'#F9731618',borderRadius:8,padding:'2px 7px'}}, unsortedCount + ' to sort') : null
       ),
       todayIdeas.length > 0 ? e('button', {onClick:function(){ setExpanded(!expanded); }, style:{fontSize:11,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, expanded ? 'Hide ↑' : 'Show ↓') : null
     ),
@@ -964,6 +1032,7 @@ function QuickIdeasCard({ideaLog, setIdeaLog}) {
             e('div', {style:{fontSize:13,color:TEXT,lineHeight:1.5}}, idea.text),
             e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, t)
           ),
+          e('button', {onClick:function(){ setSortingIdea(idea); setPickingProject(false); }, title:'Sort to a list', style:{background:'#F9731618',border:'none',borderRadius:8,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:'#F97316',fontWeight:700}}, 'Sort →'),
           e('button', {onClick:function(){ discussIdea(idea); }, title:'Discuss with Claude', style:{background:PURPLE+'12',border:'none',borderRadius:8,padding:'5px 8px',fontSize:13,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:PURPLE,fontWeight:700}}, '💬'),
           e('button', {onClick:function(){ deleteIdea(idea.id); }, style:{background:'none',border:'none',color:MUTED,fontSize:14,cursor:'pointer',padding:'4px',flexShrink:0}}, '✕')
         );
@@ -972,7 +1041,7 @@ function QuickIdeasCard({ideaLog, setIdeaLog}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -1161,7 +1230,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
       )
     ),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
-    e(QuickIdeasCard, {ideaLog, setIdeaLog}),
+    e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects}),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
@@ -7155,7 +7224,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
