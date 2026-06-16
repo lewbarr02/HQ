@@ -872,7 +872,78 @@ function FlowCheckinModal({activeSession, flowLog, setFlowLog, onClose}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase}) {
+var IDEA_ACCENT = '#F59E0B';
+
+function QuickIdeasCard({ideaLog, setIdeaLog}) {
+  var td = today();
+  var [input, setInput] = React.useState('');
+  var [expanded, setExpanded] = React.useState(false);
+  var inputRef = React.useRef(null);
+
+  var todayIdeas = (ideaLog || []).filter(function(i){ return i.date === td; }).slice().reverse();
+
+  function addIdea() {
+    var text = input.trim();
+    if(!text) return;
+    var idea = {id: 'idea'+Date.now(), text: text, date: td, time: new Date().toISOString()};
+    var next = [idea, ...(ideaLog || [])];
+    setIdeaLog(next);
+    save('ideaLog', next);
+    setInput('');
+    setExpanded(true);
+  }
+
+  function deleteIdea(id) {
+    var next = (ideaLog || []).filter(function(i){ return i.id !== id; });
+    setIdeaLog(next);
+    save('ideaLog', next);
+  }
+
+  function discussIdea(idea) {
+    var prompt = 'I had an idea I want to think through with you:\n\n"' + idea.text + '"\n\nHelp me develop this idea.';
+    try { navigator.clipboard.writeText(prompt); } catch(e){}
+    window.open('https://claude.ai/new', '_blank');
+  }
+
+  return e('div', {style:{background:'#fff',border:'1px solid '+IDEA_ACCENT+'40',borderRadius:18,padding:14,marginBottom:12}},
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+      e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '💡 Quick Ideas'),
+        todayIdeas.length > 0 ? e('div', {style:{fontSize:11,fontWeight:800,color:IDEA_ACCENT,background:IDEA_ACCENT+'18',borderRadius:8,padding:'2px 7px'}}, todayIdeas.length) : null
+      ),
+      todayIdeas.length > 0 ? e('button', {onClick:function(){ setExpanded(!expanded); }, style:{fontSize:11,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, expanded ? 'Hide ↑' : 'Show ↓') : null
+    ),
+    e('div', {style:{display:'flex',gap:8}},
+      e('input', {
+        ref: inputRef,
+        value: input,
+        onChange: function(ev){ setInput(ev.target.value); },
+        onKeyDown: function(ev){ if(ev.key==='Enter') addIdea(); },
+        placeholder: 'Idea just hit — capture it…',
+        style:{flex:1,padding:'10px 14px',borderRadius:12,border:'1.5px solid '+(input?IDEA_ACCENT+'60':BORDER),background:CARD2,fontSize:14,fontFamily:'inherit',outline:'none',transition:'border-color 0.2s'}
+      }),
+      e('button', {
+        onClick: addIdea,
+        style:{padding:'10px 14px',borderRadius:12,background:input.trim()?'linear-gradient(135deg,'+IDEA_ACCENT+',#F97316)':'#E8E8F0',border:'none',color:input.trim()?'white':MUTED,fontSize:16,cursor:input.trim()?'pointer':'default',transition:'all 0.2s',fontFamily:'inherit'}
+      }, '→')
+    ),
+    expanded && todayIdeas.length > 0 ? e('div', {style:{marginTop:10,display:'flex',flexDirection:'column',gap:6}},
+      ...todayIdeas.map(function(idea){
+        var t = new Date(idea.time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        return e('div', {key:idea.id, style:{display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px',background:IDEA_ACCENT+'08',borderRadius:12,border:'1px solid '+IDEA_ACCENT+'20'}},
+          e('div', {style:{flex:1}},
+            e('div', {style:{fontSize:13,color:TEXT,lineHeight:1.5}}, idea.text),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, t)
+          ),
+          e('button', {onClick:function(){ discussIdea(idea); }, title:'Discuss with Claude', style:{background:PURPLE+'12',border:'none',borderRadius:8,padding:'5px 8px',fontSize:13,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:PURPLE,fontWeight:700}}, '💬'),
+          e('button', {onClick:function(){ deleteIdea(idea.id); }, style:{background:'none',border:'none',color:MUTED,fontSize:14,cursor:'pointer',padding:'4px',flexShrink:0}}, '✕')
+        );
+      })
+    ) : null
+  );
+}
+
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -1061,6 +1132,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
       )
     ),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
+    e(QuickIdeasCard, {ideaLog, setIdeaLog}),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
@@ -1365,6 +1437,32 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         );
       })()
     ),
+    (function(){
+      var dayIdeas = (ideaLog||[]).filter(function(i){ return i.date===qlDate; }).slice().reverse();
+      if(dayIdeas.length === 0) return null;
+      return e('div', {className:'card', style:{marginBottom:12}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, '💡 Ideas — '+(qlIsToday?'Today':qlDisplay)),
+        e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
+          ...dayIdeas.map(function(idea){
+            var t = new Date(idea.time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+            return e('div', {key:idea.id, style:{display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px',background:IDEA_ACCENT+'08',borderRadius:12,border:'1px solid '+IDEA_ACCENT+'20'}},
+              e('div', {style:{flex:1}},
+                e('div', {style:{fontSize:13,color:TEXT,lineHeight:1.5}}, idea.text),
+                e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, t)
+              ),
+              e('button', {
+                onClick:function(){
+                  var prompt = 'I had an idea I want to think through with you:\n\n"'+idea.text+'"\n\nHelp me develop this idea.';
+                  try{navigator.clipboard.writeText(prompt);}catch(e){}
+                  window.open('https://claude.ai/new','_blank');
+                },
+                style:{background:PURPLE+'12',border:'none',borderRadius:8,padding:'5px 8px',fontSize:13,cursor:'pointer',flexShrink:0,color:PURPLE,fontWeight:700,fontFamily:'inherit'}
+              }, '💬 Discuss')
+            );
+          })
+        )
+      );
+    })(),
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Daily Spark'),
       e('div', {style:{fontSize:15,lineHeight:1.65,color:TEXT,fontStyle:'italic',textAlign:'center'}}, '"'+quote+'"')
@@ -6891,6 +6989,7 @@ function App() {
   const [cleaningPhase, setCleaningPhase] = useState('done'); // greeting|checklist|complete|history|done
   const [cleaningLog, setCleaningLog] = useState({});
   const [cleaningItems, setCleaningItems] = useState(DEFAULT_CLEANING_HABITS);
+  const [ideaLog, setIdeaLog] = useState([]);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState({});
@@ -6929,8 +7028,8 @@ function App() {
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','ideaLog'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -7020,7 +7119,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
