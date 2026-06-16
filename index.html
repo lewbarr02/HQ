@@ -938,37 +938,40 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
     window.open('https://claude.ai/new', '_blank');
   }
 
-  function fileIdea(idea, dest, projectId) {
+  var [pickingGrocery, setPickingGrocery] = React.useState(false);
+
+  function fileIdea(idea, dest, subId) {
     var text = idea.text;
     if(dest === 'todo') {
       var existing = load('priorities') || [];
-      var newP = {id: Date.now().toString(), name: text, cat: 'Personal', time: '', done: false, color: MUTED};
-      save('priorities', [...existing, newP]);
-    } else if(dest === 'grocery') {
-      var next = [...(groceries||[]), {id: Date.now().toString(), name: text, cat: 'Other', done: false}];
+      save('priorities', [...existing, {id: Date.now().toString(), name: text, cat: 'Personal', time: '', done: false, color: MUTED}]);
+    } else if(dest === 'grocery-wife' || dest === 'grocery-mine' || dest === 'grocery-amazon') {
+      var listKey = dest.replace('grocery-', '');
+      var next = [...(groceries||[]), {id: Date.now().toString(), name: text, list: listKey, done: false}];
       setGroceries(next); save('groceries', next);
     } else if(dest === 'note') {
       var next = [...(notes||[]), {id: Date.now().toString(), text: text, color: 0, created: td}];
       setNotes(next); save('notes', next);
-    } else if(dest === 'project' && projectId) {
+    } else if(dest === 'project' && subId) {
       var next = (projects||[]).map(function(p){
-        return p.id === projectId ? {...p, tasks: [...(p.tasks||[]), {id: Date.now().toString(), text: text, done: false}]} : p;
+        return p.id === subId ? {...p, tasks: [...(p.tasks||[]), {id: Date.now().toString(), text: text, done: false}]} : p;
       });
       setProjects(next); save('projects', next);
     }
-    var destLabels = {todo:'Today\'s To-Do', grocery:'Grocery List', note:'Notes', project:'Project'};
+    var destLabels = {'todo':"Today's To-Do",'grocery-wife':'Wife List','grocery-mine':'My List','grocery-amazon':'Amazon','note':'Notes','project':'Project'};
     setSentFlash({text: text, dest: destLabels[dest] || dest});
     setTimeout(function(){ setSentFlash(null); }, 2200);
     deleteIdea(idea.id);
     setSortingIdea(null);
     setPickingProject(false);
+    setPickingGrocery(false);
   }
 
   var SORT_DESTS = [
-    {id:'todo',   icon:'✅', label:"Today's To-Do"},
-    {id:'grocery',icon:'🛒', label:'Grocery List'},
-    {id:'note',   icon:'📝', label:'Notes'},
-    {id:'project',icon:'📁', label:'Project Task'},
+    {id:'todo',    icon:'✅', label:"Today's To-Do"},
+    {id:'grocery', icon:'🛒', label:'Shopping →'},
+    {id:'note',    icon:'📝', label:'Notes'},
+    {id:'project', icon:'📁', label:'Project Task'},
   ];
 
   return e('div', {style:{background:'#fff',border:'1px solid '+IDEA_ACCENT+'40',borderRadius:18,padding:14,marginBottom:12,position:'relative'}},
@@ -992,15 +995,25 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
               : null,
             e('button', {onClick:function(){ setPickingProject(false); }, style:{marginTop:4,background:'none',border:'none',color:MUTED,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, '← Back')
           )
+        : pickingGrocery
+        ? e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            e('div', {style:{fontSize:11,fontWeight:700,color:MUTED}}, 'WHICH LIST?'),
+            e('button', {onClick:function(){ fileIdea(sortingIdea,'grocery-wife'); }, style:{padding:'10px 14px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,fontSize:13,fontWeight:600,color:TEXT,cursor:'pointer',textAlign:'left',fontFamily:'inherit',display:'flex',alignItems:'center',gap:10}}, e('span',{},'💌'), 'Wife List'),
+            e('button', {onClick:function(){ fileIdea(sortingIdea,'grocery-mine'); }, style:{padding:'10px 14px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,fontSize:13,fontWeight:600,color:TEXT,cursor:'pointer',textAlign:'left',fontFamily:'inherit',display:'flex',alignItems:'center',gap:10}}, e('span',{},'🚶'), 'My List'),
+            e('button', {onClick:function(){ fileIdea(sortingIdea,'grocery-amazon'); }, style:{padding:'10px 14px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,fontSize:13,fontWeight:600,color:TEXT,cursor:'pointer',textAlign:'left',fontFamily:'inherit',display:'flex',alignItems:'center',gap:10}}, e('span',{},'📦'), 'Amazon'),
+            e('button', {onClick:function(){ setPickingGrocery(false); }, style:{marginTop:4,background:'none',border:'none',color:MUTED,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, '← Back')
+          )
         : e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
             ...SORT_DESTS.map(function(d){
               return e('button', {key:d.id, onClick:function(){
-                  if(d.id==='project'){ setPickingProject(true); } else { fileIdea(sortingIdea, d.id); }
+                  if(d.id==='project'){ setPickingProject(true); }
+                  else if(d.id==='grocery'){ setPickingGrocery(true); }
+                  else { fileIdea(sortingIdea, d.id); }
                 },
                 style:{padding:'10px 14px',borderRadius:12,background:CARD2,border:'1px solid '+BORDER,fontSize:13,fontWeight:600,color:TEXT,cursor:'pointer',textAlign:'left',fontFamily:'inherit',display:'flex',alignItems:'center',gap:10}},
                 e('span', {}, d.icon), d.label);
             }),
-            e('button', {onClick:function(){ setSortingIdea(null); setPickingProject(false); }, style:{marginTop:4,background:'none',border:'none',color:MUTED,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
+            e('button', {onClick:function(){ setSortingIdea(null); setPickingProject(false); setPickingGrocery(false); }, style:{marginTop:4,background:'none',border:'none',color:MUTED,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
           )
     ) : null,
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
@@ -2056,64 +2069,100 @@ function GoalsScreen({goals, setGoals, projects, setProjects, setTab}) {
   );
 }
 
-function GroceryScreen({groceries, setGroceries, setTab}) {
-  const [newItem, setNewItem] = useState(''), [newCat, setNewCat] = useState('Produce'), [copied, setCopied] = useState(false);
-  const CATS=['Produce','Protein','Dairy','Bakery','Pantry','Frozen','Drinks','Other'];
-  const CC={Produce:'#00C864',Protein:'#FF6B35',Dairy:ACCENT,Bakery:'#FFB347',Pantry:PURPLE,Frozen:'#4FC3F7',Drinks:'#FF6B9D',Other:MUTED};
+function ShoppingScreen({groceries, setGroceries, setTab}) {
+  const LISTS = [
+    {id:'wife',   label:'Wife',   emoji:'💌', color:'#FF6B9D', hint:'She shops — send her the list'},
+    {id:'mine',   label:'Mine',   emoji:'🚶', color:ACCENT,    hint:'Grab in transit'},
+    {id:'amazon', label:'Amazon', emoji:'📦', color:'#F97316', hint:'Order online'},
+  ];
+  const [activeList, setActiveList] = useState('wife');
+  const [newItem, setNewItem] = useState('');
+  const [copied, setCopied] = useState(false);
+  const listColor = LISTS.find(function(l){return l.id===activeList;}).color;
 
-  function addItem(){if(!newItem.trim())return;const next=[...groceries,{id:Date.now().toString(),name:newItem.trim(),cat:newCat,done:false}];setGroceries(next);save('groceries',next);setNewItem('');}
-  function toggleItem(id){const next=groceries.map(g=>g.id===id?{...g,done:!g.done}:g);setGroceries(next);save('groceries',next);}
-  function deleteItem(id){const next=groceries.filter(g=>g.id!==id);setGroceries(next);save('groceries',next);}
-  function clearDone(){const next=groceries.filter(g=>!g.done);setGroceries(next);save('groceries',next);}
-  function copyList(){
-    const lines=['🛒 Grocery List\n'];
-    CATS.forEach(cat=>{const items=groceries.filter(g=>!g.done&&g.cat===cat);if(items.length){lines.push(cat);items.forEach(i=>lines.push('  • '+i.name));lines.push('');}});
-    const text=lines.join('\n').trim();
-    navigator.clipboard.writeText(text).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);}).catch(()=>{
-      const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);setCopied(true);setTimeout(()=>setCopied(false),2500);
+  function addItem() {
+    if(!newItem.trim()) return;
+    var next = [...(groceries||[]), {id:Date.now().toString(), name:newItem.trim(), list:activeList, done:false}];
+    setGroceries(next); save('groceries', next); setNewItem('');
+  }
+  function toggleItem(id) {
+    var next = (groceries||[]).map(function(g){return g.id===id?{...g,done:!g.done}:g;});
+    setGroceries(next); save('groceries', next);
+  }
+  function deleteItem(id) {
+    var next = (groceries||[]).filter(function(g){return g.id!==id;});
+    setGroceries(next); save('groceries', next);
+  }
+  function clearDone() {
+    var next = (groceries||[]).filter(function(g){return !(g.done && (g.list||'wife')===activeList);});
+    setGroceries(next); save('groceries', next);
+  }
+  function copyWifeList() {
+    var items = (groceries||[]).filter(function(g){return (g.list||'wife')==='wife' && !g.done;});
+    var text = 'Hey! Can you grab these?\n\n' + items.map(function(i){return '• '+i.name;}).join('\n');
+    navigator.clipboard.writeText(text).then(function(){setCopied(true);setTimeout(function(){setCopied(false);},2500);}).catch(function(){
+      var ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);setCopied(true);setTimeout(function(){setCopied(false);},2500);
     });
   }
+  function searchAmazon(name) {
+    window.open('https://www.amazon.com/s?k='+encodeURIComponent(name), '_blank');
+  }
 
-  const active=groceries.filter(g=>!g.done), done=groceries.filter(g=>g.done);
-  const grouped=CATS.map(cat=>({cat,items:active.filter(g=>g.cat===cat)})).filter(g=>g.items.length>0);
+  var listItems = (groceries||[]).filter(function(g){return (g.list||'wife')===activeList;});
+  var active = listItems.filter(function(g){return !g.done;});
+  var done = listItems.filter(function(g){return g.done;});
 
   return e('div', {className:'content'},
-    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}},
-      e('div', {style:{display:'flex',alignItems:'center',gap:8}},
-        e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
-        e('div', {style:{fontSize:22,fontWeight:800}}, '🛒 Grocery List')
-      ),
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
+      e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:22,fontWeight:800}}, '🛒 Shopping')
+    ),
+    e('div', {style:{display:'flex',gap:6,marginBottom:16,background:CARD2,borderRadius:14,padding:4}},
+      ...LISTS.map(function(l){
+        var active = l.id===activeList;
+        return e('button', {key:l.id, onClick:function(){setActiveList(l.id);}, style:{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:active?'#fff':'transparent',color:active?l.color:MUTED,fontWeight:active?800:600,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:active?'0 1px 4px rgba(0,0,0,0.08)':'none',transition:'all 0.15s'}},
+          e('div', {}, l.emoji + ' ' + l.label)
+        );
+      })
+    ),
+    e('div', {style:{fontSize:11,color:MUTED,textAlign:'center',marginBottom:12}}, LISTS.find(function(l){return l.id===activeList;}).hint),
+    e('div', {className:'card', style:{padding:'12px 14px',marginBottom:12}},
       e('div', {style:{display:'flex',gap:8}},
-        active.length>0?e('button', {onClick:copyList, style:{fontSize:12,fontWeight:700,padding:'6px 14px',borderRadius:10,border:'1.5px solid '+(copied?'#00C864':ACCENT),color:copied?'#00C864':ACCENT,background:copied?'rgba(0,200,100,0.08)':'rgba(0,198,255,0.08)',cursor:'pointer',fontFamily:'inherit'}}, copied?'✓ Copied!':'📋 Copy'):null,
-        done.length>0?e('button', {onClick:clearDone, style:{fontSize:12,fontWeight:700,padding:'6px 14px',borderRadius:10,border:'1.5px solid #FF6B9D',color:'#FF6B9D',background:'transparent',cursor:'pointer',fontFamily:'inherit'}}, 'Clear ('+done.length+')'):null
+        e('input', {className:'input', style:{flex:1,marginBottom:0,borderColor:newItem?listColor+'60':undefined}, placeholder:'Add item...', value:newItem,
+          onInput:function(ev){setNewItem(ev.target.value);},
+          onKeyDown:function(ev){if(ev.key==='Enter')addItem();}}),
+        e('button', {onClick:addItem, style:{padding:'0 16px',borderRadius:12,background:newItem.trim()?listColor:'#E8E8F0',border:'none',color:newItem.trim()?'white':MUTED,fontWeight:700,fontSize:14,cursor:newItem.trim()?'pointer':'default',fontFamily:'inherit',transition:'all 0.2s'}}, 'Add')
       )
     ),
-    e('div', {className:'card', style:{padding:'12px 14px'}},
-      e('div', {style:{display:'flex',gap:8,marginBottom:8}},
-        e('input', {className:'input', style:{flex:1,marginBottom:0}, placeholder:'Add item...', value:newItem, onInput:ev=>setNewItem(ev.target.value), onKeyDown:ev=>ev.key==='Enter'&&addItem()}),
-        e('button', {className:'btn-primary', style:{flex:'0 0 60px',padding:'0 12px'}, onClick:addItem}, 'Add')
+    activeList==='wife' && active.length>0 ? e('button', {onClick:copyWifeList, style:{width:'100%',marginBottom:12,padding:'12px',borderRadius:12,border:'1.5px solid '+(copied?'#00C864':'#FF6B9D'),background:copied?'rgba(0,200,100,0.08)':'rgba(255,107,157,0.07)',color:copied?'#00C864':'#FF6B9D',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}},
+      copied ? '✓ Copied to clipboard!' : '💌 Copy list to send to wife'
+    ) : null,
+    active.length===0 && done.length===0 ? e('div', {style:{textAlign:'center',color:MUTED,padding:'40px 0',fontSize:14}}, 'Nothing on this list yet') : null,
+    active.length>0 ? e('div', {className:'card', style:{padding:'12px 14px'}},
+      ...active.map(function(item){
+        return e('div', {key:item.id, style:{display:'flex',alignItems:'center',gap:12,padding:'11px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
+          e('button', {onClick:function(){toggleItem(item.id);}, style:{width:24,height:24,borderRadius:'50%',flexShrink:0,border:'2px solid '+listColor,background:'transparent',cursor:'pointer',fontFamily:'inherit'}}, ''),
+          e('span', {style:{flex:1,fontSize:15,fontWeight:500}}, item.name),
+          activeList==='amazon' ? e('button', {onClick:function(){searchAmazon(item.name);}, style:{background:'#F9731618',border:'none',borderRadius:8,padding:'5px 10px',fontSize:12,fontWeight:700,color:'#F97316',cursor:'pointer',fontFamily:'inherit',flexShrink:0}}, '🔍 Search') : null,
+          e('button', {onClick:function(){deleteItem(item.id);}, style:{background:'none',border:'none',color:'#C0C0D0',cursor:'pointer',fontSize:18,padding:'0 4px',flexShrink:0}}, '×')
+        );
+      })
+    ) : null,
+    done.length>0 ? e('div', {style:{marginTop:12}},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}},
+        e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:1,textTransform:'uppercase'}}, '✓ Done ('+done.length+')'),
+        e('button', {onClick:clearDone, style:{fontSize:11,fontWeight:700,color:'#FF6B9D',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Clear')
       ),
-      e('div', {style:{display:'flex',gap:6,flexWrap:'wrap'}},
-        ...CATS.map(c=>e('button',{key:c,onClick:()=>setNewCat(c),style:{padding:'5px 10px',borderRadius:16,fontSize:11,fontWeight:700,border:'1.5px solid '+(newCat===c?CC[c]:BORDER),background:newCat===c?CC[c]+'15':CARD2,color:newCat===c?CC[c]:MUTED,cursor:'pointer',fontFamily:'inherit'}},c))
+      e('div', {className:'card', style:{padding:'12px 14px',opacity:0.6}},
+        ...done.map(function(item){
+          return e('div', {key:item.id, style:{display:'flex',alignItems:'center',gap:12,padding:'8px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
+            e('button', {onClick:function(){toggleItem(item.id);}, style:{width:24,height:24,borderRadius:'50%',flexShrink:0,border:'2px solid #8E8EAA',background:'#8E8EAA',display:'flex',alignItems:'center',justifyContent:'center',color:'white',cursor:'pointer',fontFamily:'inherit'}}, '✓'),
+            e('span', {style:{flex:1,fontSize:14,color:MUTED,textDecoration:'line-through'}}, item.name),
+            e('button', {onClick:function(){deleteItem(item.id);}, style:{background:'none',border:'none',color:'#C0C0D0',cursor:'pointer',fontSize:18}}, '×')
+          );
+        })
       )
-    ),
-    grouped.length===0&&done.length===0?e('div',{style:{textAlign:'center',color:MUTED,padding:'40px 0',fontSize:14}},'Your list is empty 🛒'):null,
-    ...grouped.map(({cat,items})=>e('div',{key:cat,className:'card',style:{padding:'12px 14px'}},
-      e('div',{style:{fontSize:11,fontWeight:700,color:CC[cat],letterSpacing:1,marginBottom:8,textTransform:'uppercase'}},cat),
-      ...items.map(item=>e('div',{key:item.id,style:{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
-        e('button',{onClick:()=>toggleItem(item.id),style:{width:24,height:24,borderRadius:'50%',flexShrink:0,border:'2px solid '+CC[item.cat],background:'transparent',cursor:'pointer',fontFamily:'inherit'}},''),
-        e('span',{style:{flex:1,fontSize:15,fontWeight:500}},item.name),
-        e('button',{onClick:()=>deleteItem(item.id),style:{background:'none',border:'none',color:'#C0C0D0',cursor:'pointer',fontSize:18,padding:'0 4px'}},'×')
-      ))
-    )),
-    done.length>0?e('div',{className:'card',style:{padding:'12px 14px',opacity:0.6}},
-      e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:1,marginBottom:8,textTransform:'uppercase'}},'✓ In cart ('+done.length+')'),
-      ...done.map(item=>e('div',{key:item.id,style:{display:'flex',alignItems:'center',gap:12,padding:'8px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
-        e('button',{onClick:()=>toggleItem(item.id),style:{width:24,height:24,borderRadius:'50%',flexShrink:0,border:'2px solid #8E8EAA',background:'#8E8EAA',display:'flex',alignItems:'center',justifyContent:'center',color:'white',cursor:'pointer',fontFamily:'inherit'}},'✓'),
-        e('span',{style:{flex:1,fontSize:14,color:MUTED,textDecoration:'line-through'}},item.name),
-        e('button',{onClick:()=>deleteItem(item.id),style:{background:'none',border:'none',color:'#C0C0D0',cursor:'pointer',fontSize:18}},'×')
-      ))
-    ):null
+    ) : null
   );
 }
 
@@ -7215,7 +7264,7 @@ function App() {
     {id:'macros',icon:'🥗',label:'Macros'},
     {id:'foodpipeline',icon:'🍽️',label:'Food Pipeline'},
     {id:'photos',icon:'📸',label:'Progress Photos'},
-    {id:'grocery',icon:'🛒',label:'Grocery List'},
+    {id:'grocery',icon:'🛒',label:'Shopping'},
     {id:'notes',icon:'📝',label:'Notes'},
     {id:'review',icon:'📊',label:'Review'},
     {id:'notifications',icon:'🔔',label:'Notifications'},
@@ -7237,7 +7286,7 @@ function App() {
       case 'foodpipeline': return e(FoodPipelineScreen, {setTab});
       case 'photos': return e(ProgressPhotosScreen, {setTab});
       case 'notifications': return e(NotificationsScreen, {setTab});
-      case 'grocery': return e(GroceryScreen, {groceries,setGroceries,setTab});
+      case 'grocery': return e(ShoppingScreen, {groceries,setGroceries,setTab});
       case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump,setTab});
       case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,eveningLog,middayLog,morningItems,eveningItems,setTab});
       case 'data': return e(DataScreen, {habits,habitLog,timeLog,goals,projects,notes,groceries,brainDump,setHabits,setHabitLog,setTimeLog,setGoals,setProjects,setNotes,setGroceries,setBrainDump,setTab});
