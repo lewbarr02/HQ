@@ -900,6 +900,52 @@ function FlowCheckinModal({activeSession, flowLog, setFlowLog, onClose}) {
 }
 
 var IDEA_ACCENT = '#F59E0B';
+var SHOP_LISTS = [
+  {id:'wife',   label:'Wife',   emoji:'💌', color:'#FF6B9D'},
+  {id:'mine',   label:'Mine',   emoji:'🚶', color:ACCENT},
+  {id:'amazon', label:'Amazon', emoji:'📦', color:'#F97316'},
+];
+
+function QuickShoppingCard({groceries, setGroceries}) {
+  var [input, setInput] = React.useState('');
+  var [sent, setSent] = React.useState(null);
+  var inputRef = React.useRef(null);
+
+  function addToList(listId) {
+    var text = input.trim();
+    if(!text) return;
+    var next = [...(groceries||[]), {id: Date.now().toString(), name: text, list: listId, done: false}];
+    setGroceries(next); save('groceries', next);
+    setInput('');
+    var label = SHOP_LISTS.find(function(l){return l.id===listId;}).label;
+    setSent(label);
+    setTimeout(function(){setSent(null);}, 1800);
+    if(inputRef.current) inputRef.current.focus();
+  }
+
+  return e('div', {style:{background:'#fff',border:'1px solid rgba(255,107,157,0.3)',borderRadius:18,padding:14,marginBottom:12,position:'relative'}},
+    sent ? e('div', {style:{position:'absolute',inset:0,borderRadius:18,background:'rgba(255,255,255,0.95)',zIndex:5,display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,color:TEXT}},
+      '✓ Added to ', e('span', {style:{color:'#FF6B9D'}}, sent)
+    ) : null,
+    e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, '🛒 Shopping'),
+    e('input', {
+      ref: inputRef,
+      value: input,
+      onChange: function(ev){setInput(ev.target.value);},
+      onKeyDown: function(ev){if(ev.key==='Enter' && input.trim()) addToList('mine');},
+      placeholder: 'Need something? Jot it down…',
+      style:{width:'100%',padding:'10px 14px',borderRadius:12,border:'1.5px solid '+(input?'#FF6B9D60':BORDER),background:CARD2,fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box',marginBottom:10}
+    }),
+    e('div', {style:{display:'flex',gap:8}},
+      ...SHOP_LISTS.map(function(l){
+        var active = input.trim();
+        return e('button', {key:l.id, onClick:function(){addToList(l.id);},
+          style:{flex:1,padding:'9px 4px',borderRadius:12,border:'1.5px solid '+(active?l.color+'60':BORDER),background:active?l.color+'12':CARD2,color:active?l.color:MUTED,fontWeight:700,fontSize:12,cursor:active?'pointer':'default',fontFamily:'inherit',transition:'all 0.15s'}},
+          l.emoji + ' ' + l.label);
+      })
+    )
+  );
+}
 
 function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects}) {
   var td = today();
@@ -1244,6 +1290,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
     ),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
     e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects}),
+    e(QuickShoppingCard, {groceries, setGroceries}),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
