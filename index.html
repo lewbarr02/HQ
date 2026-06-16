@@ -31,8 +31,12 @@
     .habit-circle.done{background:white;box-shadow:0 0 0 3px rgba(0,198,255,0.15);}
     .stat-tile{background:#fff;border:1px solid rgba(100,80,220,0.1);border-radius:16px;padding:12px 6px;text-align:center;box-shadow:0 2px 8px rgba(100,80,220,0.05);}
     ::-webkit-scrollbar{display:none;}
-    .splash{position:fixed;inset:0;z-index:999;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:splashOut 0.5s ease 2.8s forwards;}
+    .splash{position:fixed;inset:0;z-index:999;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:splashOut 0.5s ease 3.2s forwards;}
+    .splash-logo{position:relative;display:flex;align-items:center;justify-content:center;width:200px;height:200px;}
+    .splash-ring{position:absolute;border-radius:50%;border:2px solid;width:150px;height:150px;opacity:0;animation:ringExpand 1.4s ease-out forwards;}
+    @keyframes ringExpand{0%{transform:scale(0.3);opacity:0.9;}100%{transform:scale(2.6);opacity:0;}}
     @keyframes splashOut{to{opacity:0;pointer-events:none;}}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
     @keyframes pop{from{transform:scale(0.4);opacity:0;}to{transform:scale(1);opacity:1;}}
     @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
     @keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(245,158,11,0.4);}50%{box-shadow:0 0 0 7px rgba(245,158,11,0.1);}}
@@ -272,15 +276,31 @@ function NavIcon({ name, size, color }) {
 }
 
 function Splash() {
+  const [typed, setTyped] = useState('');
+  const [showSub, setShowSub] = useState(false);
+  const [cursorOn, setCursorOn] = useState(true);
+  useEffect(() => {
+    var t1, t2, i = 0;
+    var text = 'Lewis.';
+    t1 = setTimeout(function tick() {
+      setTyped(text.slice(0, ++i));
+      if (i < text.length) t1 = setTimeout(tick, 80);
+      else { setTimeout(function(){ setCursorOn(false); setShowSub(true); }, 300); }
+    }, 1000);
+    return function(){ clearTimeout(t1); clearTimeout(t2); };
+  }, []);
   return e('div', {className:'splash'},
-    e('img', {src:LOGO, style:{width:220,height:220,objectFit:'contain'}, className:'splash-logo'}),
-    e('div', {style:{display:'flex',alignItems:'center',gap:8,animation:'fadeUp 0.5s ease 1s both'}},
-      e('div', {style:{height:2,width:60,background:'linear-gradient(90deg,transparent,#00C6FF)'}}),
-      e('div', {style:{width:8,height:8,borderRadius:'50%',background:'linear-gradient(135deg,#00C6FF,#7B2FFF)'}}),
-      e('div', {style:{height:2,width:60,background:'linear-gradient(90deg,#7B2FFF,transparent)'}})
+    e('div', {className:'splash-logo'},
+      e('div', {className:'splash-ring', style:{borderColor:'#00C6FF', animationDelay:'0.6s'}}),
+      e('div', {className:'splash-ring', style:{borderColor:'#5B8DFF', animationDelay:'0.85s'}}),
+      e('div', {className:'splash-ring', style:{borderColor:'#7B2FFF', animationDelay:'1.1s'}}),
+      e('img', {src:LOGO, style:{width:200,height:200,objectFit:'contain',position:'relative',zIndex:1}})
     ),
-    e('div', {className:'splash-greeting'}, 'Hi ', e('span', {className:'grad'}, 'Lewis.')),
-    e('div', {className:'splash-sub'}, "Let's conquer the day")
+    e('div', {className:'splash-greeting'},
+      'Hi ', e('span', {className:'grad'}, typed),
+      cursorOn ? e('span', {style:{display:'inline-block',width:2,height:'1em',background:ACCENT,verticalAlign:'middle',marginLeft:2,animation:'blink 0.7s step-end infinite'}}) : null
+    ),
+    e('div', {className:'splash-sub', style:{opacity: showSub ? 1 : 0, transition:'opacity 0.5s ease'}}, "Let's conquer the day")
   );
 }
 
@@ -624,13 +644,20 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
     // LEFT PANEL — draggable items
     e('div', {style:{width:200, flexShrink:0, borderRight:'1px solid '+BORDER, overflowY:'auto', padding:'16px 12px', background:'#FAFAFE'}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Routines'),
-      ...routineItems.map(function(item){ return DraggableChip({key:item.id, item:item}); }),
-      (habits && habits.length > 0) ? e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10,marginTop:16}}, 'Habits') : null,
-      ...(habits || []).map(function(h){
-        var item = {id:'habit-'+h.id, label:h.name, color:h.color||ACCENT, durationMin:15};
-        return DraggableChip({key:item.id, item:item});
-      }),
+      (function(){
+        var scheduledIds = scheduled.map(function(s){ return s.id; });
+        var availableRoutines = routineItems.filter(function(item){ return !scheduledIds.includes(item.id); });
+        var availableHabits = (habits || []).filter(function(h){ return !scheduledIds.includes('habit-'+h.id); });
+        return [
+          availableRoutines.length > 0 ? e('div', {key:'rh', style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Routines') : null,
+          ...availableRoutines.map(function(item){ return DraggableChip({key:item.id, item:item}); }),
+          availableHabits.length > 0 ? e('div', {key:'hh', style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10,marginTop:16}}, 'Habits') : null,
+          ...availableHabits.map(function(h){
+            var item = {id:'habit-'+h.id, label:h.name, color:h.color||ACCENT, durationMin:15};
+            return DraggableChip({key:item.id, item:item});
+          }),
+        ];
+      })(),
       e('div', {style:{height:40}})
     ),
 
