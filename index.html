@@ -1060,21 +1060,6 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         )
       )
     ),
-    e('div', {style:{marginBottom:12}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, "Today's Non-Negotiables"),
-      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}},
-        e('div', {onClick:()=>{var n=Object.assign({},cpapLog);n[yesterday]=!cpapDone;setCpapLog(n);save('cpapLog',n);}, style:{background:cpapDone?'rgba(0,198,255,0.07)':'#fff',border:'1px solid '+(cpapDone?ACCENT+'50':BORDER),borderRadius:14,padding:'12px 8px',textAlign:'center',cursor:'pointer'}},
-          e('div', {style:{fontSize:22,marginBottom:4}}, '🌙'),
-          e('div', {style:{fontSize:10,fontWeight:700,color:cpapDone?ACCENT:MUTED,lineHeight:1.3}}, 'CPAP last night'),
-          e('div', {style:{fontSize:9,marginTop:3,color:cpapDone?ACCENT:'#ccc'}}, cpapDone?'✓ logged':'tap to log')
-        ),
-        e('div', {style:{background:morningDone?'rgba(0,229,204,0.07)':'#fff',border:'1px solid '+(morningDone?'#00E5CC50':BORDER),borderRadius:14,padding:'12px 8px',textAlign:'center'}},
-          e('div', {style:{fontSize:22,marginBottom:4}}, '🌅'),
-          e('div', {style:{fontSize:10,fontWeight:700,color:morningDone?'#00E5CC':MUTED,lineHeight:1.3}}, 'Morning routine'),
-          e('div', {style:{fontSize:9,marginTop:3,color:morningDone?'#00E5CC':'#ccc'}}, morningDone?'✓ complete':'not done yet')
-        )
-      )
-    ),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
@@ -1504,8 +1489,9 @@ function HabitsScreen({habits, setHabits, habitLog, setHabitLog, setTab}) {
   const EMOJIS = ['💪🏽','🏋️','📚','🧘','💧','😴','🏃','🥗','💊','✍️','🎯','🧹','🌿','☀️','🎸','🧠','🔌','🛁'];
   const days = getDIM(year,month);
 
-  function addHabit(){if(!name.trim())return;const h={id:'h'+Date.now(),name,emoji:emoji||'⭐',color};const next=[...habits,h];setHabits(next);save('habits',next);setName('');setEmoji('');setAdding(false);}
+  function addHabit(){if(!name.trim())return;const h={id:'h'+Date.now(),name,emoji:emoji||'⭐',color,nonNeg:false};const next=[...habits,h];setHabits(next);save('habits',next);setName('');setEmoji('');setAdding(false);}
   function removeHabit(id){const next=habits.filter(h=>h.id!==id);setHabits(next);save('habits',next);}
+  function toggleNonNeg(id){const next=habits.map(h=>h.id===id?{...h,nonNeg:!h.nonNeg}:h);setHabits(next);save('habits',next);}
   function toggleDot(hid,dk){const log=habitLog[dk]||{};const next={...habitLog,[dk]:{...log,[hid]:!log[hid]}};setHabitLog(next);save('habitLog',next);}
   function prevMonth(){if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);}
   function nextMonth(){if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1);}
@@ -1523,9 +1509,13 @@ function HabitsScreen({habits, setHabits, habitLog, setHabitLog, setTab}) {
       return e('div', {key:h.id, className:'card', style:{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',marginBottom:8}},
         e('div', {style:{width:44,height:44,borderRadius:'50%',background:h.color+'18',border:'2px solid '+h.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}, h.emoji),
         e('div', {style:{flex:1}},
-          e('div', {style:{fontSize:15,fontWeight:700,color:h.color}}, h.name),
+          e('div', {style:{display:'flex',alignItems:'center',gap:6}},
+            e('div', {style:{fontSize:15,fontWeight:700,color:h.color}}, h.name),
+            h.nonNeg ? e('div', {style:{fontSize:10,fontWeight:700,color:'#FF6B6B',background:'#FF6B6B15',padding:'2px 6px',borderRadius:6}}, '🔒 locked') : null
+          ),
           e('div', {style:{fontSize:11,color:MUTED,marginTop:2}}, count+' days this month')
         ),
+        e('button', {onClick:()=>toggleNonNeg(h.id), title:h.nonNeg?'Remove non-negotiable':'Mark as non-negotiable', style:{background:h.nonNeg?'#FF6B6B15':'transparent',border:'1.5px solid '+(h.nonNeg?'#FF6B6B':BORDER),color:h.nonNeg?'#FF6B6B':MUTED,borderRadius:10,padding:'6px 10px',fontSize:16,cursor:'pointer',fontFamily:'inherit',marginRight:4}}, h.nonNeg?'🔒':'🔓'),
         e('button', {onClick:()=>removeHabit(h.id), style:{background:'rgba(255,107,157,0.1)',border:'1.5px solid #FF6B9D',color:'#FF6B9D',borderRadius:10,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Remove')
       );
     }),
