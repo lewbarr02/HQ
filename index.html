@@ -2983,7 +2983,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
   const doneCount = safeItems.filter(function(h){return done[h.id];}).length;
   const startTime = routineLog[td+'_start'] || new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 
-  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱'];
+  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱','👑'];
 
   function addItem() {
     if(!newItemName.trim()) return;
@@ -3809,7 +3809,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
   var safeItems = eveningItems || DEFAULT_EVENING_HABITS;
   const allDone = safeItems.every(function(h){return done[h.id];});
   const doneCount = safeItems.filter(function(h){return done[h.id];}).length;
-  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱','😴','🔑','👛'];
+  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱','😴','🔑','👛','👑'];
 
   function addItem() {
     if(!newItemName.trim()) return;
