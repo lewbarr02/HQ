@@ -872,7 +872,7 @@ function FlowCheckinModal({activeSession, flowLog, setFlowLog, onClose}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -993,48 +993,75 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
     ),
     e('div', {style:{marginBottom:16}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Routines'),
-      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}},
-        // Morning
-        (function(){
-          var amDone = !!(routineLog && routineLog[td+'_done']);
-          var DONE_C = '#10B981', TODO_C = '#EF4444';
-          return e('div', {key:'morning', className:'stat-tile', onClick:function(){ setMorningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(amDone?DONE_C+'60':TODO_C+'50'),background:amDone?DONE_C+'08':TODO_C+'06'}},
-            e('div', {style:{fontSize:20,marginBottom:4}}, '🌅'),
-            e('div', {style:{fontSize:22,fontWeight:800,color:amDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, amDone?'✓':'!'),
-            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Morning')
-          );
-        })(),
-        // Midday
-        (function(){
-          var mdDone = !!(middayLog && middayLog[td]);
-          var DONE_C = '#10B981', TODO_C = '#EF4444';
-          return e('div', {key:'midday', className:'stat-tile', onClick:function(){ setMiddayPhase && setMiddayPhase('checkin'); }, style:{cursor:'pointer',border:'1.5px solid '+(mdDone?DONE_C+'60':TODO_C+'50'),background:mdDone?DONE_C+'08':TODO_C+'06'}},
-            e('div', {style:{fontSize:20,marginBottom:4}}, '☀️'),
-            e('div', {style:{fontSize:22,fontWeight:800,color:mdDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, mdDone?'✓':'!'),
-            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Midday')
-          );
-        })(),
-        // Evening
-        (function(){
-          var evDone = !!(eveningLog && eveningLog[td+'_done']);
-          var DONE_C = '#10B981', TODO_C = '#EF4444';
-          return e('div', {key:'evening', className:'stat-tile', onClick:function(){ setEveningPhase && setEveningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(evDone?DONE_C+'60':TODO_C+'50'),background:evDone?DONE_C+'08':TODO_C+'06'}},
-            e('div', {style:{fontSize:20,marginBottom:4}}, '🌙'),
-            e('div', {style:{fontSize:22,fontWeight:800,color:evDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, evDone?'✓':'!'),
-            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Evening')
-          );
-        })(),
-        // Post Workout
-        (function(){
-          var safePwLog = pwLog || {};
-          var pwDone = !!(safePwLog[td+'_done']);
-          var DONE_C = '#10B981', TODO_C = '#EF4444';
-          return e('div', {key:'postworkout', className:'stat-tile', onClick:function(){ setPostWorkoutPhase && setPostWorkoutPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(pwDone?DONE_C+'60':TODO_C+'50'),background:pwDone?DONE_C+'08':TODO_C+'06'}},
-            e('div', {style:{fontSize:20,marginBottom:4}}, '🏋️'),
-            e('div', {style:{fontSize:22,fontWeight:800,color:pwDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, pwDone?'✓':'!'),
-            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Post Workout')
-          );
-        })()
+      e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+        // Row 1: Morning, Midday, Evening
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}},
+          (function(){
+            var amDone = !!(routineLog && routineLog[td+'_done']);
+            var DONE_C = '#10B981', TODO_C = '#EF4444';
+            return e('div', {key:'morning', style:{display:'flex',flexDirection:'column',gap:4}},
+              e('div', {className:'stat-tile', onClick:function(){ setMorningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(amDone?DONE_C+'60':TODO_C+'50'),background:amDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
+                e('div', {style:{fontSize:20,marginBottom:4}}, '🌅'),
+                e('div', {style:{fontSize:22,fontWeight:800,color:amDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, amDone?'✓':'!'),
+                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Morning')
+              ),
+              e('button', {onClick:function(ev){ev.stopPropagation();setMorningPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
+            );
+          })(),
+          (function(){
+            var mdDone = !!(middayLog && middayLog[td]);
+            var DONE_C = '#10B981', TODO_C = '#EF4444';
+            return e('div', {key:'midday', style:{display:'flex',flexDirection:'column',gap:4}},
+              e('div', {className:'stat-tile', onClick:function(){ setMiddayPhase && setMiddayPhase('checkin'); }, style:{cursor:'pointer',border:'1.5px solid '+(mdDone?DONE_C+'60':TODO_C+'50'),background:mdDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
+                e('div', {style:{fontSize:20,marginBottom:4}}, '☀️'),
+                e('div', {style:{fontSize:22,fontWeight:800,color:mdDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, mdDone?'✓':'!'),
+                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Midday')
+              ),
+              e('div', {style:{height:18}})
+            );
+          })(),
+          (function(){
+            var evDone = !!(eveningLog && eveningLog[td+'_done']);
+            var DONE_C = '#10B981', TODO_C = '#EF4444';
+            return e('div', {key:'evening', style:{display:'flex',flexDirection:'column',gap:4}},
+              e('div', {className:'stat-tile', onClick:function(){ setEveningPhase && setEveningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(evDone?DONE_C+'60':TODO_C+'50'),background:evDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
+                e('div', {style:{fontSize:20,marginBottom:4}}, '🌙'),
+                e('div', {style:{fontSize:22,fontWeight:800,color:evDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, evDone?'✓':'!'),
+                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Evening')
+              ),
+              e('button', {onClick:function(ev){ev.stopPropagation();setEveningPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
+            );
+          })()
+        ),
+        // Row 2: Post Workout, Cleaning
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}},
+          (function(){
+            var safePwLog = pwLog || {};
+            var pwDone = !!(safePwLog[td+'_done']);
+            var DONE_C = '#10B981', TODO_C = '#EF4444';
+            return e('div', {key:'postworkout', style:{display:'flex',flexDirection:'column',gap:4}},
+              e('div', {className:'stat-tile', onClick:function(){ setPostWorkoutPhase && setPostWorkoutPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(pwDone?DONE_C+'60':TODO_C+'50'),background:pwDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
+                e('div', {style:{fontSize:20,marginBottom:4}}, '🏋️'),
+                e('div', {style:{fontSize:22,fontWeight:800,color:pwDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, pwDone?'✓':'!'),
+                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Post Workout')
+              ),
+              e('button', {onClick:function(ev){ev.stopPropagation();setPostWorkoutPhase && setPostWorkoutPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
+            );
+          })(),
+          (function(){
+            var safeClLog = cleaningLog || {};
+            var clDone = !!(safeClLog[td+'_done']);
+            var DONE_C = '#10B981', TODO_C = '#EF4444';
+            return e('div', {key:'cleaning', style:{display:'flex',flexDirection:'column',gap:4}},
+              e('div', {className:'stat-tile', onClick:function(){ setCleaningPhase && setCleaningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(clDone?DONE_C+'60':TODO_C+'50'),background:clDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
+                e('div', {style:{fontSize:20,marginBottom:4}}, '🧹'),
+                e('div', {style:{fontSize:22,fontWeight:800,color:clDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, clDone?'✓':'!'),
+                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Cleaning')
+              ),
+              e('button', {onClick:function(ev){ev.stopPropagation();setCleaningPhase && setCleaningPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
+            );
+          })()
+        )
       )
     ),
     e('div', {style:{marginBottom:12}},
@@ -2318,194 +2345,289 @@ const ENERGY_OPTS = [
   {val:5, emoji:'🤩', label:'Great'},
 ];
 
-function MorningHistory({ onBack, routineLog, wakeLog }) {
-  // Collect all completed days, excluding test runs
-  var completedDays = Object.keys(routineLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !routineLog[d+'_test']; }).sort();
+function MorningHistory({ onBack, routineLog, wakeLog, morningItems, cpapLog }) {
+  const [tab, setTab] = useState('stats');
+  const [expanded, setExpanded] = useState({});
 
-  // Current streak
+  var safeItems = morningItems || DEFAULT_MORNING_HABITS;
+  var completedDays = Object.keys(routineLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !routineLog[d+'_test']; }).sort();
   var currentStreak = calcMorningStreak(routineLog);
 
-  // Best streak ever
+  // Best streak
   var bestStreak = 0, run = 0;
-  if(completedDays.length) {
-    var allDates = completedDays.slice().sort();
-    run = 1; bestStreak = 1;
-    for(var i=1;i<allDates.length;i++){
-      var prev = new Date(allDates[i-1]+'T12:00:00'), cur = new Date(allDates[i]+'T12:00:00');
-      var diff = Math.round((cur-prev)/(1000*60*60*24));
-      if(diff===1){ run++; if(run>bestStreak) bestStreak=run; } else { run=1; }
-    }
-  }
+  if(completedDays.length){ var ad=completedDays.slice().sort(); run=1;bestStreak=1; for(var i=1;i<ad.length;i++){var dff=Math.round((new Date(ad[i]+'T12:00:00')-new Date(ad[i-1]+'T12:00:00'))/(864e5));if(dff===1){run++;if(run>bestStreak)bestStreak=run;}else{run=1;}} }
 
-  // Average & fastest completion time (minutes)
-  var times = completedDays.map(function(d){
-    return calcMorningTime(routineLog, d);
-  }).filter(function(t){ return t && t > 0 && t < 300; });
+  // Completion times
+  var times = completedDays.map(function(d){ return calcMorningTime(routineLog,d); }).filter(function(t){ return t&&t>0&&t<300; });
   var avgTime = times.length ? Math.round(times.reduce(function(a,b){return a+b;},0)/times.length) : null;
   var fastestTime = times.length ? Math.min.apply(null,times) : null;
 
-  // Average wake time (minutes from midnight)
-  var wakeMins = Object.values(wakeLog||{}).map(function(t){
-    if(!t) return null;
-    var m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if(!m) return null;
-    var h=parseInt(m[1]),min=parseInt(m[2]),ap=m[3].toUpperCase();
-    if(ap==='PM'&&h!==12) h+=12; if(ap==='AM'&&h===12) h=0;
-    return h*60+min;
-  }).filter(function(x){return x!==null;});
+  // Wake times
+  function parseTime(t){ if(!t)return null; var m=t.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!m)return null; var h=parseInt(m[1]),mn=parseInt(m[2]),ap=m[3].toUpperCase(); if(ap==='PM'&&h!==12)h+=12; if(ap==='AM'&&h===12)h=0; return h*60+mn; }
+  function minsToTime(m){ if(m===null)return '—'; var h=Math.floor(m/60),mn=m%60,ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+(mn<10?'0':'')+mn+' '+ap; }
+  var wakeEntries = Object.entries(wakeLog||{});
+  var wakeMins = wakeEntries.map(function(e){ return parseTime(e[1]); }).filter(function(x){ return x!==null; });
   var avgWakeMins = wakeMins.length ? Math.round(wakeMins.reduce(function(a,b){return a+b;},0)/wakeMins.length) : null;
-  function minsToTime(m){ if(m===null) return '—'; var h=Math.floor(m/60),mn=m%60,ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+(mn<10?'0':'')+mn+' '+ap; }
 
-  // Last 30 days dot grid
-  var dots = [];
-  for(var i=29;i>=0;i--){
-    var dd = new Date(); dd.setDate(dd.getDate()-i);
-    var dk = dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
-    dots.push({dk:dk, done:!!routineLog[dk+'_done'] && !routineLog[dk+'_test']});
-  }
+  // 90-day dot grid
+  var dots90 = [];
+  for(var i=89;i>=0;i--){ var dd=new Date();dd.setDate(dd.getDate()-i); var dk=dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0'); dots90.push({dk,done:!!routineLog[dk+'_done']&&!routineLog[dk+'_test'],partial:!!routineLog[dk+'_partial']}); }
+  var done90 = dots90.filter(function(d){return d.done;}).length;
+  var rate90 = Math.round(done90/90*100);
 
-  // 30-day completion rate
-  var rate30 = Math.round(dots.filter(function(d){return d.done;}).length/30*100);
+  // Day-of-week completion chart (last 90 days)
+  var DOW_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var dowDone=[0,0,0,0,0,0,0], dowTotal=[0,0,0,0,0,0,0];
+  dots90.forEach(function(d){ var dow=new Date(d.dk+'T12:00:00').getDay(); dowTotal[dow]++; if(d.done)dowDone[dow]++; });
+  var dowMax = Math.max.apply(null, dowDone.map(function(c,i){ return dowTotal[i]>0?c/dowTotal[i]:0; }));
 
-  // Total completions
-  var totalDone = completedDays.length;
+  // Wake time trend (last 14 days)
+  var wake14 = [];
+  for(var j=13;j>=0;j--){ var wdd=new Date();wdd.setDate(wdd.getDate()-j); var wdk=wdd.getFullYear()+'-'+String(wdd.getMonth()+1).padStart(2,'0')+'-'+String(wdd.getDate()).padStart(2,'0'); wake14.push({dk:wdk, mins:parseTime((wakeLog||{})[wdk]||null)}); }
+  var wakeMin=Math.min.apply(null,wake14.filter(function(w){return w.mins!==null;}).map(function(w){return w.mins;}))||240;
+  var wakeMax=Math.max.apply(null,wake14.filter(function(w){return w.mins!==null;}).map(function(w){return w.mins;}))||480;
+  var wakeRange=Math.max(wakeMax-wakeMin,60);
+
+  // Meds→routine lag (last 14 completed)
+  var medLags = completedDays.slice(-14).map(function(d){
+    var medsISO = routineLog[d+'_itemTimes'] && routineLog[d+'_itemTimes']['m2'];
+    var startTime = routineLog[d+'_start'];
+    if(!medsISO||!startTime) return null;
+    var medsMin = parseTime(startTime); // startTime is in "H:MM AM" format
+    var medsDate = new Date(medsISO);
+    var medsOfDay = medsDate.getHours()*60+medsDate.getMinutes();
+    var lag = medsMin - medsOfDay;
+    return lag>0&&lag<300?lag:null;
+  }).filter(function(x){return x!==null;});
+  var avgMedLag = medLags.length ? Math.round(medLags.reduce(function(a,b){return a+b;},0)/medLags.length) : null;
+
+  // Most skipped items (from blocker log)
+  var skipCounts = {};
+  completedDays.forEach(function(d){
+    var blockers = routineLog[d+'_blockers'] || {};
+    Object.keys(blockers).forEach(function(id){ skipCounts[id]=(skipCounts[id]||0)+1; });
+  });
+  var topSkipped = Object.entries(skipCounts).sort(function(a,b){return b[1]-a[1];}).slice(0,3).map(function(e){
+    var item = safeItems.find(function(h){return h.id===e[0];});
+    return {name:item?item.emoji+' '+item.name:e[0], count:e[1]};
+  });
+
+  // Log tab: all days with any data, last 60, reverse
+  var logDays = [];
+  for(var k=59;k>=0;k--){ var ld=new Date();ld.setDate(ld.getDate()-k); var ldk=ld.getFullYear()+'-'+String(ld.getMonth()+1).padStart(2,'0')+'-'+String(ld.getDate()).padStart(2,'0'); if(routineLog[ldk+'_done']||routineLog[ldk+'_start'])logDays.push(ldk); }
+  logDays.reverse();
 
   var statStyle = {background:'#fff',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid '+BORDER,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'};
   var valStyle = {fontSize:28,fontWeight:800,marginBottom:4};
   var lblStyle = {fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED};
 
-  return e('div', {style:{
-    height:'100dvh', display:'flex', flexDirection:'column',
-    background:'#F7F8FC',
-    paddingTop:'env(safe-area-inset-top)',
-    paddingBottom:'env(safe-area-inset-bottom)',
-    overflowY:'auto',
-  }},
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
     // Header
-    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'20px 20px 8px'}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'16px 20px 0',flexShrink:0}},
       e('button', {onClick:onBack, style:{background:'none',border:'none',color:MUTED,fontSize:22,cursor:'pointer',padding:4,lineHeight:1}}, '←'),
-      e('div', {},
+      e('div', {style:{flex:1}},
         e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🌅 Morning Routine'),
         e('div', {style:{fontSize:12,color:MUTED}}, 'Historical Performance')
       )
     ),
+    // Tabs
+    e('div', {style:{display:'flex',gap:0,padding:'12px 20px 0',flexShrink:0}},
+      e('button', {onClick:()=>setTab('stats'), style:{flex:1,padding:'10px',borderRadius:'12px 0 0 12px',border:'1.5px solid '+(tab==='stats'?ACCENT:BORDER),background:tab==='stats'?ACCENT:'#fff',color:tab==='stats'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '📊 Stats'),
+      e('button', {onClick:()=>setTab('log'), style:{flex:1,padding:'10px',borderRadius:'0 12px 12px 0',border:'1.5px solid '+(tab==='log'?ACCENT:BORDER),borderLeft:'none',background:tab==='log'?ACCENT:'#fff',color:tab==='log'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '📋 Log')
+    ),
 
-    e('div', {style:{padding:'12px 20px 32px',display:'flex',flexDirection:'column',gap:16}},
+    // Content
+    e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'12px 20px 32px'}},
 
-      // Streak row
-      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-        e('div', {style:{...statStyle,border:'1.5px solid #FFB34750'}},
-          e('div', {style:{...valStyle,background:'linear-gradient(135deg,#FFB347,#FF6B35)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
-          e('div', {style:lblStyle}, 'Current Streak'),
-          e('div', {style:{fontSize:10,color:'#FFB347',marginTop:4}}, currentStreak===1?'day':'days 🔥')
-        ),
-        e('div', {style:{...statStyle,border:'1.5px solid #FFB34730'}},
-          e('div', {style:{...valStyle,color:'#FFB347'}}, bestStreak||'—'),
-          e('div', {style:lblStyle}, 'Best Ever'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, bestStreak>1?bestStreak+' days':'—')
-        )
-      ),
+      tab === 'stats' ? e('div', {style:{display:'flex',flexDirection:'column',gap:14}},
 
-      // Time row
-      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-        e('div', {style:{...statStyle,border:'1.5px solid '+ACCENT+'40'}},
-          e('div', {style:{...valStyle,color:ACCENT}}, avgTime ? avgTime+'m' : '—'),
-          e('div', {style:lblStyle}, 'Avg Completion'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, avgTime?'minutes':'no data yet')
-        ),
-        e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
-          e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime ? fastestTime+'m' : '—'),
-          e('div', {style:lblStyle}, 'Fastest Ever'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, fastestTime?'personal best':'—')
-        )
-      ),
-
-      // Rate + wake row
-      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-        e('div', {style:{...statStyle,border:'1.5px solid '+PURPLE+'40'}},
-          e('div', {style:{...valStyle,color:PURPLE}}, completedDays.length ? rate30+'%' : '—'),
-          e('div', {style:lblStyle}, '30-Day Rate'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?dots.filter(function(d){return d.done;}).length+' of 30 days':'no data')
-        ),
-        e('div', {style:{...statStyle}},
-          e('div', {style:{...valStyle,color:'#A78BFA'}}, minsToTime(avgWakeMins)),
-          e('div', {style:lblStyle}, 'Avg Wake Time'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, wakeMins.length?wakeMins.length+' samples':'no data')
-        )
-      ),
-
-      // Total completions
-      e('div', {style:{...statStyle,display:'flex',alignItems:'center',justifyContent:'space-between',textAlign:'left'}},
-        e('div', {},
-          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, 'Total Completions'),
-          e('div', {style:{fontSize:11,color:MUTED,marginTop:2}}, 'All-time mornings logged')
-        ),
-        e('div', {style:{fontSize:32,fontWeight:800,color:ACCENT}}, totalDone)
-      ),
-
-      // Last 30 days grid
-      e('div', {style:{...statStyle,textAlign:'left'}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Last 30 Days'),
-        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:5}},
-          ...dots.map(function(d,i){
-            return e('div', {key:i, title:d.dk, style:{
-              aspectRatio:'1', borderRadius:5,
-              background: d.done ? 'linear-gradient(135deg,'+ACCENT+','+PURPLE+')' : '#E8E8F0',
-              boxShadow: d.done ? '0 2px 8px '+ACCENT+'40' : 'none',
-            }});
-          })
-        ),
-        e('div', {style:{display:'flex',gap:16,marginTop:10}},
-          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
-            e('div',{style:{width:10,height:10,borderRadius:3,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')'}}),
-            'Completed'
+        // Streaks
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+          e('div', {style:{...statStyle,border:'1.5px solid #FFB34750'}},
+            e('div', {style:{...valStyle,background:'linear-gradient(135deg,#FFB347,#FF6B35)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
+            e('div', {style:lblStyle}, 'Current Streak'),
+            e('div', {style:{fontSize:10,color:'#FFB347',marginTop:3}}, 'days 🔥')
           ),
-          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
-            e('div',{style:{width:10,height:10,borderRadius:3,background:'#E8E8F0'}}),
-            'Missed'
+          e('div', {style:{...statStyle,border:'1.5px solid #FFB34730'}},
+            e('div', {style:{...valStyle,color:'#FFB347'}}, bestStreak||'—'),
+            e('div', {style:lblStyle}, 'Best Ever'),
+            e('div', {style:{fontSize:10,color:currentStreak>0&&currentStreak===bestStreak?'#00C864':MUTED,marginTop:3}}, currentStreak>0&&currentStreak===bestStreak?'🏆 That\'s your best!':bestStreak>currentStreak?(bestStreak-currentStreak)+' days away':'—')
           )
-        )
-      ),
+        ),
 
-      // Daily Intentions log
-      (function(){
-        var intentionDays = completedDays.slice().reverse().filter(function(d){
-          return routineLog[d+'_focus'] || routineLog[d+'_energy'];
-        }).slice(0,14);
-        if(intentionDays.length === 0) return null;
-        return e('div', {style:{...statStyle,textAlign:'left'}},
-          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Morning Intentions'),
-          e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
-            ...intentionDays.map(function(d){
-              var focusTxt = routineLog[d+'_focus'];
-              var energyVal = routineLog[d+'_energy'];
-              var energyOpt = energyVal ? ENERGY_OPTS.find(function(o){return o.val===energyVal;}) : null;
-              var dateLabel = new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-              return e('div', {key:d, style:{display:'flex',alignItems:'flex-start',gap:10,paddingBottom:8,borderBottom:'1px solid '+BORDER}},
-                e('div', {style:{fontSize:10,fontWeight:700,color:MUTED,minWidth:72,paddingTop:2}}, dateLabel),
-                e('div', {style:{flex:1,display:'flex',flexWrap:'wrap',alignItems:'center',gap:6}},
-                  energyOpt ? e('span',{style:{fontSize:14,lineHeight:1}},energyOpt.emoji) : null,
-                  focusTxt ? e('div',{style:{fontSize:12,fontWeight:600,color:TEXT,lineHeight:1.4}},
-                    e('span',{style:{color:MUTED,fontSize:10,marginRight:3}},'#1:'),
-                    focusTxt
-                  ) : null
-                )
+        // Times
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+          e('div', {style:{...statStyle,border:'1.5px solid '+ACCENT+'40'}},
+            e('div', {style:{...valStyle,color:ACCENT}}, avgTime?avgTime+'m':'—'),
+            e('div', {style:lblStyle}, 'Avg Completion'),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, avgTime?'minutes':'no data yet')
+          ),
+          e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
+            e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime?fastestTime+'m':'—'),
+            e('div', {style:lblStyle}, 'Fastest Ever'),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, fastestTime?'personal best':'—')
+          )
+        ),
+
+        // Rate + wake
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+          e('div', {style:{...statStyle,border:'1.5px solid '+PURPLE+'40'}},
+            e('div', {style:{...valStyle,color:PURPLE}}, completedDays.length?rate90+'%':'—'),
+            e('div', {style:lblStyle}, '90-Day Rate'),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, done90+' of 90 days')
+          ),
+          e('div', {style:{...statStyle,border:'1.5px solid #A78BFA40'}},
+            e('div', {style:{...valStyle,color:'#A78BFA'}}, minsToTime(avgWakeMins)),
+            e('div', {style:lblStyle}, 'Avg Wake Time'),
+            e('div', {style:{fontSize:10,color:avgWakeMins&&avgWakeMins<=305?'#00C864':'#FFB347',marginTop:3}}, avgWakeMins?(avgWakeMins<=305?'✓ On track for 5 AM':'goal: 5:00 AM'):'no data')
+          )
+        ),
+
+        // Meds lag (if data)
+        avgMedLag ? e('div', {style:{...statStyle,border:'1.5px solid #F59E0B40'}},
+          e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+            e('div', {},
+              e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:4}}, '💊 Meds → Routine Start'),
+              e('div', {style:{fontSize:11,color:MUTED}}, 'Avg time between taking meds and starting routine')
+            ),
+            e('div', {style:{fontSize:28,fontWeight:800,color:'#F59E0B',marginLeft:12}}, avgMedLag+'m')
+          )
+        ) : null,
+
+        // 90-day dot grid
+        e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED}}, 'Last 90 Days'),
+            e('div', {style:{fontSize:12,fontWeight:700,color:ACCENT}}, completedDays.length+' total')
+          ),
+          e('div', {style:{display:'grid',gridTemplateColumns:'repeat(13,1fr)',gap:3}},
+            ...dots90.map(function(d,i){
+              return e('div', {key:i, title:d.dk, style:{
+                aspectRatio:'1', borderRadius:3,
+                background: d.done ? (d.partial?'#FFB347':'linear-gradient(135deg,'+ACCENT+','+PURPLE+')') : '#E8E8F0',
+                boxShadow: d.done&&!d.partial ? '0 1px 4px '+ACCENT+'40' : 'none',
+              }});
+            })
+          ),
+          e('div', {style:{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}},
+            e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}}, e('div',{style:{width:10,height:10,borderRadius:2,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')'}}), 'Full'),
+            e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}}, e('div',{style:{width:10,height:10,borderRadius:2,background:'#FFB347'}}), 'Partial'),
+            e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}}, e('div',{style:{width:10,height:10,borderRadius:2,background:'#E8E8F0'}}), 'Missed')
+          )
+        ),
+
+        // Day-of-week chart
+        e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Completion by Day of Week'),
+          e('div', {style:{display:'flex',gap:6,alignItems:'flex-end',height:80}},
+            ...DOW_LABELS.map(function(label,i){
+              var rate = dowTotal[i]>0 ? dowDone[i]/dowTotal[i] : 0;
+              var pct = dowMax>0 ? Math.round(rate/dowMax*100) : 0;
+              var isWorst = dowTotal[i]>0 && rate === Math.min.apply(null,DOW_LABELS.map(function(_,j){return dowTotal[j]>0?dowDone[j]/dowTotal[j]:1;}));
+              return e('div', {key:i, style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}},
+                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED}}, dowDone[i]>0?Math.round(rate*100)+'%':''),
+                e('div', {style:{width:'100%',height:60,display:'flex',alignItems:'flex-end'}},
+                  e('div', {style:{
+                    width:'100%', height:Math.max(4,pct*0.6)+'%',
+                    borderRadius:4,
+                    background:rate===0?'#E8E8F0':isWorst?'#FFB34780':('linear-gradient(180deg,'+ACCENT+','+PURPLE+')'),
+                    transition:'height 0.3s',
+                  }})
+                ),
+                e('div', {style:{fontSize:10,fontWeight:700,color:MUTED}}, label)
               );
             })
           )
-        );
-      })(),
+        ),
 
-      e('button', {
-        onClick:onBack,
-        style:{
-          padding:'16px', borderRadius:16,
-          background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',
-          border:'none', color:'white', fontSize:15, fontWeight:800,
-          cursor:'pointer', fontFamily:'inherit',
-          boxShadow:'0 8px 24px rgba(0,198,255,0.25)',
-        }
-      }, '← Back to Dashboard')
+        // Wake time trend
+        wake14.some(function(w){return w.mins!==null;}) ? e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Wake Time — Last 14 Days'),
+          e('div', {style:{display:'flex',gap:3,alignItems:'flex-end',height:64,marginBottom:6}},
+            ...wake14.map(function(w,i){
+              if(w.mins===null) return e('div',{key:i,style:{flex:1,height:4,borderRadius:2,background:'#E8E8F0',alignSelf:'flex-end'}});
+              var pct = Math.max(5, Math.min(100, 100 - ((w.mins - wakeMin) / Math.max(wakeRange,1) * 100)));
+              var onTarget = w.mins <= 305; // 5:05 AM
+              return e('div',{key:i,style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}},
+                e('div',{style:{width:'100%',height:pct+'%',borderRadius:'3px 3px 0 0',background:onTarget?'#00C864':'linear-gradient(180deg,#FFB347,#FF6B35)',minHeight:4}})
+              );
+            })
+          ),
+          e('div', {style:{display:'flex',justifyContent:'space-between',fontSize:9,color:MUTED}},
+            e('span',{},wake14[0]?new Date(wake14[0].dk+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):''),
+            e('span',{style:{color:'#00C864',fontWeight:700}}, '▲ closer to 5 AM'),
+            e('span',{},wake14[wake14.length-1]?new Date(wake14[wake14.length-1].dk+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'')
+          )
+        ) : null,
+
+        // Top skipped items
+        topSkipped.length > 0 ? e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Most Skipped Items'),
+          e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            ...topSkipped.map(function(s,i){
+              return e('div', {key:i, style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                e('div', {style:{fontSize:13,color:TEXT}}, s.name),
+                e('div', {style:{fontSize:12,fontWeight:700,color:'#FF6B6B',background:'rgba(255,107,107,0.1)',padding:'2px 10px',borderRadius:20}}, s.count+'× skipped')
+              );
+            })
+          )
+        ) : null,
+
+      ) : // LOG TAB
+      e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
+        logDays.length === 0 ? e('div', {style:{textAlign:'center',color:MUTED,paddingTop:40}}, 'No data yet — complete a morning routine to see it here.') :
+        logDays.map(function(d){
+          var isDone = !!routineLog[d+'_done'];
+          var isPartial = !!routineLog[d+'_partial'];
+          var startT = routineLog[d+'_start'];
+          var doneT = routineLog[d+'_done'];
+          var dur = calcMorningTime(routineLog, d);
+          var energyVal = routineLog[d+'_energy'];
+          var energyOpt = energyVal ? ENERGY_OPTS.find(function(o){return o.val===energyVal;}) : null;
+          var focusTxt = routineLog[d+'_focus'];
+          var blockers = routineLog[d+'_blockers'] || {};
+          var itemStates = routineLog[d] || {};
+          var isExp = !!expanded[d];
+          var dateLabel = new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+          var statusColor = isDone ? (isPartial?'#FFB347':'#00C864') : '#FF6B6B';
+          var statusLabel = isDone ? (isPartial?'Partial':'Done') : 'Missed';
+
+          return e('div', {key:d, style:{background:'#fff',borderRadius:16,border:'1px solid '+(isDone?statusColor+'30':BORDER),overflow:'hidden'}},
+            // Row header — tappable
+            e('div', {onClick:()=>setExpanded(function(ex){return {...ex,[d]:!ex[d]};}), style:{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',cursor:'pointer'}},
+              e('div', {style:{width:8,height:8,borderRadius:'50%',background:statusColor,flexShrink:0}}),
+              e('div', {style:{flex:1}},
+                e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, dateLabel),
+                e('div', {style:{fontSize:11,color:MUTED,marginTop:2}},
+                  startT&&doneT ? startT+' – '+doneT+(dur?' ('+dur+'m)':'') : startT?'Started '+startT:'—'
+                )
+              ),
+              e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+                energyOpt ? e('span',{style:{fontSize:16}},energyOpt.emoji) : null,
+                e('div', {style:{fontSize:11,fontWeight:700,color:statusColor,background:statusColor+'15',padding:'2px 8px',borderRadius:20}}, statusLabel),
+                e('div', {style:{fontSize:14,color:MUTED,transform:isExp?'rotate(180deg)':'none',transition:'transform 0.2s'}}, '▾')
+              )
+            ),
+            // Expanded detail
+            isExp ? e('div', {style:{padding:'0 16px 14px',borderTop:'1px solid rgba(100,80,220,0.07)'}},
+              focusTxt ? e('div', {style:{fontSize:12,color:TEXT,marginBottom:10,marginTop:10,fontStyle:'italic'}}, '🎯 "'+focusTxt+'"') : null,
+              e('div', {style:{display:'flex',flexDirection:'column',gap:6,marginTop:focusTxt?0:10}},
+                ...safeItems.map(function(h){
+                  var checked = !!itemStates[h.id];
+                  var blocker = blockers[h.id];
+                  return e('div', {key:h.id, style:{display:'flex',alignItems:'center',gap:10}},
+                    e('div', {style:{width:20,height:20,borderRadius:6,background:checked?'#00C864':'#E8E8F0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},
+                      checked ? e('span',{style:{color:'white',fontSize:12,fontWeight:800}},'✓') : e('span',{style:{color:'#aaa',fontSize:10}},'✕')
+                    ),
+                    e('span',{style:{fontSize:13,color:checked?TEXT:MUTED}}, h.emoji+' '+h.name),
+                    blocker ? e('span',{style:{fontSize:11,color:'#FF6B6B',fontStyle:'italic',marginLeft:'auto'}}, '"'+blocker+'"') : null
+                  );
+                })
+              )
+            ) : null
+          );
+        })
+      )
     )
   );
 }
@@ -3285,105 +3407,248 @@ function MiddayHistory({ onBack, middayLog }) {
 var NIGHT = '#4F46E5';
 var NIGHT2 = '#7C3AED';
 
-function EveningHistory({ onBack, eveningLog }) {
+function EveningHistory({ onBack, eveningLog, eveningItems, cpapLog }) {
+  const [tab, setTab] = useState('stats');
+  const [expanded, setExpanded] = useState({});
+
+  var safeItems = eveningItems || DEFAULT_EVENING_HABITS;
   var completedDays = Object.keys(eveningLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !eveningLog[d+'_test']; }).sort();
   var currentStreak = calcEveningStreak(eveningLog);
+
+  // Best streak
   var bestStreak = 0, run = 0;
-  if(completedDays.length) {
-    var allDates = completedDays.slice().sort();
-    run = 1; bestStreak = 1;
-    for(var i=1;i<allDates.length;i++){
-      var prev = new Date(allDates[i-1]+'T12:00:00'), cur = new Date(allDates[i]+'T12:00:00');
-      var diff = Math.round((cur-prev)/(1000*60*60*24));
-      if(diff===1){ run++; if(run>bestStreak) bestStreak=run; } else { run=1; }
-    }
-  }
-  var times = completedDays.map(function(d){ return calcEveningTime(eveningLog, d); }).filter(function(t){ return t && t > 0 && t < 300; });
+  if(completedDays.length){ var ad=completedDays.slice().sort(); run=1;bestStreak=1; for(var i=1;i<ad.length;i++){var dff=Math.round((new Date(ad[i]+'T12:00:00')-new Date(ad[i-1]+'T12:00:00'))/(864e5));if(dff===1){run++;if(run>bestStreak)bestStreak=run;}else{run=1;}} }
+
+  // Times
+  var times = completedDays.map(function(d){ return calcEveningTime(eveningLog,d); }).filter(function(t){ return t&&t>0&&t<300; });
   var avgTime = times.length ? Math.round(times.reduce(function(a,b){return a+b;},0)/times.length) : null;
   var fastestTime = times.length ? Math.min.apply(null,times) : null;
-  var dots = [];
-  for(var j=29;j>=0;j--){
-    var dd = new Date(); dd.setDate(dd.getDate()-j);
-    var dk = dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
-    dots.push({dk:dk, done:!!eveningLog[dk+'_done'] && !eveningLog[dk+'_test']});
-  }
-  var rate30 = Math.round(dots.filter(function(d){return d.done;}).length/30*100);
-  var totalDone = completedDays.length;
+
+  // 90-day dot grid
+  var dots90 = [];
+  for(var i=89;i>=0;i--){ var dd=new Date();dd.setDate(dd.getDate()-i); var dk=dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0'); dots90.push({dk,done:!!eveningLog[dk+'_done']&&!eveningLog[dk+'_test'],partial:!!eveningLog[dk+'_partial']}); }
+  var done90 = dots90.filter(function(d){return d.done;}).length;
+  var rate90 = Math.round(done90/90*100);
+
+  // Day-of-week
+  var DOW_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var dowDone=[0,0,0,0,0,0,0],dowTotal=[0,0,0,0,0,0,0];
+  dots90.forEach(function(d){ var dow=new Date(d.dk+'T12:00:00').getDay(); dowTotal[dow]++; if(d.done)dowDone[dow]++; });
+  var dowMax=Math.max.apply(null,dowDone.map(function(c,i){return dowTotal[i]>0?c/dowTotal[i]:0;}));
+
+  // Bedtime consistency (finish times)
+  var bedtimeMins = completedDays.slice(-30).map(function(d){
+    var t = eveningLog[d+'_done']; if(!t)return null;
+    var m=t.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!m)return null;
+    var h=parseInt(m[1]),mn=parseInt(m[2]),ap=m[3].toUpperCase();
+    if(ap==='PM'&&h!==12)h+=12; if(ap==='AM'&&h===12)h=0;
+    return h*60+mn;
+  }).filter(function(x){return x!==null;});
+  var avgBedMins = bedtimeMins.length ? Math.round(bedtimeMins.reduce(function(a,b){return a+b;},0)/bedtimeMins.length) : null;
+  function minsToTime(m){ if(m===null)return '—'; var h=Math.floor(m/60),mn=m%60,ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+(mn<10?'0':'')+mn+' '+ap; }
+
+  // CPAP compliance (last 30 nights)
+  var cpapDays = [];
+  for(var j=29;j>=0;j--){ var cd=new Date();cd.setDate(cd.getDate()-j-1); var cdk=cd.getFullYear()+'-'+String(cd.getMonth()+1).padStart(2,'0')+'-'+String(cd.getDate()).padStart(2,'0'); cpapDays.push({dk:cdk,done:!!(cpapLog&&cpapLog[cdk])}); }
+  var cpapDone30 = cpapDays.filter(function(d){return d.done;}).length;
+  var cpapRate = Math.round(cpapDone30/30*100);
+
+  // Top skipped items
+  var skipCounts = {};
+  completedDays.forEach(function(d){ var bl=eveningLog[d+'_blockers']||{}; Object.keys(bl).forEach(function(id){skipCounts[id]=(skipCounts[id]||0)+1;}); });
+  var topSkipped = Object.entries(skipCounts).sort(function(a,b){return b[1]-a[1];}).slice(0,3).map(function(e){ var item=safeItems.find(function(h){return h.id===e[0];}); return {name:item?item.emoji+' '+item.name:e[0],count:e[1]}; });
+
+  // Log tab
+  var logDays = [];
+  for(var k=59;k>=0;k--){ var ld=new Date();ld.setDate(ld.getDate()-k); var ldk=ld.getFullYear()+'-'+String(ld.getMonth()+1).padStart(2,'0')+'-'+String(ld.getDate()).padStart(2,'0'); if(eveningLog[ldk+'_done']||eveningLog[ldk+'_start'])logDays.push(ldk); }
+  logDays.reverse();
+
   var statStyle = {background:'#fff',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid '+BORDER,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'};
   var valStyle = {fontSize:28,fontWeight:800,marginBottom:4};
   var lblStyle = {fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED};
 
-  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
-    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'20px 20px 8px'}},
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'16px 20px 0',flexShrink:0}},
       e('button', {onClick:onBack, style:{background:'none',border:'none',color:MUTED,fontSize:22,cursor:'pointer',padding:4,lineHeight:1}}, '←'),
-      e('div', {},
+      e('div', {style:{flex:1}},
         e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🌙 Evening Routine'),
         e('div', {style:{fontSize:12,color:MUTED}}, 'Historical Performance')
       )
     ),
-    e('div', {style:{padding:'12px 20px 32px',display:'flex',flexDirection:'column',gap:16}},
-      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-        e('div', {style:{...statStyle,border:'1.5px solid #FFB34750'}},
-          e('div', {style:{...valStyle,background:'linear-gradient(135deg,#FFB347,#FF6B35)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
-          e('div', {style:lblStyle}, 'Current Streak'),
-          e('div', {style:{fontSize:10,color:'#FFB347',marginTop:4}}, currentStreak===1?'day':'days 🔥')
-        ),
-        e('div', {style:{...statStyle,border:'1.5px solid #FFB34730'}},
-          e('div', {style:{...valStyle,color:'#FFB347'}}, bestStreak||'—'),
-          e('div', {style:lblStyle}, 'Best Ever'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, bestStreak>1?bestStreak+' days':'—')
-        )
-      ),
-      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-        e('div', {style:{...statStyle,border:'1.5px solid '+NIGHT+'40'}},
-          e('div', {style:{...valStyle,color:NIGHT}}, avgTime ? avgTime+'m' : '—'),
-          e('div', {style:lblStyle}, 'Avg Completion'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, avgTime?'minutes':'no data yet')
-        ),
-        e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
-          e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime ? fastestTime+'m' : '—'),
-          e('div', {style:lblStyle}, 'Fastest Ever'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, fastestTime?'personal best':'—')
-        )
-      ),
-      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
-        e('div', {style:{...statStyle,border:'1.5px solid '+NIGHT2+'40'}},
-          e('div', {style:{...valStyle,color:NIGHT2}}, completedDays.length ? rate30+'%' : '—'),
-          e('div', {style:lblStyle}, '30-Day Rate'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?dots.filter(function(d){return d.done;}).length+' of 30 days':'no data')
-        ),
-        e('div', {style:{...statStyle}},
-          e('div', {style:{...valStyle,color:NIGHT}}, totalDone || '—'),
-          e('div', {style:lblStyle}, 'Total Nights'),
-          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, totalDone?'all-time':'no data')
-        )
-      ),
-      e('div', {style:{...statStyle,textAlign:'left'}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Last 30 Nights'),
-        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:5}},
-          ...dots.map(function(d,i){
-            return e('div', {key:i, title:d.dk, style:{
-              aspectRatio:'1', borderRadius:5,
-              background: d.done ? 'linear-gradient(135deg,'+NIGHT+','+NIGHT2+')' : '#E8E8F0',
-              boxShadow: d.done ? '0 2px 8px '+NIGHT+'40' : 'none',
-            }});
-          })
-        ),
-        e('div', {style:{display:'flex',gap:16,marginTop:10}},
-          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
-            e('div',{style:{width:10,height:10,borderRadius:3,background:'linear-gradient(135deg,'+NIGHT+','+NIGHT2+')'}}),
-            'Completed'
+    e('div', {style:{display:'flex',gap:0,padding:'12px 20px 0',flexShrink:0}},
+      e('button', {onClick:()=>setTab('stats'), style:{flex:1,padding:'10px',borderRadius:'12px 0 0 12px',border:'1.5px solid '+(tab==='stats'?NIGHT:BORDER),background:tab==='stats'?NIGHT:'#fff',color:tab==='stats'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '📊 Stats'),
+      e('button', {onClick:()=>setTab('log'), style:{flex:1,padding:'10px',borderRadius:'0 12px 12px 0',border:'1.5px solid '+(tab==='log'?NIGHT:BORDER),borderLeft:'none',background:tab==='log'?NIGHT:'#fff',color:tab==='log'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '📋 Log')
+    ),
+
+    e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',padding:'12px 20px 32px'}},
+
+      tab === 'stats' ? e('div', {style:{display:'flex',flexDirection:'column',gap:14}},
+
+        // Streaks
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+          e('div', {style:{...statStyle,border:'1.5px solid #FFB34750'}},
+            e('div', {style:{...valStyle,background:'linear-gradient(135deg,#FFB347,#FF6B35)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
+            e('div', {style:lblStyle}, 'Current Streak'),
+            e('div', {style:{fontSize:10,color:'#FFB347',marginTop:3}}, 'nights 🔥')
           ),
-          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
-            e('div',{style:{width:10,height:10,borderRadius:3,background:'#E8E8F0'}}),
-            'Missed'
+          e('div', {style:{...statStyle,border:'1.5px solid #FFB34730'}},
+            e('div', {style:{...valStyle,color:'#FFB347'}}, bestStreak||'—'),
+            e('div', {style:lblStyle}, 'Best Ever'),
+            e('div', {style:{fontSize:10,color:currentStreak>0&&currentStreak===bestStreak?'#00C864':MUTED,marginTop:3}}, currentStreak>0&&currentStreak===bestStreak?'🏆 That\'s your best!':bestStreak>currentStreak?(bestStreak-currentStreak)+' nights away':'—')
           )
-        )
-      ),
-      e('button', {
-        onClick:onBack,
-        style:{padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+NIGHT+','+NIGHT2+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+NIGHT+'40'}
-      }, '← Back to Dashboard')
+        ),
+
+        // Times
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+          e('div', {style:{...statStyle,border:'1.5px solid '+NIGHT+'40'}},
+            e('div', {style:{...valStyle,color:NIGHT}}, avgTime?avgTime+'m':'—'),
+            e('div', {style:lblStyle}, 'Avg Completion'),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, avgTime?'minutes':'no data yet')
+          ),
+          e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
+            e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime?fastestTime+'m':'—'),
+            e('div', {style:lblStyle}, 'Fastest Ever'),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, fastestTime?'personal best':'—')
+          )
+        ),
+
+        // Rate + bedtime
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+          e('div', {style:{...statStyle,border:'1.5px solid '+NIGHT2+'40'}},
+            e('div', {style:{...valStyle,color:NIGHT2}}, completedDays.length?rate90+'%':'—'),
+            e('div', {style:lblStyle}, '90-Day Rate'),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, done90+' of 90 nights')
+          ),
+          e('div', {style:{...statStyle,border:'1.5px solid '+NIGHT+'30'}},
+            e('div', {style:{...valStyle,color:NIGHT}}, minsToTime(avgBedMins)),
+            e('div', {style:lblStyle}, 'Avg Bedtime'),
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, bedtimeMins.length?'last 30 nights':'no data')
+          )
+        ),
+
+        // CPAP compliance
+        e('div', {style:{...statStyle,border:'1.5px solid #A78BFA40',textAlign:'left',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          e('div', {},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:4}}, '😴 CPAP Compliance'),
+            e('div', {style:{fontSize:11,color:MUTED}}, 'Last 30 nights · '+cpapDone30+' of 30'),
+            e('div', {style:{height:6,background:'#E8E8F0',borderRadius:3,overflow:'hidden',marginTop:8,width:180}},
+              e('div', {style:{height:'100%',width:cpapRate+'%',background:'linear-gradient(90deg,'+NIGHT+','+NIGHT2+')',borderRadius:3}})
+            )
+          ),
+          e('div', {style:{fontSize:28,fontWeight:800,color:cpapRate>=80?'#00C864':cpapRate>=50?'#FFB347':'#FF6B6B',marginLeft:12}}, cpapRate+'%')
+        ),
+
+        // 90-day dot grid
+        e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED}}, 'Last 90 Nights'),
+            e('div', {style:{fontSize:12,fontWeight:700,color:NIGHT}}, completedDays.length+' total')
+          ),
+          e('div', {style:{display:'grid',gridTemplateColumns:'repeat(13,1fr)',gap:3}},
+            ...dots90.map(function(d,i){
+              return e('div', {key:i, title:d.dk, style:{
+                aspectRatio:'1', borderRadius:3,
+                background: d.done ? (d.partial?'#A78BFA80':'linear-gradient(135deg,'+NIGHT+','+NIGHT2+')') : '#E8E8F0',
+                boxShadow: d.done&&!d.partial ? '0 1px 4px '+NIGHT+'40' : 'none',
+              }});
+            })
+          ),
+          e('div', {style:{display:'flex',gap:12,marginTop:8}},
+            e('div',{style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}}, e('div',{style:{width:10,height:10,borderRadius:2,background:'linear-gradient(135deg,'+NIGHT+','+NIGHT2+')'}}), 'Full'),
+            e('div',{style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}}, e('div',{style:{width:10,height:10,borderRadius:2,background:'#A78BFA80'}}), 'Partial'),
+            e('div',{style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}}, e('div',{style:{width:10,height:10,borderRadius:2,background:'#E8E8F0'}}), 'Missed')
+          )
+        ),
+
+        // Day-of-week chart
+        e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Completion by Day of Week'),
+          e('div', {style:{display:'flex',gap:6,alignItems:'flex-end',height:80}},
+            ...DOW_LABELS.map(function(label,i){
+              var rate=dowTotal[i]>0?dowDone[i]/dowTotal[i]:0;
+              var pct=dowMax>0?Math.round(rate/dowMax*100):0;
+              var isWorst=dowTotal[i]>0&&rate===Math.min.apply(null,DOW_LABELS.map(function(_,j){return dowTotal[j]>0?dowDone[j]/dowTotal[j]:1;}));
+              return e('div',{key:i,style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}},
+                e('div',{style:{fontSize:9,fontWeight:700,color:MUTED}},dowDone[i]>0?Math.round(rate*100)+'%':''),
+                e('div',{style:{width:'100%',height:60,display:'flex',alignItems:'flex-end'}},
+                  e('div',{style:{width:'100%',height:Math.max(4,pct*0.6)+'%',borderRadius:4,background:rate===0?'#E8E8F0':isWorst?'#A78BFA50':('linear-gradient(180deg,'+NIGHT+','+NIGHT2+')'),transition:'height 0.3s'}})
+                ),
+                e('div',{style:{fontSize:10,fontWeight:700,color:MUTED}},label)
+              );
+            })
+          )
+        ),
+
+        // Top skipped items
+        topSkipped.length > 0 ? e('div', {style:{...statStyle,textAlign:'left'}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Most Skipped Items'),
+          e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            ...topSkipped.map(function(s,i){
+              return e('div', {key:i, style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                e('div', {style:{fontSize:13,color:TEXT}}, s.name),
+                e('div', {style:{fontSize:12,fontWeight:700,color:'#FF6B6B',background:'rgba(255,107,107,0.1)',padding:'2px 10px',borderRadius:20}}, s.count+'× skipped')
+              );
+            })
+          )
+        ) : null,
+
+      ) : // LOG TAB
+      e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
+        logDays.length === 0 ? e('div', {style:{textAlign:'center',color:MUTED,paddingTop:40}}, 'No data yet.') :
+        logDays.map(function(d){
+          var isDone = !!eveningLog[d+'_done'];
+          var isPartial = !!eveningLog[d+'_partial'];
+          var startT = eveningLog[d+'_start'];
+          var doneT = eveningLog[d+'_done'];
+          var dur = calcEveningTime(eveningLog, d);
+          var blockers = eveningLog[d+'_blockers'] || {};
+          var itemStates = eveningLog[d] || {};
+          var isExp = !!expanded[d];
+          var dateLabel = new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+          var statusColor = isDone ? (isPartial?'#A78BFA':'#00C864') : '#FF6B6B';
+          var statusLabel = isDone ? (isPartial?'Partial':'Done') : 'Missed';
+
+          // CPAP for the night after this evening routine
+          var nextDay = (function(){ var nd=new Date(d+'T12:00:00');nd.setDate(nd.getDate()+1);return nd.getFullYear()+'-'+String(nd.getMonth()+1).padStart(2,'0')+'-'+String(nd.getDate()).padStart(2,'0'); })();
+          var cpapDone = !!(cpapLog&&cpapLog[nextDay]);
+
+          return e('div', {key:d, style:{background:'#fff',borderRadius:16,border:'1px solid '+(isDone?statusColor+'30':BORDER),overflow:'hidden'}},
+            e('div', {onClick:()=>setExpanded(function(ex){return {...ex,[d]:!ex[d]};}), style:{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',cursor:'pointer'}},
+              e('div', {style:{width:8,height:8,borderRadius:'50%',background:statusColor,flexShrink:0}}),
+              e('div', {style:{flex:1}},
+                e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, dateLabel),
+                e('div', {style:{fontSize:11,color:MUTED,marginTop:2}},
+                  startT&&doneT ? startT+' – '+doneT+(dur?' ('+dur+'m)':'') : startT?'Started '+startT:'—'
+                )
+              ),
+              e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+                e('span', {style:{fontSize:14,title:'CPAP'}}, cpapDone?'😴':''),
+                e('div', {style:{fontSize:11,fontWeight:700,color:statusColor,background:statusColor+'15',padding:'2px 8px',borderRadius:20}}, statusLabel),
+                e('div', {style:{fontSize:14,color:MUTED,transform:isExp?'rotate(180deg)':'none',transition:'transform 0.2s'}}, '▾')
+              )
+            ),
+            isExp ? e('div', {style:{padding:'0 16px 14px',borderTop:'1px solid rgba(100,80,220,0.07)'}},
+              e('div', {style:{display:'flex',flexDirection:'column',gap:6,marginTop:10}},
+                ...safeItems.map(function(h){
+                  var checked = !!itemStates[h.id];
+                  var blocker = blockers[h.id];
+                  return e('div', {key:h.id, style:{display:'flex',alignItems:'center',gap:10}},
+                    e('div', {style:{width:20,height:20,borderRadius:6,background:checked?NIGHT:'#E8E8F0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}},
+                      checked?e('span',{style:{color:'white',fontSize:12,fontWeight:800}},'✓'):e('span',{style:{color:'#aaa',fontSize:10}},'✕')
+                    ),
+                    e('span',{style:{fontSize:13,color:checked?TEXT:MUTED}}, h.emoji+' '+h.name),
+                    blocker?e('span',{style:{fontSize:11,color:'#FF6B6B',fontStyle:'italic',marginLeft:'auto'}},'"'+blocker+'"'):null
+                  );
+                })
+              ),
+              e('div', {style:{marginTop:10,display:'flex',alignItems:'center',gap:8}},
+                e('span',{style:{fontSize:13}}, cpapDone?'😴 CPAP on that night':'😴 CPAP not logged'),
+                e('span',{style:{fontSize:11,fontWeight:700,color:cpapDone?'#00C864':'#FFB347'}}, cpapDone?'✓':'—')
+              )
+            ) : null
+          );
+        })
+      )
     )
   );
 }
@@ -3978,6 +4243,240 @@ function PostWorkoutHistory({ onBack, pwLog }) {
         onClick:onBack,
         style:{padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+PW+','+PW2+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+PW+'40'}
       }, '← Back to Dashboard')
+    )
+  );
+}
+
+// ─── CLEANING ROUTINE ─────────────────────────────────────────────────────────
+var CL = '#14B8A6'; var CL2 = '#0D9488';
+
+var DEFAULT_CLEANING_HABITS = [
+  {id:'cl1', label:'Dishes 🍽️'},
+  {id:'cl2', label:'Sweep / Vacuum 🧹'},
+  {id:'cl3', label:'Wipe Counters 🧽'},
+  {id:'cl4', label:'Laundry 🧺'},
+  {id:'cl5', label:'Empty Trash 🗑️'},
+  {id:'cl6', label:'Clean Bathroom 🪣'},
+  {id:'cl7', label:'Tidy Up 📦'},
+];
+
+function calcCleaningStreak(clLog) {
+  var streak = 0;
+  var d = new Date();
+  for(var i=0;i<365;i++){
+    var dk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(i===0 && !clLog[dk+'_done']){ d.setDate(d.getDate()-1); continue; }
+    if(clLog[dk+'_done'] && !clLog[dk+'_test']) streak++;
+    else break;
+    d.setDate(d.getDate()-1);
+  }
+  return streak;
+}
+
+function calcCleaningTime(clLog, date) {
+  var s = clLog[date+'_start'], e2 = clLog[date+'_done'];
+  if(!s||!e2) return null;
+  var parse = function(t){ var p=t.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!p) return null; var h=parseInt(p[1])%12+(p[3].toUpperCase()==='PM'?12:0); return h*60+parseInt(p[2]); };
+  var st=parse(s), en=parse(e2);
+  if(st==null||en==null) return null;
+  return en>=st ? en-st : en+24*60-st;
+}
+
+function CleaningGreeting({onStart}) {
+  var [show, setShow] = React.useState(false);
+  React.useEffect(function(){ setTimeout(function(){ setShow(true); }, 100); }, []);
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,'+CL+'18,#fff 60%)',padding:'32px 24px',textAlign:'center',paddingTop:'env(safe-area-inset-top)'}},
+    e('div', {style:{fontSize:72,marginBottom:24,opacity:show?1:0,transition:'opacity 0.6s ease,transform 0.6s ease',transform:show?'translateY(0)':'translateY(20px)'}}, '🧹'),
+    e('div', {style:{fontSize:28,fontWeight:800,color:TEXT,marginBottom:8,opacity:show?1:0,transition:'opacity 0.5s ease 0.2s'}}, 'Cleaning Time'),
+    e('div', {style:{fontSize:15,color:MUTED,marginBottom:40,opacity:show?1:0,transition:'opacity 0.5s ease 0.3s'}}, 'A clean space = a clear mind.'),
+    e('button', {
+      onClick:onStart,
+      style:{padding:'18px 48px',borderRadius:18,background:'linear-gradient(135deg,'+CL+','+CL2+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+CL+'40',opacity:show?1:0,transition:'opacity 0.5s ease 0.4s'}
+    }, "Let's go →")
+  );
+}
+
+function CleaningChecklist({onComplete, onSkipToDashboard, clLog, setClLog, clItems, setClItems}) {
+  var td = today();
+  var done = (clLog && clLog[td]) ? clLog[td] : {};
+  var [editMode, setEditMode] = React.useState(false);
+  var [newLabel, setNewLabel] = React.useState('');
+
+  function toggle(id) {
+    var next = {...done, [id]: !done[id]};
+    var newLog = {...clLog, [td]: next};
+    if(!clLog[td+'_start']) newLog[td+'_start'] = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    setClLog(newLog); save('cleaningLog', newLog);
+  }
+
+  function addItem() {
+    var lbl = newLabel.trim();
+    if(!lbl) return;
+    var next = [...clItems, {id:'cl'+Date.now(), label:lbl}];
+    setClItems(next); save('cleaningItems', next);
+    setNewLabel('');
+  }
+
+  function removeItem(id) {
+    setClItems(clItems.filter(function(it){ return it.id !== id; }));
+    save('cleaningItems', clItems.filter(function(it){ return it.id !== id; }));
+  }
+
+  function finish(partial) {
+    var doneTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    var newLog = {...clLog, [td+'_done']: doneTime};
+    if(partial) newLog[td+'_partial'] = true;
+    setClLog(newLog); save('cleaningLog', newLog);
+    onComplete();
+  }
+
+  var total = clItems.length;
+  var doneCount = clItems.filter(function(it){ return done[it.id]; }).length;
+  var allDone = doneCount === total;
+
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'20px 20px 8px'}},
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🧹 Cleaning'),
+        e('div', {style:{fontSize:12,color:MUTED}}, doneCount+'/'+total+' done')
+      ),
+      e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
+        e('button', {onClick:function(){ setEditMode(!editMode); }, style:{fontSize:12,fontWeight:700,color:CL,background:CL+'15',border:'none',borderRadius:10,padding:'6px 12px',cursor:'pointer',fontFamily:'inherit'}}, editMode?'Done Editing':'Edit'),
+        e('button', {onClick:onSkipToDashboard, style:{fontSize:12,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Skip')
+      )
+    ),
+    e('div', {style:{flex:1,overflowY:'auto',padding:'8px 20px 20px'}},
+      ...clItems.map(function(item){
+        var isDone = !!done[item.id];
+        return e('div', {key:item.id, style:{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',background:'#fff',borderRadius:16,marginBottom:8,border:'1px solid '+(isDone?CL+'40':BORDER),transition:'all 0.2s'}},
+          editMode
+            ? e('button', {onClick:function(){ removeItem(item.id); }, style:{fontSize:16,background:'#FEE2E2',border:'none',borderRadius:8,width:28,height:28,cursor:'pointer',color:'#EF4444',fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}, '−')
+            : e('div', {onClick:function(){ toggle(item.id); }, style:{width:24,height:24,borderRadius:8,border:'2px solid '+(isDone?CL:BORDER),background:isDone?CL:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,transition:'all 0.2s'}},
+                isDone ? e('div', {style:{color:'white',fontSize:14,fontWeight:800}}, '✓') : null
+              ),
+          e('div', {onClick:editMode?null:function(){ toggle(item.id); }, style:{fontSize:15,fontWeight:600,color:isDone?MUTED:TEXT,textDecoration:isDone?'line-through':'none',cursor:editMode?'default':'pointer',flex:1,transition:'all 0.2s'}}, item.label)
+        );
+      }),
+      editMode ? e('div', {style:{display:'flex',gap:8,marginTop:8}},
+        e('input', {value:newLabel, onChange:function(ev){ setNewLabel(ev.target.value); }, onKeyDown:function(ev){ if(ev.key==='Enter') addItem(); }, placeholder:'Add item…', style:{flex:1,padding:'12px 14px',border:'1px solid '+BORDER,borderRadius:12,fontSize:14,fontFamily:'inherit',outline:'none'}}),
+        e('button', {onClick:addItem, style:{padding:'12px 16px',background:CL,border:'none',borderRadius:12,color:'white',fontSize:16,fontWeight:800,cursor:'pointer'}}, '+')
+      ) : null
+    ),
+    e('div', {style:{padding:'16px 20px',borderTop:'1px solid '+BORDER,background:'#fff',display:'flex',gap:10}},
+      !allDone && doneCount > 0 ? e('button', {onClick:function(){ finish(true); }, style:{flex:1,padding:'16px',borderRadius:16,background:CARD2,border:'none',fontSize:14,fontWeight:700,cursor:'pointer',color:MUTED,fontFamily:'inherit'}}, 'Mark Partial ('.concat(doneCount,'/',total,')')) : null,
+      e('button', {onClick:function(){ if(allDone) finish(false); }, disabled:!allDone, style:{flex:2,padding:'16px',borderRadius:16,background:allDone?'linear-gradient(135deg,'+CL+','+CL2+')':'#E8E8F0',border:'none',fontSize:15,fontWeight:800,cursor:allDone?'pointer':'default',color:allDone?'white':MUTED,fontFamily:'inherit',transition:'all 0.3s'}}, allDone?'✓ Complete!':'Check all items')
+    )
+  );
+}
+
+function CleaningComplete({onContinue, clLog, clItems}) {
+  var td = today();
+  var streak = calcCleaningStreak(clLog);
+  var mins = calcCleaningTime(clLog, td);
+  var [show, setShow] = React.useState(false);
+  React.useEffect(function(){ setTimeout(function(){ setShow(true); }, 100); }, []);
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,'+CL+'20,#fff 60%)',padding:'32px 24px',textAlign:'center',paddingTop:'env(safe-area-inset-top)'}},
+    e('div', {style:{fontSize:72,marginBottom:16,opacity:show?1:0,transition:'opacity 0.5s ease'}}, '✨'),
+    e('div', {style:{fontSize:26,fontWeight:800,color:TEXT,marginBottom:6,opacity:show?1:0,transition:'opacity 0.5s ease 0.1s'}}, 'Clean space, clear mind!'),
+    e('div', {style:{fontSize:15,color:MUTED,marginBottom:32,opacity:show?1:0,transition:'opacity 0.5s ease 0.2s'}}, mins ? 'Done in '+mins+' min' : 'Crushed it'),
+    e('div', {style:{display:'flex',gap:16,marginBottom:40,opacity:show?1:0,transition:'opacity 0.5s ease 0.3s'}},
+      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px 24px',border:'1px solid '+CL+'40',textAlign:'center'}},
+        e('div', {style:{fontSize:28,fontWeight:800,color:CL}}, streak),
+        e('div', {style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:1}}, 'Streak')
+      )
+    ),
+    e('button', {onClick:onContinue, style:{padding:'18px 48px',borderRadius:18,background:'linear-gradient(135deg,'+CL+','+CL2+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+CL+'40',opacity:show?1:0,transition:'opacity 0.5s ease 0.4s'}}, 'Back to Dashboard →')
+  );
+}
+
+function CleaningHistory({onBack, clLog}) {
+  var completedDays = Object.keys(clLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !clLog[d+'_test']; }).sort();
+  var currentStreak = calcCleaningStreak(clLog);
+  var bestStreak = 0, run = 0;
+  if(completedDays.length) {
+    run = 1; bestStreak = 1;
+    for(var i=1;i<completedDays.length;i++){
+      var prev = new Date(completedDays[i-1]+'T12:00:00'), cur = new Date(completedDays[i]+'T12:00:00');
+      if(Math.round((cur-prev)/86400000)===1){ run++; if(run>bestStreak) bestStreak=run; } else { run=1; }
+    }
+  }
+  var times = completedDays.map(function(d){ return calcCleaningTime(clLog, d); }).filter(function(t){ return t && t > 0 && t < 600; });
+  var avgTime = times.length ? Math.round(times.reduce(function(a,b){return a+b;},0)/times.length) : null;
+  var fastestTime = times.length ? Math.min.apply(null,times) : null;
+  var dots = [];
+  for(var j=29;j>=0;j--){
+    var dd = new Date(); dd.setDate(dd.getDate()-j);
+    var dk = dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+    dots.push({dk:dk, done:!!clLog[dk+'_done'] && !clLog[dk+'_test']});
+  }
+  var rate30 = Math.round(dots.filter(function(d){return d.done;}).length/30*100);
+  var statStyle = {background:'#fff',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid '+BORDER,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'};
+  var valStyle = {fontSize:28,fontWeight:800,marginBottom:4};
+  var lblStyle = {fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED};
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'20px 20px 8px'}},
+      e('button', {onClick:onBack, style:{background:'none',border:'none',color:MUTED,fontSize:22,cursor:'pointer',padding:4,lineHeight:1}}, '←'),
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🧹 Cleaning'),
+        e('div', {style:{fontSize:12,color:MUTED}}, 'Historical Performance')
+      )
+    ),
+    e('div', {style:{padding:'12px 20px 32px',display:'flex',flexDirection:'column',gap:16}},
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+CL+'50'}},
+          e('div', {style:{...valStyle,background:'linear-gradient(135deg,'+CL+','+CL2+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
+          e('div', {style:lblStyle}, 'Current Streak'),
+          e('div', {style:{fontSize:10,color:CL,marginTop:4}}, currentStreak===1?'day':'days 🔥')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid '+CL+'30'}},
+          e('div', {style:{...valStyle,color:CL}}, bestStreak||'—'),
+          e('div', {style:lblStyle}, 'Best Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, bestStreak>1?bestStreak+' days':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+CL+'40'}},
+          e('div', {style:{...valStyle,color:CL}}, avgTime ? avgTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Avg Completion'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, avgTime?'minutes':'no data yet')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
+          e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime ? fastestTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Fastest Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, fastestTime?'personal best':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+CL2+'40'}},
+          e('div', {style:{...valStyle,color:CL2}}, completedDays.length ? rate30+'%' : '—'),
+          e('div', {style:lblStyle}, '30-Day Rate'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?dots.filter(function(d){return d.done;}).length+' of 30 days':'no data')
+        ),
+        e('div', {style:{...statStyle}},
+          e('div', {style:{...valStyle,color:CL}}, completedDays.length || '—'),
+          e('div', {style:lblStyle}, 'Total Sessions'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?'all-time':'no data')
+        )
+      ),
+      e('div', {style:{...statStyle,textAlign:'left'}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Last 30 Sessions'),
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:5}},
+          ...dots.map(function(d,i){
+            return e('div', {key:i, title:d.dk, style:{aspectRatio:'1',borderRadius:5,background:d.done?'linear-gradient(135deg,'+CL+','+CL2+')':'#E8E8F0',boxShadow:d.done?'0 2px 8px '+CL+'40':'none'}});
+          })
+        ),
+        e('div', {style:{display:'flex',gap:16,marginTop:10}},
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'linear-gradient(135deg,'+CL+','+CL2+')'}}),
+            'Completed'
+          ),
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'#E8E8F0'}}),
+            'Missed'
+          )
+        )
+      ),
+      e('button', {onClick:onBack, style:{padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+CL+','+CL2+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+CL+'40'}}, '← Back to Dashboard')
     )
   );
 }
@@ -6422,6 +6921,9 @@ function App() {
   const [postWorkoutPhase, setPostWorkoutPhase] = useState('done'); // greeting|checklist|complete|history|done
   const [pwLog, setPwLog] = useState({});
   const [pwItems, setPwItems] = useState(DEFAULT_POST_WORKOUT_HABITS);
+  const [cleaningPhase, setCleaningPhase] = useState('done'); // greeting|checklist|complete|history|done
+  const [cleaningLog, setCleaningLog] = useState({});
+  const [cleaningItems, setCleaningItems] = useState(DEFAULT_CLEANING_HABITS);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState({});
@@ -6461,8 +6963,8 @@ function App() {
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='jobLog')setJobLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','jobLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='jobLog')setJobLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -6552,7 +7054,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
@@ -6614,7 +7116,7 @@ function App() {
     });
   }
   if(!splash && morningPhase === 'history') {
-    return e(MorningHistory, {onBack: function(){setMorningPhase('done');}, routineLog: routineLog, wakeLog: wakeLog});
+    return e(MorningHistory, {onBack: function(){setMorningPhase('done');}, routineLog: routineLog, wakeLog: wakeLog, morningItems: morningItems, cpapLog: cpapLog});
   }
   if(!splash && morningPhase === 'checkin') {
     return e(MorningCheckin, {
@@ -6663,7 +7165,7 @@ function App() {
     });
   }
   if(!splash && eveningPhase === 'history') {
-    return e(EveningHistory, {onBack: function(){setEveningPhase('done');}, eveningLog: eveningLog});
+    return e(EveningHistory, {onBack: function(){setEveningPhase('done');}, eveningLog: eveningLog, eveningItems: eveningItems, cpapLog: cpapLog});
   }
 
   function handlePostWorkoutStart(isTest) {
@@ -6696,6 +7198,27 @@ function App() {
   }
   if(!splash && postWorkoutPhase === 'history') {
     return e(PostWorkoutHistory, {onBack: function(){setPostWorkoutPhase('done');}, pwLog: pwLog});
+  }
+
+  if(!splash && cleaningPhase === 'greeting') {
+    return e(CleaningGreeting, {onStart: function(){setCleaningPhase('checklist');}});
+  }
+  if(!splash && cleaningPhase === 'checklist') {
+    return e(CleaningChecklist, {
+      onComplete: function(){setCleaningPhase('complete');},
+      onSkipToDashboard: function(){setCleaningPhase('done');},
+      clLog: cleaningLog, setClLog: setCleaningLog,
+      clItems: cleaningItems, setClItems: setCleaningItems,
+    });
+  }
+  if(!splash && cleaningPhase === 'complete') {
+    return e(CleaningComplete, {
+      onContinue: function(){setCleaningPhase('done');},
+      clLog: cleaningLog, clItems: cleaningItems,
+    });
+  }
+  if(!splash && cleaningPhase === 'history') {
+    return e(CleaningHistory, {onBack: function(){setCleaningPhase('done');}, clLog: cleaningLog});
   }
 
   var moreOverlay = moreOpen ? e('div', {style:{position:'absolute',inset:0,zIndex:80,background:'rgba(247,248,252,0.97)',backdropFilter:'blur(16px)',display:'flex',flexDirection:'column',padding:'20px 20px 0'}},
