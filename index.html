@@ -4452,7 +4452,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         if(!resp.ok){var errt=await resp.text();throw new Error(errt);}
         var result = await resp.json();
         if(result.error) throw new Error(result.error);
-        if(!result.parsed||!result.parsed.program) throw new Error('Unexpected response — try again.');
+        if(!result.parsed||!result.parsed.program) throw new Error('Coach returned an unexpected format. Raw: '+String(result.content||'').slice(0,200));
         var profile = Object.assign({},data,{calculated1RMs:result.calculated1RMs,createdAt:new Date().toISOString()});
         setCoachProfile(profile); save('coachProfile',profile);
         setCurrentProgram(result.parsed.program); save('currentProgram',result.parsed.program);

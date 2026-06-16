@@ -24,6 +24,26 @@ function epley1RM(weight: number, reps: number): number {
   return Math.round(weight * (1 + reps / 30))
 }
 
+function extractJSON(text: string): any | null {
+  // Try ```json ... ``` block first
+  const fenced = text.match(/```json\s*([\s\S]*?)\s*```/)
+  if (fenced) {
+    try { return JSON.parse(fenced[1]) } catch (_) {}
+  }
+  // Try ``` ... ``` (no lang tag)
+  const fencedPlain = text.match(/```\s*([\s\S]*?)\s*```/)
+  if (fencedPlain) {
+    try { return JSON.parse(fencedPlain[1]) } catch (_) {}
+  }
+  // Find the outermost { ... } in the text
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)) } catch (_) {}
+  }
+  return null
+}
+
 function buildOnboardingPrompt(answers: any, calculated1RMs: Record<string, number>): string {
   const liftLines = Object.entries(calculated1RMs).map(([k, v]) => `- ${k}: ~${v} lbs estimated 1RM`).join('\n')
   return `Create a complete, personalized training program for Lewis based on his intake answers.
@@ -200,14 +220,7 @@ serve(async (req) => {
       const rawText = data.content?.[0]?.text || ''
 
       let parsed: any = null
-      try {
-        const m = rawText.match(/```json\n?([\s\S]*?)\n?```/)
-        if (m) parsed = JSON.parse(m[1])
-        else {
-          const m2 = rawText.match(/\{[\s\S]*\}/)
-          if (m2) parsed = JSON.parse(m2[0])
-        }
-      } catch (_) { /* return raw if parse fails */ }
+      parsed = extractJSON(rawText)
 
       return new Response(JSON.stringify({ content: rawText, parsed, calculated1RMs }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -246,15 +259,7 @@ serve(async (req) => {
       const data = await resp.json()
       const rawText = data.content?.[0]?.text || ''
 
-      let parsed: any = null
-      try {
-        const m = rawText.match(/```json\n?([\s\S]*?)\n?```/)
-        if (m) parsed = JSON.parse(m[1])
-        else {
-          const m2 = rawText.match(/\{[\s\S]*\}/)
-          if (m2) parsed = JSON.parse(m2[0])
-        }
-      } catch (_) { /* return raw */ }
+      const parsed = extractJSON(rawText)
 
       return new Response(JSON.stringify({ content: rawText, parsed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
