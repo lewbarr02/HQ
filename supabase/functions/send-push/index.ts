@@ -44,6 +44,12 @@ const NOTIFICATION_SCHEDULES = {
     tag: 'hq-test',
     requireInteraction: false,
   },
+  'flow-checkin': {
+    title: '⚡ Still in flow?',
+    body: 'Tap to check in — or log that the window closed.',
+    tag: 'hq-flow',
+    requireInteraction: true,
+  },
 }
 
 serve(async (req) => {

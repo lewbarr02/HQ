@@ -35,6 +35,7 @@
     @keyframes splashOut{to{opacity:0;pointer-events:none;}}
     @keyframes pop{from{transform:scale(0.4);opacity:0;}to{transform:scale(1);opacity:1;}}
     @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+    @keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(245,158,11,0.4);}50%{box-shadow:0 0 0 7px rgba(245,158,11,0.1);}}
     .splash-logo{animation:pop 0.7s cubic-bezier(.34,1.56,.64,1) 0.3s both;}
     .splash-greeting{font-size:24px;font-weight:700;animation:fadeUp 0.5s ease 1.3s both;}
     .splash-sub{color:#8E8EAA;font-size:17px;animation:fadeUp 0.5s ease 1.6s both;}
@@ -637,7 +638,241 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   ); // end split wrapper
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog}) {
+function FlowStateCard({flowLog, setFlowLog, routineLog, flowModal, setFlowModal}) {
+  const td = today();
+  const sessions = flowLog || [];
+  const activeSession = sessions.find(function(s){return !s.endTime;});
+  const [showHistory, setShowHistory] = useState(false);
+  const [endStep, setEndStep] = useState(null); // null | 'rating'
+
+  var medsISO = routineLog && routineLog[td+'_itemTimes'] && routineLog[td+'_itemTimes']['m2'];
+  var medsLabel = medsISO ? new Date(medsISO).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : null;
+
+  function fmtDuration(ms) {
+    var m = Math.floor(ms/60000);
+    if(m < 60) return m+'m';
+    return Math.floor(m/60)+'h '+(m%60)+'m';
+  }
+
+  function enterFlow() {
+    Notification.requestPermission();
+    var s = {id: Date.now().toString(), date: td, startTime: new Date().toISOString(), endTime: null, checkIns: [], endQuality: null};
+    var next = [...sessions, s];
+    setFlowLog(next); save('flowLog', next);
+  }
+
+  function exitFlow(quality) {
+    var endTime = new Date().toISOString();
+    var next = sessions.map(function(s){
+      return s.endTime ? s : Object.assign({}, s, {endTime: endTime, endQuality: quality || null});
+    });
+    setFlowLog(next); save('flowLog', next);
+    setEndStep(null);
+  }
+
+  function medsOffset(session) {
+    var itemTimes = routineLog && routineLog[session.date+'_itemTimes'];
+    if(!itemTimes || !itemTimes['m2']) return null;
+    var diff = new Date(session.startTime) - new Date(itemTimes['m2']);
+    if(diff < 0) return null;
+    return fmtDuration(diff) + ' after meds';
+  }
+
+  var activeDuration = activeSession ? fmtDuration(Date.now() - new Date(activeSession.startTime).getTime()) : null;
+  var lastIntensity = activeSession && activeSession.checkIns.length > 0 ? activeSession.checkIns[activeSession.checkIns.length-1].intensity : null;
+  var pastSessions = sessions.filter(function(s){return !!s.endTime;}).slice(-30).reverse();
+
+  var FLOW_COLOR = '#F59E0B';
+  var FLOW_BG = 'rgba(245,158,11,0.08)';
+  var QUALITY_OPTS = [{n:1,e:'😐'},{n:2,e:'🙂'},{n:3,e:'⚡'},{n:4,e:'🔥'},{n:5,e:'🚀'}];
+
+  if(showHistory) {
+    // Aggregate stats across all completed sessions
+    var completedWithMeds = pastSessions.filter(function(s){ return medsOffset(s); });
+    var avgLagMs = completedWithMeds.length > 0 ? completedWithMeds.reduce(function(acc,s){
+      var meds = new Date(routineLog[s.date+'_itemTimes']['m2']);
+      return acc + (new Date(s.startTime) - meds);
+    }, 0) / completedWithMeds.length : null;
+    var durMs = pastSessions.map(function(s){return new Date(s.endTime)-new Date(s.startTime);});
+    var avgDurMs = durMs.length > 0 ? durMs.reduce(function(a,b){return a+b;},0)/durMs.length : null;
+    var allInts = pastSessions.flatMap(function(s){return s.checkIns.map(function(c){return c.intensity;});});
+    var avgPeakInt = pastSessions.length > 0 ? (function(){
+      var peaks = pastSessions.map(function(s){return s.checkIns.length>0?Math.max.apply(null,s.checkIns.map(function(c){return c.intensity;})):null;}).filter(Boolean);
+      return peaks.length > 0 ? (peaks.reduce(function(a,b){return a+b;},0)/peaks.length).toFixed(1) : null;
+    })() : null;
+
+    return e('div', {className:'card', style:{marginBottom:12}},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '⚡ Flow State History'),
+        e('button', {onClick:()=>setShowHistory(false), style:{fontSize:12,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, '← Back')
+      ),
+      pastSessions.length >= 3 ? e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:16,padding:'12px',background:FLOW_BG,borderRadius:12}},
+        avgLagMs ? e('div', {style:{textAlign:'center'}}, e('div',{style:{fontSize:16,fontWeight:800,color:FLOW_COLOR}}, fmtDuration(avgLagMs)), e('div',{style:{fontSize:9,color:MUTED,marginTop:2}}, 'AVG MEDS → FLOW')) : null,
+        avgDurMs ? e('div', {style:{textAlign:'center'}}, e('div',{style:{fontSize:16,fontWeight:800,color:FLOW_COLOR}}, fmtDuration(avgDurMs)), e('div',{style:{fontSize:9,color:MUTED,marginTop:2}}, 'AVG DURATION')) : null,
+        avgPeakInt ? e('div', {style:{textAlign:'center'}}, e('div',{style:{fontSize:16,fontWeight:800,color:FLOW_COLOR}}, avgPeakInt+' / 5'), e('div',{style:{fontSize:9,color:MUTED,marginTop:2}}, 'AVG PEAK INTENSITY')) : null
+      ) : null,
+      pastSessions.length === 0 ? e('div', {style:{fontSize:13,color:MUTED,textAlign:'center',padding:'16px 0'}}, 'No sessions logged yet') :
+      e('div', {},
+        pastSessions.map(function(s) {
+          var dur = fmtDuration(new Date(s.endTime) - new Date(s.startTime));
+          var start = new Date(s.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+          var end = new Date(s.endTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+          var offset = medsOffset(s);
+          var peakInt = s.checkIns.length > 0 ? Math.max.apply(null,s.checkIns.map(function(c){return c.intensity;})) : null;
+          var qualE = s.endQuality ? QUALITY_OPTS.find(function(q){return q.n===s.endQuality;}) : null;
+          return e('div', {key:s.id, style:{padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
+            e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:3}},
+              e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, s.date === td ? 'Today' : new Date(s.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+              e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+                qualE ? e('span',{style:{fontSize:14}}, qualE.e) : null,
+                e('div', {style:{fontSize:13,fontWeight:800,color:FLOW_COLOR}}, '⚡ '+dur)
+              )
+            ),
+            e('div', {style:{fontSize:11,color:MUTED}},
+              start+' – '+end +
+              (offset ? '  ·  '+offset : '') +
+              (peakInt ? '  ·  peak '+peakInt+'/5' : '')
+            )
+          );
+        })
+      )
+    );
+  }
+
+  if(activeSession) {
+    if(endStep === 'rating') {
+      return e('div', {className:'card', style:{marginBottom:12,border:'1.5px solid '+FLOW_COLOR+'50',background:FLOW_BG}},
+        e('div', {style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:6,textAlign:'center'}}, 'How was that session overall?'),
+        e('div', {style:{fontSize:12,color:MUTED,marginBottom:16,textAlign:'center'}}, 'Overall quality, not just peak — the whole ride.'),
+        e('div', {style:{display:'flex',gap:8,justifyContent:'center',marginBottom:16}},
+          ...QUALITY_OPTS.map(function(q){
+            return e('button', {key:q.n, onClick:()=>exitFlow(q.n), style:{
+              width:52,height:52,borderRadius:14,border:'1.5px solid '+FLOW_COLOR+'40',
+              background:'rgba(245,158,11,0.06)',fontSize:24,cursor:'pointer',fontFamily:'inherit',
+              display:'flex',alignItems:'center',justifyContent:'center',
+            }}, q.e);
+          })
+        ),
+        e('button', {onClick:()=>exitFlow(null), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',display:'block',margin:'0 auto'}}, 'Skip rating')
+      );
+    }
+    return e('div', {className:'card', style:{marginBottom:12,border:'1.5px solid '+FLOW_COLOR+'50',background:FLOW_BG}},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+        e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+          e('div', {style:{width:10,height:10,borderRadius:'50%',background:FLOW_COLOR,boxShadow:'0 0 0 3px '+FLOW_COLOR+'40',animation:'pulse 1.5s infinite'}}),
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:FLOW_COLOR}}, 'Flow State Active')
+        ),
+        e('button', {onClick:()=>setShowHistory(true), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'History')
+      ),
+      e('div', {style:{display:'flex',gap:16,marginBottom:12}},
+        e('div', {}, e('div', {style:{fontSize:24,fontWeight:800,color:TEXT,lineHeight:1}}, activeDuration), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'duration')),
+        activeSession.checkIns.length > 0 ? e('div', {}, e('div', {style:{fontSize:24,fontWeight:800,color:FLOW_COLOR,lineHeight:1}}, ['','⚡','⚡⚡','⚡⚡⚡','⚡⚡⚡⚡','⚡⚡⚡⚡⚡'][lastIntensity]||lastIntensity), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'last intensity')) : null,
+        medsLabel ? e('div', {}, e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,lineHeight:1,marginTop:4}}, medsLabel), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'meds taken')) : null
+      ),
+      e('button', {onClick:()=>setEndStep('rating'), style:{width:'100%',padding:'10px',borderRadius:12,border:'none',background:'rgba(245,158,11,0.15)',color:FLOW_COLOR,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '✓ End Flow State')
+    );
+  }
+
+  return e('div', {className:'card', style:{marginBottom:12}},
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '⚡ Flow State'),
+      e('button', {onClick:()=>setShowHistory(true), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'History')
+    ),
+    medsLabel ? e('div', {style:{fontSize:12,color:MUTED,marginBottom:10}}, '💊 Meds taken at '+medsLabel) : null,
+    e('button', {onClick:enterFlow, style:{
+      width:'100%', padding:'14px', borderRadius:14,
+      border:'2px solid '+FLOW_COLOR+'60',
+      background:'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.03))',
+      color:FLOW_COLOR, fontWeight:800, fontSize:16, cursor:'pointer', fontFamily:'inherit',
+      display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+    }}, '⚡ Enter Flow State')
+  );
+}
+
+function FlowCheckinModal({activeSession, flowLog, setFlowLog, onClose}) {
+  const [step, setStep] = useState('ask'); // 'ask' | 'intensity' | 'rating'
+
+  function endFlow(quality) {
+    var endTime = new Date().toISOString();
+    var next = (flowLog||[]).map(function(s){
+      return s.endTime ? s : Object.assign({}, s, {endTime: endTime, endQuality: quality || null});
+    });
+    setFlowLog(next); save('flowLog', next);
+    onClose();
+  }
+
+  function logIntensity(n) {
+    var checkIn = {time: new Date().toISOString(), intensity: n};
+    var next = (flowLog||[]).map(function(s){
+      if(s.endTime) return s;
+      return Object.assign({}, s, {checkIns: [...s.checkIns, checkIn]});
+    });
+    setFlowLog(next); save('flowLog', next);
+    onClose();
+  }
+
+  var FLOW_COLOR = '#F59E0B';
+  var INTENSITY = [
+    {n:1,label:'Barely there',emoji:'🌱'},
+    {n:2,label:'Warming up',emoji:'🔆'},
+    {n:3,label:'In it',emoji:'⚡'},
+    {n:4,label:'Deep flow',emoji:'🔥'},
+    {n:5,label:'Zone locked',emoji:'🚀'},
+  ];
+  var QUALITY_OPTS = [{n:1,e:'😐'},{n:2,e:'🙂'},{n:3,e:'⚡'},{n:4,e:'🔥'},{n:5,e:'🚀'}];
+
+  return e('div', {style:{position:'fixed',inset:0,zIndex:9999,background:'rgba(26,24,51,0.7)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}},
+    e('div', {style:{background:'#fff',borderRadius:24,padding:'28px 24px',maxWidth:360,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}},
+      step === 'ask' ?
+        e('div', {},
+          e('div', {style:{fontSize:32,textAlign:'center',marginBottom:12}}, '⚡'),
+          e('div', {style:{fontSize:20,fontWeight:800,textAlign:'center',color:TEXT,marginBottom:8}}, 'Still in flow?'),
+          e('div', {style:{fontSize:14,color:MUTED,textAlign:'center',marginBottom:24}}, 'Check in to keep tracking your session.'),
+          e('div', {style:{display:'flex',gap:12}},
+            e('button', {onClick:()=>setStep('rating'), style:{flex:1,padding:'14px',borderRadius:14,border:'1.5px solid rgba(100,80,220,0.18)',background:'#F0F2F8',color:TEXT,fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}, 'No, done'),
+            e('button', {onClick:()=>setStep('intensity'), style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+FLOW_COLOR+',#f97316)',color:'white',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}, 'Yes! ⚡')
+          )
+        ) : step === 'intensity' ?
+        e('div', {},
+          e('div', {style:{fontSize:32,textAlign:'center',marginBottom:12}}, '🔥'),
+          e('div', {style:{fontSize:20,fontWeight:800,textAlign:'center',color:TEXT,marginBottom:6}}, 'Flow intensity?'),
+          e('div', {style:{fontSize:13,color:MUTED,textAlign:'center',marginBottom:20}}, 'How locked in are you right now?'),
+          e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            ...INTENSITY.map(function(item){
+              return e('button', {key:item.n, onClick:()=>logIntensity(item.n), style:{
+                display:'flex',alignItems:'center',gap:12,padding:'12px 16px',borderRadius:14,
+                border:'1.5px solid rgba(245,158,11,0.25)',background:'rgba(245,158,11,0.06)',
+                cursor:'pointer',fontFamily:'inherit',textAlign:'left',
+              }},
+                e('span', {style:{fontSize:22,width:32}}, item.emoji),
+                e('div', {},
+                  e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, item.label),
+                  e('div', {style:{fontSize:11,color:MUTED}}, item.n+' / 5')
+                )
+              );
+            })
+          )
+        ) :
+        e('div', {},
+          e('div', {style:{fontSize:32,textAlign:'center',marginBottom:12}}, '🏁'),
+          e('div', {style:{fontSize:20,fontWeight:800,textAlign:'center',color:TEXT,marginBottom:6}}, 'Rate this session'),
+          e('div', {style:{fontSize:13,color:MUTED,textAlign:'center',marginBottom:20}}, 'Overall quality — the whole ride, not just the peak.'),
+          e('div', {style:{display:'flex',gap:10,justifyContent:'center',marginBottom:16}},
+            ...QUALITY_OPTS.map(function(q){
+              return e('button', {key:q.n, onClick:()=>endFlow(q.n), style:{
+                width:52,height:52,borderRadius:14,border:'1.5px solid rgba(245,158,11,0.3)',
+                background:'rgba(245,158,11,0.06)',fontSize:24,cursor:'pointer',fontFamily:'inherit',
+                display:'flex',alignItems:'center',justifyContent:'center',
+              }}, q.e);
+            })
+          ),
+          e('button', {onClick:()=>endFlow(null), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',display:'block',margin:'0 auto'}}, 'Skip rating')
+        )
+    )
+  );
+}
+
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, jobLog, setJobLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -822,6 +1057,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         )
       )
     ),
+    e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
     e('div', {style:{display:'flex',gap:10,marginBottom:12}},
       e('div', {style:{flex:1,background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
@@ -1112,12 +1348,39 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setTab, ti
         ),
         e('input', {type:'range', min:0, max:12, step:0.5, value:sleep, onInput:ev=>{const n=parseFloat(ev.target.value);setSleep(n);localStorage.setItem('hq_sleep_'+qlDate,n);}, style:{background:'linear-gradient(to right,'+PURPLE+' '+(sleep/12*100)+'%, '+CARD2+' '+(sleep/12*100)+'%)'}}),
         e('div', {style:{display:'flex',justifyContent:'space-between',fontSize:10,color:MUTED,marginTop:4}}, e('span',{},'0h'), e('span',{},'6h'), e('span',{},'12h'))
-      )
+      ),
+      (function(){
+        var FLOW_COLOR = '#F59E0B';
+        var daySessions = (flowLog||[]).filter(function(s){return s.date===qlDate && s.endTime;});
+        if(daySessions.length === 0) return null;
+        return e('div', {style:{marginTop:14,paddingTop:14,borderTop:'1px solid rgba(100,80,220,0.07)'}},
+          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '⚡ FLOW STATE'),
+          e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
+            ...daySessions.map(function(s) {
+              var start = new Date(s.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+              var end = new Date(s.endTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+              var durMs = new Date(s.endTime) - new Date(s.startTime);
+              var durM = Math.floor(durMs/60000);
+              var durLabel = durM < 60 ? durM+'m' : Math.floor(durM/60)+'h '+(durM%60)+'m';
+              var peakInt = s.checkIns && s.checkIns.length > 0 ? Math.max.apply(null,s.checkIns.map(function(c){return c.intensity;})) : null;
+              var QUALITY_OPTS = [{n:1,e:'😐'},{n:2,e:'🙂'},{n:3,e:'⚡'},{n:4,e:'🔥'},{n:5,e:'🚀'}];
+              var qualE = s.endQuality ? (QUALITY_OPTS.find(function(q){return q.n===s.endQuality;})||{}).e : null;
+              return e('div', {key:s.id, style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(245,158,11,0.06)',borderRadius:10,padding:'8px 12px'}},
+                e('div', {},
+                  e('div', {style:{fontSize:13,fontWeight:700,color:FLOW_COLOR}}, '⚡ '+durLabel+(qualE?' '+qualE:'')),
+                  e('div', {style:{fontSize:11,color:MUTED}}, start+' – '+end+(peakInt ? '  ·  peak '+peakInt+'/5' : '')+(s.autoClose?' ·  auto-closed':''))
+                )
+              );
+            })
+          )
+        );
+      })()
     ),
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Daily Spark'),
       e('div', {style:{fontSize:15,lineHeight:1.65,color:TEXT,fontStyle:'italic',textAlign:'center'}}, '"'+quote+'"')
-    )
+    ),
+    flowModal ? e(FlowCheckinModal, {activeSession: (flowLog||[]).find(function(s){return !s.endTime;}), flowLog, setFlowLog, onClose:()=>setFlowModal(false)}) : null
   );
 }
 </script>
@@ -2529,6 +2792,12 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
     var next = {...done, [id]: !done[id]};
     var newLog = {...routineLog, [td]: next};
     if(!routineLog[td+'_start']) newLog[td+'_start'] = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    // Track per-item check time (used by Flow State to show meds timing)
+    if(next[id]) {
+      var itemTimes = Object.assign({}, routineLog[td+'_itemTimes'] || {});
+      itemTimes[id] = new Date().toISOString();
+      newLog[td+'_itemTimes'] = itemTimes;
+    }
     setRoutineLog(newLog);
     save('routineLog', newLog);
   }
@@ -6153,6 +6422,8 @@ function App() {
   const [postWorkoutPhase, setPostWorkoutPhase] = useState('done'); // greeting|checklist|complete|history|done
   const [pwLog, setPwLog] = useState({});
   const [pwItems, setPwItems] = useState(DEFAULT_POST_WORKOUT_HABITS);
+  const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
+  const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState({});
   const [wakeLog, setWakeLog] = useState({});
   const [cpapLog, setCpapLog] = useState({});
@@ -6198,6 +6469,64 @@ function App() {
     return ()=>{window.removeEventListener('resize',handleResize);window.removeEventListener('orientationchange',handleResize);};
   }, []);
 
+  // Flow state: auto-close abandoned sessions + 90-min check-in
+  useEffect(() => {
+    function autoCloseAbandoned(sessions) {
+      var SIX_HOURS = 6 * 60 * 60 * 1000;
+      var THREE_HOURS = 3 * 60 * 60 * 1000;
+      var now = Date.now();
+      var changed = false;
+      var next = sessions.map(function(s) {
+        if(s.endTime) return s;
+        var age = now - new Date(s.startTime).getTime();
+        if(age < SIX_HOURS) return s;
+        var lastActivity = s.checkIns.length > 0
+          ? new Date(s.checkIns[s.checkIns.length-1].time).getTime()
+          : new Date(s.startTime).getTime();
+        if(now - lastActivity < THREE_HOURS) return s;
+        // Auto-close at last check-in time (or startTime + reasonable window)
+        var endTime = s.checkIns.length > 0
+          ? s.checkIns[s.checkIns.length-1].time
+          : new Date(new Date(s.startTime).getTime() + 2*60*60*1000).toISOString();
+        changed = true;
+        return Object.assign({}, s, {endTime: endTime, autoClose: true});
+      });
+      if(changed) { setFlowLog(next); save('flowLog', next); }
+      return next;
+    }
+
+    // Run once on mount to clean up any abandoned sessions from prior days
+    var initial = load('flowLog') || [];
+    autoCloseAbandoned(initial);
+
+    var INTERVAL_MS = 90 * 60 * 1000;
+    var id = setInterval(function() {
+      var sessions = autoCloseAbandoned(load('flowLog') || []);
+      var active = sessions.find(function(s){return !s.endTime;});
+      if(!active) return;
+      setFlowLog(sessions);
+      setFlowModal(true);
+      // In-app notification
+      if(Notification.permission === 'granted') {
+        try { new Notification('⚡ Flow State Check-in', {body: 'Are you still in flow?', tag:'flow-checkin', renotify:true}); } catch(ex){}
+      }
+      // Supabase push (works when app is backgrounded)
+      try {
+        navigator.serviceWorker.ready.then(function(reg) {
+          return reg.pushManager.getSubscription();
+        }).then(function(sub) {
+          if(!sub) return;
+          fetch(SUPABASE_FN+'/send-push', {
+            method:'POST',
+            headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON},
+            body: JSON.stringify({type:'flow-checkin', subscription: sub.toJSON()})
+          }).catch(function(){});
+        }).catch(function(){});
+      } catch(ex){}
+    }, INTERVAL_MS);
+    return function(){clearInterval(id);};
+  }, []);
+
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 
@@ -6223,7 +6552,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,jobLog,setJobLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});

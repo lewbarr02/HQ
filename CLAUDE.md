@@ -183,10 +183,10 @@ Work through this in order. Check off items as they are completed.
 - [x] **HQ day view** — Visual timeline of the day pulling from existing priorities + routines. Pure index.html, no backend needed.
 
 **Phase 2 — Google Calendar Sync** *(Days 2-4, requires Supabase backend)*
-- [ ] **Supabase setup + OAuth scaffolding** *(Day 2)* — Supabase project, Google OAuth app config, token storage.
-- [ ] **OAuth flow in HQ** *(Day 2)* — Connect/disconnect Google account, store + refresh access tokens.
-- [ ] **Calendar API + event display** *(Day 3)* — Fetch events, overlay on HQ day view alongside priorities.
-- [ ] **Conflict detection + time picker integration** *(Day 4)* — Grey out booked times, warn on conflicts, show next free slot in email time picker.
+- [x] **Supabase setup + OAuth scaffolding** *(Day 2)* — Supabase project, Google OAuth app config, token storage.
+- [x] **OAuth flow in HQ** *(Day 2)* — Connect/disconnect Google account, store + refresh access tokens.
+- [x] **Calendar API + event display** *(Day 3)* — Fetch events, overlay on HQ day view alongside priorities.
+- [x] **Conflict detection + time picker integration** *(Day 4)* — Grey out booked times, warn on conflicts, show next free slot in email time picker.
 
 ### 🔁 ROUTINES
 - [x] **Midday check-in routine** — A second routine flow midday — quick pulse check, priority reset, catch anything that slipped in the morning.
