@@ -4442,18 +4442,19 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     function toggleArr(k, v) { var a=data[k]||[]; setField(k, a.includes(v)?a.filter(function(x){return x!==v;}):[...a,v]); }
     var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     var JOINTS = ['Shoulders','Knees','Lower back','Hips','Elbows','Wrists'];
-    var stepTitles = ['Training Availability','Equipment','Physical Limitations','Strength Baseline','Schedule Flexibility'];
-    var canNext = [data.preferredDays.length>0, !!data.location, true, true, true];
+    var stepTitles = ['Training Availability','Equipment','Physical Limitations','Strength Baseline','Schedule Flexibility','Reference Photos','Day 1 Photo'];
+    var canNext = [data.preferredDays.length>0, !!data.location, true, true, true, true, true];
 
     async function submitOnboarding() {
       setOnboardingLoading(true); setOnboardingError(null);
       try {
-        var resp = await fetch(COACH_URL, {method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'onboarding',onboardingAnswers:data})});
+        var refB64s = (data.referencePhotos||[]).map(function(p){return p.base64;});
+        var resp = await fetch(COACH_URL, {method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'onboarding',onboardingAnswers:data,referencePhotos:refB64s,photo:data.day1PhotoBase64||null})});
         if(!resp.ok){var errt=await resp.text();throw new Error(errt);}
         var result = await resp.json();
         if(result.error) throw new Error(result.error);
         if(!result.parsed||!result.parsed.program) throw new Error('Coach returned an unexpected format. Raw: '+String(result.content||'').slice(0,200));
-        var profile = Object.assign({},data,{calculated1RMs:result.calculated1RMs,createdAt:new Date().toISOString()});
+        var profile = Object.assign({},data,{calculated1RMs:result.calculated1RMs,aestheticTarget:result.parsed.aestheticTarget||null,createdAt:new Date().toISOString()});
         setCoachProfile(profile); save('coachProfile',profile);
         setCurrentProgram(result.parsed.program); save('currentProgram',result.parsed.program);
         setProgramMeta(result.parsed.programMeta); save('programMeta',result.parsed.programMeta);
@@ -4543,6 +4544,83 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
           })
         );
       }
+      if(step===5) {
+        var refPhotos = data.referencePhotos || [];
+        function handleRefPhoto(ev) {
+          var file=ev.target.files[0]; if(!file) return;
+          ev.target.value='';
+          var reader=new FileReader();
+          reader.onload=function(re){
+            var dataUrl=re.target.result;
+            var b64=dataUrl.split(',')[1];
+            setOnboardingData(function(p){
+              var existing=p.referencePhotos||[];
+              if(existing.length>=3) return p;
+              return Object.assign({},p,{referencePhotos:[...existing,{base64:b64,preview:dataUrl}]});
+            });
+          };
+          reader.readAsDataURL(file);
+        }
+        function removeRefPhoto(idx) {
+          setOnboardingData(function(p){
+            return Object.assign({},p,{referencePhotos:(p.referencePhotos||[]).filter(function(_,i){return i!==idx;})});
+          });
+        }
+        return e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+          e('div',{style:{background:'#EFF6FF',borderRadius:12,padding:'12px 14px',border:'1px solid #BFDBFE',fontSize:12,color:'#1D4ED8',lineHeight:1.6}},
+            '🎯 Upload 1–3 photos of people with your ideal physique. The coach will extract the specific aesthetic traits — delt width, chest-to-waist ratio, arm fullness — and hold those as targets throughout your program. You only do this once.'
+          ),
+          refPhotos.length>0 ? e('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}},
+            ...refPhotos.map(function(p,i){
+              return e('div',{key:i,style:{position:'relative',borderRadius:12,overflow:'hidden',aspectRatio:'3/4',background:'#F0F0F0'}},
+                e('img',{src:p.preview,style:{width:'100%',height:'100%',objectFit:'cover'}}),
+                e('button',{onClick:function(){removeRefPhoto(i);},style:{position:'absolute',top:6,right:6,width:24,height:24,borderRadius:'50%',background:'rgba(0,0,0,0.6)',border:'none',color:'white',fontSize:14,lineHeight:'24px',textAlign:'center',cursor:'pointer',fontFamily:'inherit',padding:0}},'×')
+              );
+            })
+          ) : null,
+          refPhotos.length<3 ? e('label',{style:{display:'block',cursor:'pointer'}},
+            e('div',{style:{border:'2px dashed '+BORDER,borderRadius:16,padding:'24px 20px',textAlign:'center',background:'#F8FAFC'}},
+              e('div',{style:{fontSize:32,marginBottom:8}},refPhotos.length===0?'🏆':'➕'),
+              e('div',{style:{fontSize:14,fontWeight:800,color:TEXT,marginBottom:4}},refPhotos.length===0?'Add reference photos':'Add another ('+refPhotos.length+'/3)'),
+              e('div',{style:{fontSize:12,color:MUTED}},'Physique athletes, bodybuilders, anyone with the look you\'re going for'),
+              e('div',{style:{marginTop:12,display:'inline-block',padding:'9px 18px',borderRadius:10,background:ACCENT+'15',color:ACCENT,fontSize:13,fontWeight:700}}, 'Choose Photo')
+            ),
+            e('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:handleRefPhoto})
+          ) : null,
+          e('div',{style:{fontSize:11,color:MUTED,textAlign:'center'}},'Optional — but gives the coach a concrete target, not just a vague goal')
+        );
+      }
+      if(step===6) {
+        function handleDay1Photo(ev) {
+          var file=ev.target.files[0]; if(!file) return;
+          var reader=new FileReader();
+          reader.onload=function(re){setField('day1PhotoBase64',re.target.result.split(',')[1]);};
+          reader.readAsDataURL(file);
+        }
+        return e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+          e('div',{style:{background:'#EFF6FF',borderRadius:12,padding:'12px 14px',border:'1px solid #BFDBFE',fontSize:12,color:'#1D4ED8',lineHeight:1.6}},
+            '📸 The coach needs to see your starting point to set the right priorities. Lateral delt width, upper chest fullness, and arm development are assessed visually — the numbers only tell half the story. A front relaxed pose works best.'
+          ),
+          data.day1PhotoBase64 ? e('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+            e('div',{style:{background:'#D1FAE5',borderRadius:12,padding:'14px 16px',border:'1px solid #6EE7B7',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+              e('div',{},
+                e('div',{style:{fontSize:13,fontWeight:700,color:'#065F46'}},'✅ Day 1 photo ready'),
+                e('div',{style:{fontSize:11,color:'#047857'}}, 'Coach will assess this when building your program')
+              ),
+              e('button',{onClick:function(){setField('day1PhotoBase64',null);},style:{background:'none',border:'1px solid #6EE7B7',borderRadius:8,padding:'6px 12px',fontSize:12,color:'#065F46',cursor:'pointer',fontFamily:'inherit'}},'Replace')
+            )
+          ) : e('label',{style:{display:'block',cursor:'pointer'}},
+            e('div',{style:{border:'2px dashed '+BORDER,borderRadius:16,padding:'32px 20px',textAlign:'center',background:'#F8FAFC'}},
+              e('div',{style:{fontSize:40,marginBottom:10}},'📷'),
+              e('div',{style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:6}},'Add your Day 1 photo'),
+              e('div',{style:{fontSize:12,color:MUTED,lineHeight:1.6}},'Front relaxed pose works best'+'\n'+'Shirt off if comfortable — coach needs to see your actual starting shape'),
+              e('div',{style:{marginTop:14,display:'inline-block',padding:'10px 20px',borderRadius:12,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:'white',fontSize:13,fontWeight:700}}, 'Choose Photo')
+            ),
+            e('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:handleDay1Photo})
+          ),
+          e('div',{style:{fontSize:11,color:MUTED,textAlign:'center'}},'Optional — but skipping means the coach is working blind on your aesthetics')
+        );
+      }
       if(step===4) return e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
         e('div',{},
           e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'TRAINING DAYS'),
@@ -4563,14 +4641,14 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         ...stepTitles.map(function(t,i){return e('div',{key:i,style:{flex:1,height:4,borderRadius:4,background:i<=step?ACCENT:'#E8E8F0',transition:'background 0.3s'}});})
       ),
       e('div',{style:{background:'#fff',borderRadius:16,padding:'18px',border:'1px solid '+BORDER}},
-        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:4}},'STEP '+(step+1)+' OF 5'),
+        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:4}},'STEP '+(step+1)+' OF 7'),
         e('div',{style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:14}},stepTitles[step]),
         stepContent()
       ),
       onboardingError?e('div',{style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}},'⚠️ '+onboardingError):null,
       e('div',{style:{display:'flex',gap:10}},
         step>0?e('button',{onClick:function(){setOnboardingStep(step-1);setOnboardingError(null);},style:{padding:'14px 20px',borderRadius:14,border:'1px solid '+BORDER,background:'#F8FAFC',color:TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'← Back'):null,
-        step<4?e('button',{onClick:function(){if(canNext[step])setOnboardingStep(step+1);},disabled:!canNext[step],style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:canNext[step]?'linear-gradient(135deg,'+ACCENT+','+PURPLE+')':'#E8E8F0',color:canNext[step]?'white':'#B0B0C0',fontSize:14,fontWeight:800,cursor:canNext[step]?'pointer':'default',fontFamily:'inherit'}},'Continue →'):
+        step<6?e('button',{onClick:function(){if(canNext[step])setOnboardingStep(step+1);},disabled:!canNext[step],style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:canNext[step]?'linear-gradient(135deg,'+ACCENT+','+PURPLE+')':'#E8E8F0',color:canNext[step]?'white':'#B0B0C0',fontSize:14,fontWeight:800,cursor:canNext[step]?'pointer':'default',fontFamily:'inherit'}},'Continue →'):
         e('button',{onClick:submitOnboarding,disabled:onboardingLoading,style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:onboardingLoading?'#E8E8F0':'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:onboardingLoading?'#B0B0C0':'white',fontSize:14,fontWeight:800,cursor:onboardingLoading?'default':'pointer',fontFamily:'inherit',boxShadow:onboardingLoading?'none':'0 8px 24px rgba(123,47,255,0.3)'}},onboardingLoading?'🤖 Building your program...':'🚀 Build My Program')
       )
     );
@@ -4710,7 +4788,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         var streak=0,rl=load('routineLog')||{},td=today();
         for(var si=0;si<60;si++){var dt=new Date(td+'T12:00:00');dt.setDate(dt.getDate()-si);var dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');if(rl[dk+'_test'])continue;if(rl[dk+'_done'])streak++;else break;}
         var wtEntries=Object.entries(bodyWeightLog).sort(function(a,b){return a[0]<b[0]?-1:1;}).slice(-4).map(function(en){return en[0]+': '+en[1]+'lbs';}).join(', ');
-        var checkinData={sessionsCompleted:form.sessionsCompleted||0,programmedDays:programmedDays,energy:form.energy,soreness:form.hasSoreness?(Array.isArray(form.soreness)?form.soreness.join(', '):form.soreness):null,pain:form.hasPain?form.pain:null,weight:form.weight,sleepQuality:form.sleepQuality,cpapCompliance:form.cpapCompliance,openNotes:form.openNotes,hasPhoto:!!form.photoBase64,workoutSummary:getWorkoutSummary(),macroSummary:getMacroSummary(),currentProgram:currentProgram,morningStreak:streak,weightTrend:wtEntries||null};
+        var checkinData={sessionsCompleted:form.sessionsCompleted||0,programmedDays:programmedDays,energy:form.energy,soreness:form.hasSoreness?(Array.isArray(form.soreness)?form.soreness.join(', '):form.soreness):null,pain:form.hasPain?form.pain:null,weight:form.weight,sleepQuality:form.sleepQuality,cpapCompliance:form.cpapCompliance,openNotes:form.openNotes,hasPhoto:!!form.photoBase64,workoutSummary:getWorkoutSummary(),macroSummary:getMacroSummary(),currentProgram:currentProgram,morningStreak:streak,weightTrend:wtEntries||null,aestheticTarget:(coachProfile&&coachProfile.aestheticTarget)||null};
         var resp=await fetch(COACH_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'weekly-checkin',checkinData:checkinData,photo:form.photoBase64||null})});
         if(!resp.ok){var errt=await resp.text();throw new Error(errt);}
         var result=await resp.json();

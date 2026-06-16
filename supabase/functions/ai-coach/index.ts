@@ -44,7 +44,7 @@ function extractJSON(text: string): any | null {
   return null
 }
 
-function buildOnboardingPrompt(answers: any, calculated1RMs: Record<string, number>): string {
+function buildOnboardingPrompt(answers: any, calculated1RMs: Record<string, number>, hasPhoto = false, hasReferencePhotos = false): string {
   const liftLines = Object.entries(calculated1RMs).map(([k, v]) => `- ${k}: ~${v} lbs estimated 1RM`).join('\n')
   return `Create a complete, personalized training program for Lewis based on his intake answers.
 
@@ -63,6 +63,10 @@ INTAKE:
 ESTIMATED 1RMs (Epley formula from working set data):
 ${liftLines || '- No strength data provided — use conservative starting weights'}
 
+${hasReferencePhotos ? 'Reference photos of Lewis\'s ideal physique have been included first (before the Day 1 photo). Study them carefully — note the specific aesthetic traits: shoulder width and delt capping, chest-to-waist taper, arm size and shape, overall proportions. These define the target. Your aestheticTarget field must describe these traits concretely so they can be referenced in every future coaching session.' : 'No reference photos provided.'}
+
+${hasPhoto ? 'A Day 1 photo of Lewis\'s current physique follows the reference photos. Compare his current state to the target and note the gaps in your reasoning.' : 'No Day 1 photo provided.'}
+
 Design a program that:
 1. Fits ${answers.daysPerWeek} days/week within ${answers.sessionLength} sessions
 2. Protects lateral delt and upper chest volume as non-negotiable priorities
@@ -73,7 +77,8 @@ Design a program that:
 Return ONLY a JSON object (no markdown outside the code block):
 \`\`\`json
 {
-  "reasoning": "2-3 paragraphs explaining why this split and structure fits Lewis's goals, aesthetic priorities, and baseline strength. Reference the actual numbers. Be direct.",
+  "aestheticTarget": "${hasReferencePhotos ? '3-4 sentences describing the specific traits from the reference photos: exact delt width and shape, chest fullness and shelf, arm development, waist taper. Concrete and visual — this text will be referenced in every future coaching session.' : 'null'}",
+  "reasoning": "2-3 paragraphs explaining why this split and structure fits Lewis's goals, aesthetic priorities, and baseline strength. If reference photos were provided, reference the target physique traits. Be direct.",
   "programMeta": {
     "split": "Upper/Lower",
     "daysPerWeek": 4,
@@ -112,6 +117,10 @@ Return ONLY a JSON object (no markdown outside the code block):
 
 function buildCheckinPrompt(data: any): string {
   return `Weekly check-in analysis for Lewis.
+${data.aestheticTarget ? `
+TARGET PHYSIQUE (extracted from reference photos at onboarding — hold this as the north star for aesthetic feedback):
+${data.aestheticTarget}
+` : ''}
 
 TRAINING THIS WEEK:
 - Sessions completed: ${data.sessionsCompleted} / ${data.programmedDays} programmed
@@ -201,7 +210,20 @@ serve(async (req) => {
         if (w > 0 && r > 0) calculated1RMs[lift] = epley1RM(w, r)
       }
 
-      const userPrompt = buildOnboardingPrompt(onboardingAnswers, calculated1RMs)
+      const refPhotos: string[] = body.referencePhotos || []
+      const userPrompt = buildOnboardingPrompt(onboardingAnswers, calculated1RMs, !!photo, refPhotos.length > 0)
+      const onboardingContent: any[] = []
+
+      // Reference photos first so Claude sees the target before reading intake
+      for (const refB64 of refPhotos) {
+        onboardingContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: refB64 } })
+      }
+      // Then Day 1 photo
+      if (photo) {
+        onboardingContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: photo } })
+      }
+      onboardingContent.push({ type: 'text', text: userPrompt })
+
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -209,7 +231,7 @@ serve(async (req) => {
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 4096,
           system: SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: userPrompt }],
+          messages: [{ role: 'user', content: onboardingContent }],
         }),
       })
       if (!resp.ok) {
