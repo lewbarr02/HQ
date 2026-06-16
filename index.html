@@ -918,12 +918,14 @@ function QuickIdeasCard({ideaLog, setIdeaLog}) {
     save('ideaLog', next);
     setInput('');
     setExpanded(true);
+    _SB.from('ideas').insert({id: idea.id, text: idea.text, date: idea.date, time: idea.time}).then(function(){});
   }
 
   function deleteIdea(id) {
     var next = (ideaLog || []).filter(function(i){ return i.id !== id; });
     setIdeaLog(next);
     save('ideaLog', next);
+    _SB.from('ideas').delete().eq('id', id).then(function(){});
   }
 
   function discussIdea(idea) {
@@ -7054,8 +7056,15 @@ function App() {
     function handleResize(){setIsWide(window.innerWidth >= 768);}
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
+    _SB.from('ideas').select('*').order('time', {ascending: false}).then(function(res){
+      if(res.data && res.data.length > 0){
+        var sbIdeas = res.data;
+        save('ideaLog', sbIdeas);
+        setIdeaLog(sbIdeas);
+      }
+    });
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','ideaLog'];
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems'];
       keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits')setHabits(v);else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
