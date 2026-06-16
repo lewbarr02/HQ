@@ -3980,6 +3980,40 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   const [coachAnalysis, setCoachAnalysis] = useState(function(){ return load('coachAnalysis') || null; });
   const [coachAnalysisDate, setCoachAnalysisDate] = useState(function(){ return load('coachAnalysisDate') || null; });
   const [coachError, setCoachError] = useState(null);
+  // ── Program / Onboarding / Check-in state ────────────────────────────────
+  const [coachProfile, setCoachProfile] = useState(function(){ return load('coachProfile'); });
+  const [currentProgram, setCurrentProgram] = useState(function(){ return load('currentProgram'); });
+  const [programMeta, setProgramMeta] = useState(function(){ return load('programMeta'); });
+  const [coachPhase, setCoachPhase] = useState(function(){ return load('coachProfile') ? 'main' : 'onboarding'; });
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingData, setOnboardingData] = useState({
+    daysPerWeek: 4, sessionLength: '60 min', preferredDays: [],
+    location: 'Commercial gym', equipmentNotes: '',
+    hasInjuries: false, injuries: '', hasAvoidMovements: false, avoidMovements: '',
+    jointIssues: [], scheduleFlexibility: 'Fixed', offLimitDays: '',
+    strengthLifts: {
+      'Barbell Bench Press': {weight:'',reps:''},
+      'Incline Press (Bar or DB)': {weight:'',reps:'',note:''},
+      'Overhead Press (Bar or DB)': {weight:'',reps:'',note:''},
+      'Squat or Leg Press': {weight:'',reps:'',note:''},
+      'Romanian or Conv. Deadlift': {weight:'',reps:'',note:''},
+      'Lat Pulldown or Weighted Pull-up': {weight:'',reps:'',note:''},
+    },
+  });
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [onboardingError, setOnboardingError] = useState(null);
+  const [selectedProgramDay, setSelectedProgramDay] = useState(null);
+  const [programExerciseLogs, setProgramExerciseLogs] = useState({}); // {exerciseName: {weight,reps}}
+  const [checkinForm, setCheckinForm] = useState({
+    sessionsCompleted: '', energy: 3, hasSoreness: false, soreness: '',
+    hasPain: false, pain: '', weight: '', sleepQuality: 3,
+    cpapCompliance: 'Every night', openNotes: '', photoBase64: null,
+  });
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [checkinError, setCheckinError] = useState(null);
+  const [checkinResponse, setCheckinResponse] = useState(null);
+  const [checkinHistory, setCheckinHistory] = useState(function(){ return load('checkinHistory') || {}; });
+  const [bodyWeightLog, setBodyWeightLog] = useState(function(){ return load('bodyWeightLog') || {}; });
   const safeLog = workoutLog || {};
 
   // ── Balance view ──────────────────────────────────────────────────────────
@@ -4093,7 +4127,122 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
 
   function renderLog() {
     var categories = ['Push','Pull','Legs','Core'];
+    var prog = currentProgram;
+    var selDay = prog && selectedProgramDay ? prog.days.find(function(d){return d.dayLabel===selectedProgramDay;}) : null;
+
+    function selectProgramDay(label) {
+      if (label === selectedProgramDay) {
+        setSelectedProgramDay(null);
+        setSelectedGroups([]);
+        setProgramExerciseLogs({});
+        return;
+      }
+      setSelectedProgramDay(label);
+      setProgramExerciseLogs({});
+      var day = prog.days.find(function(d){return d.dayLabel===label;});
+      if (!day) return;
+      // Pre-select muscle groups from the day's exercises
+      var groupSet = {};
+      (day.exercises||[]).forEach(function(ex){
+        var name = ex.name.toLowerCase();
+        MUSCLE_GROUPS.forEach(function(g){
+          if (name.includes(g.name.toLowerCase())) groupSet[g.id] = true;
+        });
+      });
+      // Also map common exercise names to groups
+      var exerciseGroupMap = {
+        'bench': ['chest'], 'incline': ['chest','front_delt'], 'press': ['chest','front_delt'],
+        'lateral': ['side_delt'], 'delt': ['side_delt'], 'tricep': ['triceps'], 'pushdown': ['triceps'],
+        'row': ['lats','traps'], 'pulldown': ['lats'], 'pull-up': ['lats'], 'pullup': ['lats'],
+        'curl': ['biceps'], 'rear': ['rear_delt'], 'squat': ['quads','glutes'], 'leg press': ['quads'],
+        'deadlift': ['hamstrings','glutes'], 'rdl': ['hamstrings','glutes'], 'calf': ['calves'],
+        'overhead press': ['front_delt','side_delt'], 'ohp': ['front_delt','side_delt'],
+        'trap': ['traps'], 'shrug': ['traps'], 'ab': ['abs'], 'crunch': ['abs'], 'plank': ['abs'],
+        'oblique': ['obliques'],
+      };
+      (day.exercises||[]).forEach(function(ex){
+        var lower = ex.name.toLowerCase();
+        Object.keys(exerciseGroupMap).forEach(function(kw){
+          if (lower.includes(kw)) {
+            exerciseGroupMap[kw].forEach(function(gid){ groupSet[gid] = true; });
+          }
+        });
+      });
+      setSelectedGroups(Object.keys(groupSet));
+    }
+
+    function updateExLog(exName, field, val) {
+      setProgramExerciseLogs(function(prev){
+        return Object.assign({}, prev, {[exName]: Object.assign({}, prev[exName]||{}, {[field]: val})});
+      });
+    }
+
     return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      // Program Day Selector (only if program exists)
+      prog ? e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}}, '📋 Today\'s Program Day'),
+        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, 'Select to pre-fill exercises from your program'),
+        e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
+          ...prog.days.map(function(d){
+            var active = selectedProgramDay === d.dayLabel;
+            return e('button', {key:d.dayLabel, onClick:function(){selectProgramDay(d.dayLabel);}, style:{
+              padding:'8px 14px',borderRadius:20,border:'1.5px solid '+(active?ACCENT:BORDER),
+              background:active?ACCENT+'18':'#F8FAFC',color:active?ACCENT:TEXT,
+              fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s',
+            }}, d.dayLabel + (d.scheduledDay?' · '+d.scheduledDay:''))
+          }),
+          e('button', {onClick:function(){setSelectedProgramDay(null);setProgramExerciseLogs({});setSelectedGroups([]);}, style:{
+            padding:'8px 14px',borderRadius:20,border:'1.5px solid '+BORDER,
+            background:'none',color:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+          }}, 'Free Log')
+        )
+      ) : null,
+
+      // Program exercises with weight/reps logger
+      selDay ? e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, '🏋️ '+selDay.dayLabel+' Exercises'),
+          selDay.focus && selDay.focus.length ? e('div', {style:{fontSize:10,color:ACCENT,fontWeight:700,background:ACCENT+'12',padding:'3px 8px',borderRadius:20}}, selDay.focus.join(' · ')) : null
+        ),
+        e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
+          ...(selDay.exercises||[]).map(function(ex){
+            var exLog = programExerciseLogs[ex.name] || {};
+            var prevWeight = ex.lastWeight;
+            var suggestion = prevWeight ? (ex.lastReps && parseInt(ex.reps.toString().split('-')[1]||ex.reps) <= (ex.lastReps||0) ? prevWeight + (selDay.dayLabel.toLowerCase().includes('upper')||selDay.dayLabel.toLowerCase().includes('a')?5:10) : prevWeight) : ex.targetWeight;
+            return e('div', {key:ex.name, style:{background:'#F8FAFC',borderRadius:12,padding:'12px'}},
+              e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}},
+                e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, ex.name),
+                e('div', {style:{fontSize:11,fontWeight:700,color:PURPLE,background:PURPLE+'10',padding:'3px 8px',borderRadius:20}}, ex.sets+'×'+ex.reps)
+              ),
+              ex.notes ? e('div', {style:{fontSize:11,color:MUTED,marginBottom:8,fontStyle:'italic'}}, ex.notes) : null,
+              e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
+                e('div', {style:{flex:1}},
+                  e('div', {style:{fontSize:10,color:MUTED,fontWeight:600,marginBottom:3}}, 'Weight (lbs)'),
+                  e('input', {className:'input', type:'number', style:{marginBottom:0,fontSize:13},
+                    placeholder: suggestion ? 'Target: '+suggestion : 'lbs',
+                    value: exLog.weight||'',
+                    onInput:function(ev){updateExLog(ex.name,'weight',ev.target.value);}
+                  })
+                ),
+                e('div', {style:{flex:1}},
+                  e('div', {style:{fontSize:10,color:MUTED,fontWeight:600,marginBottom:3}}, 'Reps hit'),
+                  e('input', {className:'input', type:'number', style:{marginBottom:0,fontSize:13},
+                    placeholder: ex.reps,
+                    value: exLog.reps||'',
+                    onInput:function(ev){updateExLog(ex.name,'reps',ev.target.value);}
+                  })
+                ),
+                prevWeight ? e('div', {style:{fontSize:10,color:MUTED,textAlign:'center',minWidth:44}},
+                  e('div',{},'Last'),
+                  e('div',{style:{fontWeight:700,color:TEXT}}, prevWeight+'lbs')
+                ) : null
+              )
+            );
+          })
+        )
+      ) : null,
+
+      // Date picker
       e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:10}}, '📅 Workout Date'),
         e('input', {
@@ -4105,7 +4254,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
       ),
       e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}}, '💪 Muscle Groups Worked'),
-        e('div', {style:{fontSize:11,color:MUTED,marginBottom:12}}, 'Select every group you trained today'),
+        e('div', {style:{fontSize:11,color:MUTED,marginBottom:12}}, selDay ? 'Auto-selected from program — adjust if needed' : 'Select every group you trained today'),
         ...categories.map(function(cat){
           var groups = MUSCLE_GROUPS.filter(function(g){return g.category===cat;});
           var col = CATEGORY_COLORS[cat];
@@ -4148,7 +4297,36 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         })
       ),
       e('button', {
-        onClick:saveWorkout,
+        onClick:function(){
+          if(selectedGroups.length === 0) return;
+          var exData = selDay ? Object.keys(programExerciseLogs).filter(function(k){return programExerciseLogs[k].weight||programExerciseLogs[k].reps;}).map(function(k){return {name:k, weight:programExerciseLogs[k].weight, reps:programExerciseLogs[k].reps};}) : [];
+          var entry = { id:'w'+Date.now(), groups:selectedGroups, sets:sessionSets?parseInt(sessionSets):null, note:sessionNote.trim(), programDay:selectedProgramDay||null, exercises:exData };
+          var day = safeLog[logDate] || [];
+          var newLog = Object.assign({}, safeLog, {[logDate]: [...day, entry]});
+          setWorkoutLog(newLog);
+          save('workoutLog', newLog);
+          // Update program lastWeight/lastReps
+          if (selDay && currentProgram && exData.length > 0) {
+            var updatedProg = JSON.parse(JSON.stringify(currentProgram));
+            updatedProg.days = updatedProg.days.map(function(d){
+              if (d.dayLabel !== selectedProgramDay) return d;
+              return Object.assign({}, d, {exercises: d.exercises.map(function(ex){
+                var logged = programExerciseLogs[ex.name];
+                if (!logged || (!logged.weight && !logged.reps)) return ex;
+                return Object.assign({}, ex, {
+                  lastWeight: logged.weight ? parseFloat(logged.weight) : ex.lastWeight,
+                  lastReps: logged.reps ? parseInt(logged.reps) : ex.lastReps,
+                  lastLogged: new Date().toISOString(),
+                });
+              })});
+            });
+            setCurrentProgram(updatedProg);
+            save('currentProgram', updatedProg);
+          }
+          setSelectedGroups([]); setSessionNote(''); setSessionSets('');
+          setSelectedProgramDay(null); setProgramExerciseLogs({});
+          setView('balance');
+        },
         disabled:selectedGroups.length===0,
         style:{
           padding:'17px',borderRadius:16,
@@ -4237,185 +4415,447 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   }
 
   // ── AI Coach ─────────────────────────────────────────────────────────────
-  function renderCoach() {
-    var weight = coachWeight, setWeight = setCoachWeight;
-    var goalWeight = coachGoalWeight, setGoalWeight = setCoachGoalWeight;
-    var goalBf = coachGoalBf, setGoalBf = setCoachGoalBf;
-    var loading = coachLoading, setLoading = setCoachLoading;
-    var analysis = coachAnalysis, setAnalysis = setCoachAnalysis;
-    var analysisDate = coachAnalysisDate, setAnalysisDate = setCoachAnalysisDate;
-    var error = coachError, setError = setCoachError;
+  var COACH_URL = 'https://bfgybytjjubdnciraksj.supabase.co/functions/v1/ai-coach';
+  var COACH_AUTH = 'Bearer sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4';
 
-    function buildPrompt() {
-      // Last 30 days workout summary
-      var td = today();
-      var workoutSummary = [];
-      for(var i = 0; i < 30; i++) {
-        var dt = new Date(td+'T12:00:00');
-        dt.setDate(dt.getDate()-i);
-        var dk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-        var sessions = (safeLog[dk]||[]);
-        if(sessions.length > 0) {
-          sessions.forEach(function(s){
-            var groups = (s.groups||[]).map(function(gid){ var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;}); return g?g.name:gid; });
-            workoutSummary.push(dk+': '+groups.join(', ')+(s.sets?' ('+s.sets+' sets)':'')+(s.note?' — '+s.note:''));
-          });
-        }
-      }
-
-      // Last 7 days macro summary
-      var macroLog = load('macroLog') || {};
-      var targets = load('macroTargets') || {cal:2200,protein:180,carbs:200,fat:65};
-      var macroSummary = [];
-      for(var j = 0; j < 7; j++) {
-        var dt2 = new Date(td+'T12:00:00');
-        dt2.setDate(dt2.getDate()-j);
-        var dk2 = dt2.getFullYear()+'-'+String(dt2.getMonth()+1).padStart(2,'0')+'-'+String(dt2.getDate()).padStart(2,'0');
-        var meals = macroLog[dk2]||[];
-        if(meals.length > 0) {
-          var totals = meals.reduce(function(acc,m){ acc.cal+=parseFloat(m.cal)||0; acc.protein+=parseFloat(m.protein)||0; acc.carbs+=parseFloat(m.carbs)||0; acc.fat+=parseFloat(m.fat)||0; return acc; },{cal:0,protein:0,carbs:0,fat:0});
-          macroSummary.push(dk2+': '+Math.round(totals.cal)+'kcal, '+Math.round(totals.protein)+'g protein, '+Math.round(totals.carbs)+'g carbs, '+Math.round(totals.fat)+'g fat');
-        }
-      }
-
-      // Muscle group freshness
-      var freshness = MUSCLE_GROUPS.map(function(g){
-        var d = daysSince(safeLog, g.id);
-        return g.name+': '+(d===null?'never':d+'d ago');
+  function renderAnalysis(text) {
+    return text.split('\n').map(function(line, i) {
+      if(!line.trim()) return e('div',{key:i,style:{height:8}});
+      var h1 = line.match(/^#\s+(.+)/), h2 = line.match(/^##\s+(.+)/), h3 = line.match(/^###\s+(.+)/);
+      if(h1) return e('div',{key:i,style:{fontSize:17,fontWeight:800,color:TEXT,marginTop:8,marginBottom:2}},h1[1]);
+      if(h2) return e('div',{key:i,style:{fontSize:15,fontWeight:800,color:TEXT,marginTop:10,marginBottom:2,borderBottom:'1px solid '+BORDER,paddingBottom:4}},h2[1]);
+      if(h3) return e('div',{key:i,style:{fontSize:13,fontWeight:700,color:TEXT,marginTop:6,marginBottom:2}},h3[1]);
+      var parts = line.split(/(\*\*[^*]+\*\*)/g);
+      var rendered = parts.map(function(p,pi){
+        if(p.startsWith('**')&&p.endsWith('**')) return e('strong',{key:pi,style:{color:TEXT}},p.slice(2,-2));
+        return p;
       });
+      var isNumbered = /^\d+\./.test(line.trim()), isBullet = /^[-*]\s/.test(line.trim());
+      return e('div',{key:i,style:{fontSize:14,lineHeight:1.7,color:'#444',fontWeight:isNumbered?600:400,marginBottom:isNumbered||isBullet?2:0,paddingLeft:isBullet?12:0}}, ...rendered);
+    });
+  }
 
-      return [
-        'You are a personal fitness coach. Give a concise, actionable weekly analysis.',
-        '',
-        'ATHLETE:',
-        '- Current weight: '+(weight||'unknown')+' lbs',
-        '- Goal: '+goalWeight+' lbs at '+goalBf+'% body fat',
-        '- Has ADHD — keep advice direct, numbered, visual',
-        '',
-        'WORKOUTS (last 30 days):',
-        workoutSummary.length > 0 ? workoutSummary.join('\n') : 'No workouts logged',
-        '',
-        'MUSCLE GROUP FRESHNESS:',
-        freshness.join(', '),
-        '',
-        'NUTRITION (last 7 days, targets: '+targets.cal+'kcal / '+targets.protein+'g protein):',
-        macroSummary.length > 0 ? macroSummary.join('\n') : 'No nutrition logged',
-        '',
-        'Write a weekly analysis with these sections:',
-        '1. **Overall Assessment** (2-3 sentences)',
-        '2. **Workout Focus This Week** (which muscle groups to prioritize and why)',
-        '3. **Nutrition Check** (how nutrition is tracking vs goals)',
-        '4. **3 Specific Actions** for the coming week (numbered, concrete)',
-        '5. **On-Track Date** (rough estimate for reaching goal weight at current trajectory)',
-        '',
-        'Be direct. No fluff. Acknowledge what is working before flagging gaps.',
-      ].join('\n');
+  function renderOnboarding() {
+    var step = onboardingStep;
+    var data = onboardingData;
+    function setField(k, v) { setOnboardingData(function(p){return Object.assign({},p,{[k]:v});}); }
+    function toggleArr(k, v) { var a=data[k]||[]; setField(k, a.includes(v)?a.filter(function(x){return x!==v;}):[...a,v]); }
+    var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    var JOINTS = ['Shoulders','Knees','Lower back','Hips','Elbows','Wrists'];
+    var stepTitles = ['Training Availability','Equipment','Physical Limitations','Strength Baseline','Schedule Flexibility'];
+    var canNext = [data.preferredDays.length>0, !!data.location, true, true, true];
+
+    async function submitOnboarding() {
+      setOnboardingLoading(true); setOnboardingError(null);
+      try {
+        var resp = await fetch(COACH_URL, {method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'onboarding',onboardingAnswers:data})});
+        if(!resp.ok){var errt=await resp.text();throw new Error(errt);}
+        var result = await resp.json();
+        if(result.error) throw new Error(result.error);
+        if(!result.parsed||!result.parsed.program) throw new Error('Unexpected response — try again.');
+        var profile = Object.assign({},data,{calculated1RMs:result.calculated1RMs,createdAt:new Date().toISOString()});
+        setCoachProfile(profile); save('coachProfile',profile);
+        setCurrentProgram(result.parsed.program); save('currentProgram',result.parsed.program);
+        setProgramMeta(result.parsed.programMeta); save('programMeta',result.parsed.programMeta);
+        save('coachOnboardingReasoning', result.parsed.reasoning||'');
+        setCoachPhase('main');
+      } catch(err){ setOnboardingError(err.message||'Something went wrong.'); }
+      setOnboardingLoading(false);
     }
 
-    async function generate() {
-      setLoading(true); setError(null);
-      try {
-        var prompt = buildPrompt();
-        var resp = await fetch('https://bfgybytjjubdnciraksj.supabase.co/functions/v1/ai-coach', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4' },
-          body: JSON.stringify({ prompt: prompt })
-        });
-        if(!resp.ok) { var err = await resp.text(); throw new Error(err); }
-        var data = await resp.json();
-        var text = data.content;
-        var dateStr = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-        setAnalysis(text); setAnalysisDate(dateStr);
-        save('coachAnalysis', text); save('coachAnalysisDate', dateStr);
-        save('coachWeight', weight); save('coachGoalWeight', goalWeight); save('coachGoalBf', goalBf);
-      } catch(err) {
-        setError(err.message || 'Failed to generate analysis');
+    function stepContent() {
+      if(step===0) return e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'DAYS PER WEEK'),
+          e('div',{style:{display:'flex',gap:6}},
+            ...[2,3,4,5,6].map(function(n){var s=data.daysPerWeek===n;return e('button',{key:n,onClick:function(){setField('daysPerWeek',n);},style:{flex:1,padding:'10px 0',borderRadius:12,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT:'#F8FAFC',color:s?'white':TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},n);})
+          )
+        ),
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'SESSION LENGTH'),
+          e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...['45 min','60 min','75 min','90 min+'].map(function(o){var s=data.sessionLength===o;return e('button',{key:o,onClick:function(){setField('sessionLength',o);},style:{padding:'9px 14px',borderRadius:12,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT:'#F8FAFC',color:s?'white':TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},o);})
+          )
+        ),
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'PREFERRED TRAINING DAYS'),
+          e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...DAYS.map(function(d){var s=(data.preferredDays||[]).includes(d);return e('button',{key:d,onClick:function(){toggleArr('preferredDays',d);},style:{padding:'9px 14px',borderRadius:12,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT:'#F8FAFC',color:s?'white':TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},d);})
+          )
+        )
+      );
+      if(step===1) return e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'TRAINING LOCATION'),
+          e('div',{style:{display:'flex',flexDirection:'column',gap:6}},
+            ...['Commercial gym','Home gym with full equipment','Home gym basic','Both'].map(function(o){var s=data.location===o;return e('button',{key:o,onClick:function(){setField('location',o);},style:{padding:'12px 16px',borderRadius:12,textAlign:'left',border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT+'10':'#F8FAFC',color:s?ACCENT:TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},o);})
+          )
+        ),
+        (data.location||'').toLowerCase().includes('home') ? e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:6}},'EQUIPMENT AVAILABLE'),
+          e('textarea',{className:'input',style:{marginBottom:0,minHeight:80,resize:'vertical'},placeholder:'e.g. Dumbbells to 80 lbs, pull-up bar, cables, bench...',value:data.equipmentNotes,onInput:function(ev){setField('equipmentNotes',ev.target.value);}})
+        ):null
+      );
+      if(step===2) return e('div',{style:{display:'flex',flexDirection:'column',gap:16}},
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'CURRENT INJURIES?'),
+          e('div',{style:{display:'flex',gap:8,marginBottom:data.hasInjuries?10:0}},
+            ...[[false,'No'],[true,'Yes, describe']].map(function(o){var s=data.hasInjuries===o[0];return e('button',{key:o[1],onClick:function(){setField('hasInjuries',o[0]);},style:{flex:1,padding:'11px',borderRadius:12,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT+'10':'#F8FAFC',color:s?ACCENT:TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},o[1]);})
+          ),
+          data.hasInjuries?e('textarea',{className:'input',style:{marginBottom:0,minHeight:60,resize:'vertical'},placeholder:'Area, severity, how long...',value:data.injuries,onInput:function(ev){setField('injuries',ev.target.value);}}):null
+        ),
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'MOVEMENTS TO AVOID?'),
+          e('div',{style:{display:'flex',gap:8,marginBottom:data.hasAvoidMovements?10:0}},
+            ...[[false,'None'],[true,'Yes, specify']].map(function(o){var s=data.hasAvoidMovements===o[0];return e('button',{key:o[1],onClick:function(){setField('hasAvoidMovements',o[0]);},style:{flex:1,padding:'11px',borderRadius:12,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT+'10':'#F8FAFC',color:s?ACCENT:TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},o[1]);})
+          ),
+          data.hasAvoidMovements?e('textarea',{className:'input',style:{marginBottom:0,minHeight:60,resize:'vertical'},placeholder:'e.g. Barbell back squat, behind-neck press...',value:data.avoidMovements,onInput:function(ev){setField('avoidMovements',ev.target.value);}}):null
+        ),
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'JOINT CONCERNS (select any)'),
+          e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...JOINTS.map(function(j){var s=(data.jointIssues||[]).includes(j);return e('button',{key:j,onClick:function(){toggleArr('jointIssues',j);},style:{padding:'8px 14px',borderRadius:20,border:'1.5px solid '+(s?'#F59E0B':BORDER),background:s?'#FEF3C7':'#F8FAFC',color:s?'#92400E':TEXT,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},j);})
+          )
+        )
+      );
+      if(step===3) {
+        var lifts = Object.keys(data.strengthLifts);
+        return e('div',{style:{display:'flex',flexDirection:'column',gap:12}},
+          e('div',{style:{background:'#EFF6FF',borderRadius:12,padding:'12px 14px',border:'1px solid #BFDBFE',fontSize:12,color:'#1D4ED8',lineHeight:1.6}},
+            '💡 Enter the heaviest weight you\'ve done for 3–5 clean reps. Coach calculates your working maxes from there. All optional.'
+          ),
+          ...lifts.map(function(lift){
+            var ld=data.strengthLifts[lift];
+            return e('div',{key:lift,style:{background:'#F8FAFC',borderRadius:12,padding:'12px'}},
+              e('div',{style:{fontSize:12,fontWeight:700,color:TEXT,marginBottom:8}},lift),
+              e('div',{style:{display:'flex',gap:8}},
+                e('div',{style:{flex:1}},
+                  e('div',{style:{fontSize:10,color:MUTED,fontWeight:600,marginBottom:3}},'Weight (lbs)'),
+                  e('input',{className:'input',type:'number',style:{marginBottom:0,fontSize:13},placeholder:'e.g. 185',value:ld.weight||'',onInput:function(ev){setOnboardingData(function(p){var lc=Object.assign({},p.strengthLifts);lc[lift]=Object.assign({},lc[lift],{weight:ev.target.value});return Object.assign({},p,{strengthLifts:lc});});}})
+                ),
+                e('div',{style:{flex:1}},
+                  e('div',{style:{fontSize:10,color:MUTED,fontWeight:600,marginBottom:3}},'Reps used'),
+                  e('input',{className:'input',type:'number',style:{marginBottom:0,fontSize:13},placeholder:'e.g. 5',value:ld.reps||'',onInput:function(ev){setOnboardingData(function(p){var lc=Object.assign({},p.strengthLifts);lc[lift]=Object.assign({},lc[lift],{reps:ev.target.value});return Object.assign({},p,{strengthLifts:lc});});}})
+                )
+              ),
+              lift!=='Barbell Bench Press'?e('input',{className:'input',type:'text',style:{marginBottom:0,fontSize:12,marginTop:6},placeholder:'Note (e.g. "dumbbell" or "leg press")',value:ld.note||'',onInput:function(ev){setOnboardingData(function(p){var lc=Object.assign({},p.strengthLifts);lc[lift]=Object.assign({},lc[lift],{note:ev.target.value});return Object.assign({},p,{strengthLifts:lc});});}}):null
+            );
+          })
+        );
       }
+      if(step===4) return e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}},'TRAINING DAYS'),
+          e('div',{style:{display:'flex',gap:8}},
+            ...['Fixed','Variable'].map(function(o){var s=data.scheduleFlexibility===o;return e('button',{key:o,onClick:function(){setField('scheduleFlexibility',o);},style:{flex:1,padding:'14px 12px',borderRadius:12,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT+'10':'#F8FAFC',color:s?ACCENT:TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textAlign:'center'}},e('div',{},o),e('div',{style:{fontSize:10,fontWeight:400,color:s?ACCENT:MUTED,marginTop:2}},o==='Fixed'?'Same days every week':'Changes week to week'));})
+          )
+        ),
+        e('div',{},
+          e('div',{style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:6}},'DAYS ALWAYS OFF-LIMITS (if any)'),
+          e('textarea',{className:'input',style:{marginBottom:0,resize:'vertical'},placeholder:'e.g. Sundays always off...',value:data.offLimitDays,onInput:function(ev){setField('offLimitDays',ev.target.value);}})
+        )
+      );
+      return null;
+    }
+
+    return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      e('div',{style:{display:'flex',gap:4}},
+        ...stepTitles.map(function(t,i){return e('div',{key:i,style:{flex:1,height:4,borderRadius:4,background:i<=step?ACCENT:'#E8E8F0',transition:'background 0.3s'}});})
+      ),
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'18px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:4}},'STEP '+(step+1)+' OF 5'),
+        e('div',{style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:14}},stepTitles[step]),
+        stepContent()
+      ),
+      onboardingError?e('div',{style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}},'⚠️ '+onboardingError):null,
+      e('div',{style:{display:'flex',gap:10}},
+        step>0?e('button',{onClick:function(){setOnboardingStep(step-1);setOnboardingError(null);},style:{padding:'14px 20px',borderRadius:14,border:'1px solid '+BORDER,background:'#F8FAFC',color:TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'← Back'):null,
+        step<4?e('button',{onClick:function(){if(canNext[step])setOnboardingStep(step+1);},disabled:!canNext[step],style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:canNext[step]?'linear-gradient(135deg,'+ACCENT+','+PURPLE+')':'#E8E8F0',color:canNext[step]?'white':'#B0B0C0',fontSize:14,fontWeight:800,cursor:canNext[step]?'pointer':'default',fontFamily:'inherit'}},'Continue →'):
+        e('button',{onClick:submitOnboarding,disabled:onboardingLoading,style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:onboardingLoading?'#E8E8F0':'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:onboardingLoading?'#B0B0C0':'white',fontSize:14,fontWeight:800,cursor:onboardingLoading?'default':'pointer',fontFamily:'inherit',boxShadow:onboardingLoading?'none':'0 8px 24px rgba(123,47,255,0.3)'}},onboardingLoading?'🤖 Building your program...':'🚀 Build My Program')
+      )
+    );
+  }
+
+  function renderProgramCard() {
+    var prog = currentProgram;
+    if(!prog) return null;
+    var reasoning = load('coachOnboardingReasoning');
+    return e('div',{style:{background:'#fff',borderRadius:16,padding:'18px',border:'1px solid '+BORDER}},
+      e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+        e('div',{},
+          e('div',{style:{fontSize:13,fontWeight:800,color:TEXT}},'📋 Your Training Program'),
+          e('div',{style:{fontSize:11,color:MUTED}},prog.split+' · Week '+prog.weekNumber)
+        ),
+        programMeta&&programMeta.priorityMuscles?e('div',{style:{fontSize:10,color:ACCENT,fontWeight:700,background:ACCENT+'12',padding:'4px 10px',borderRadius:20}},'★ '+programMeta.priorityMuscles.slice(0,2).join(' · ')):null
+      ),
+      reasoning?e('div',{style:{background:'#F8FAFC',borderRadius:12,padding:'12px 14px',marginBottom:14,fontSize:12,color:'#444',lineHeight:1.7,borderLeft:'3px solid '+ACCENT}},reasoning):null,
+      e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+        ...(prog.days||[]).map(function(day){
+          return e('div',{key:day.dayLabel,style:{background:'#F8FAFC',borderRadius:12,padding:'12px'}},
+            e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}},
+              e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}},day.dayLabel+(day.scheduledDay?' — '+day.scheduledDay:'')),
+              day.focus&&day.focus.length?e('div',{style:{fontSize:10,color:PURPLE,fontWeight:700}},day.focus.join(' · ')):null
+            ),
+            e('div',{style:{display:'flex',flexDirection:'column',gap:3}},
+              ...(day.exercises||[]).map(function(ex){
+                return e('div',{key:ex.name,style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                  e('div',{style:{fontSize:12,color:TEXT}},ex.name),
+                  e('div',{style:{fontSize:11,color:MUTED,fontWeight:700}},ex.sets+'×'+ex.reps+(ex.targetWeight?' @ '+ex.targetWeight+'lbs':'')+(ex.lastWeight?' ✓'+ex.lastWeight+'lbs':''))
+                );
+              })
+            )
+          );
+        })
+      ),
+      e('button',{onClick:function(){if(confirm('Reset program and redo onboarding?')){setCoachProfile(null);save('coachProfile',null);setCurrentProgram(null);save('currentProgram',null);setProgramMeta(null);save('programMeta',null);save('coachOnboardingReasoning',null);setOnboardingStep(0);setCoachPhase('onboarding');}},style:{marginTop:12,background:'none',border:'1px solid '+BORDER,borderRadius:8,padding:'6px 14px',fontSize:11,color:MUTED,cursor:'pointer',fontFamily:'inherit'}},'Redo Onboarding')
+    );
+  }
+
+  function renderMain() {
+    var weight=coachWeight,setWeight=setCoachWeight,goalWeight=coachGoalWeight,setGoalWeight=setCoachGoalWeight;
+    var goalBf=coachGoalBf,setGoalBf=setCoachGoalBf,loading=coachLoading,setLoading=setCoachLoading;
+    var analysis=coachAnalysis,setAnalysis=setCoachAnalysis,analysisDate=coachAnalysisDate,setAnalysisDate=setCoachAnalysisDate;
+    var error=coachError,setError=setCoachError;
+    var profileAge = coachProfile?Math.floor((Date.now()-new Date(coachProfile.createdAt).getTime())/86400000):0;
+    var canCheckin = profileAge>=5;
+    var lastCheckin = Object.keys(checkinHistory).sort().reverse()[0];
+
+    async function generate() {
+      setLoading(true);setError(null);
+      try {
+        var td=today(),workoutSummary=[],macroSummaryLines=[],freshness=[];
+        for(var i=0;i<30;i++){var dt=new Date(td+'T12:00:00');dt.setDate(dt.getDate()-i);var dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');(safeLog[dk]||[]).forEach(function(s){var gs=(s.groups||[]).map(function(gid){var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});return g?g.name:gid;});workoutSummary.push(dk+': '+gs.join(', ')+(s.sets?' ('+s.sets+' sets)':'')+(s.note?' — '+s.note:''));});}
+        var macroLogData=load('macroLog')||{},targets=load('macroTargets')||{cal:2200,protein:180};
+        for(var j=0;j<7;j++){var dt2=new Date(td+'T12:00:00');dt2.setDate(dt2.getDate()-j);var dk2=dt2.getFullYear()+'-'+String(dt2.getMonth()+1).padStart(2,'0')+'-'+String(dt2.getDate()).padStart(2,'0');var meals=macroLogData[dk2]||[];if(meals.length){var tot=meals.reduce(function(a,m){a.cal+=parseFloat(m.cal)||0;a.protein+=parseFloat(m.protein)||0;return a;},{cal:0,protein:0});macroSummaryLines.push(dk2+': '+Math.round(tot.cal)+'kcal, '+Math.round(tot.protein)+'g protein');}}
+        freshness=MUSCLE_GROUPS.map(function(g){var d=daysSince(safeLog,g.id);return g.name+': '+(d===null?'never':d+'d ago');});
+        var prompt=['You are a personal fitness coach. Give a concise, actionable weekly analysis.','','ATHLETE:','- Current weight: '+(weight||'unknown')+' lbs','- Goal: '+goalWeight+' lbs at '+goalBf+'% body fat','- Has ADHD — keep advice direct, numbered, visual','','WORKOUTS (last 30 days):',workoutSummary.join('\n')||'None','','MUSCLE GROUP FRESHNESS:',freshness.join(', '),'','NUTRITION (last 7 days, targets: '+targets.cal+'kcal / '+targets.protein+'g protein):',macroSummaryLines.join('\n')||'None logged','','1. **Overall Assessment** (2-3 sentences)','2. **Workout Focus This Week**','3. **Nutrition Check**','4. **3 Specific Actions** (numbered)','5. **On-Track Date**','','Be direct. No fluff.'].join('\n');
+        var resp=await fetch(COACH_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'analysis',prompt:prompt})});
+        if(!resp.ok){var errt=await resp.text();throw new Error(errt);}
+        var data2=await resp.json(),text=data2.content;
+        var dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+        setAnalysis(text);setAnalysisDate(dateStr);save('coachAnalysis',text);save('coachAnalysisDate',dateStr);
+        save('coachWeight',weight);save('coachGoalWeight',goalWeight);save('coachGoalBf',goalBf);
+      } catch(err){setError(err.message||'Failed');}
       setLoading(false);
     }
 
-    // Render markdown-ish: bold **text**, numbered lists
-    function renderAnalysis(text) {
-      return text.split('\n').map(function(line, i) {
-        if(!line.trim()) return e('div',{key:i,style:{height:8}});
-        // Strip markdown heading prefixes
-        var h1 = line.match(/^#\s+(.+)/);
-        var h2 = line.match(/^##\s+(.+)/);
-        var h3 = line.match(/^###\s+(.+)/);
-        if(h1) return e('div',{key:i,style:{fontSize:17,fontWeight:800,color:TEXT,marginTop:8,marginBottom:2}}, h1[1]);
-        if(h2) return e('div',{key:i,style:{fontSize:15,fontWeight:800,color:TEXT,marginTop:10,marginBottom:2,borderBottom:'1px solid '+BORDER,paddingBottom:4}}, h2[1]);
-        if(h3) return e('div',{key:i,style:{fontSize:13,fontWeight:700,color:TEXT,marginTop:6,marginBottom:2}}, h3[1]);
-        // Bold **text**
-        var parts = line.split(/(\*\*[^*]+\*\*)/g);
-        var rendered = parts.map(function(p,pi){
-          if(p.startsWith('**')&&p.endsWith('**')) return e('strong',{key:pi,style:{color:TEXT}},p.slice(2,-2));
-          return p;
-        });
-        var isNumbered = /^\d+\./.test(line.trim());
-        var isBullet = /^[-*]\s/.test(line.trim());
-        return e('div',{key:i,style:{
-          fontSize:14,lineHeight:1.7,color:'#444',
-          fontWeight:isNumbered?600:400,
-          marginBottom:isNumbered||isBullet?2:0,
-          paddingLeft:isBullet?12:0,
-        }}, ...rendered);
-      });
+    return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      renderProgramCard(),
+      coachProfile?e('div',{style:{background:canCheckin?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':'#F0F2F8',borderRadius:16,padding:'16px',boxShadow:canCheckin?'0 8px 24px rgba(123,47,255,0.25)':'none'}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          e('div',{},
+            e('div',{style:{fontSize:13,fontWeight:800,color:canCheckin?'white':MUTED}},'📊 Weekly Check-In'),
+            e('div',{style:{fontSize:11,color:canCheckin?'rgba(255,255,255,0.75)':MUTED}},canCheckin?(lastCheckin?'Last: '+new Date(lastCheckin+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'Not done yet'):'Available after your first full week')
+          ),
+          canCheckin?e('button',{onClick:function(){setCoachPhase('checkin');setCheckinError(null);},style:{padding:'10px 18px',borderRadius:12,border:'none',background:'rgba(255,255,255,0.2)',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}},'Start →'):null
+        )
+      ):null,
+      e('div',{style:{display:'flex',alignItems:'center',gap:10}},
+        e('div',{style:{flex:1,height:1,background:BORDER}}),
+        e('div',{style:{fontSize:11,color:MUTED,fontWeight:700,whiteSpace:'nowrap'}},'QUICK ANALYSIS'),
+        e('div',{style:{flex:1,height:1,background:BORDER}})
+      ),
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:12}},'⚙️ Your Stats'),
+        e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}},
+          e('div',{},e('div',{style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}},'Current Weight'),e('input',{className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:weight,onInput:function(ev){setWeight(ev.target.value);}})),
+          e('div',{},e('div',{style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}},'Goal Weight'),e('input',{className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:goalWeight,onInput:function(ev){setGoalWeight(ev.target.value);}})),
+          e('div',{},e('div',{style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}},'Goal BF%'),e('input',{className:'input',type:'number',placeholder:'%',style:{marginBottom:0},value:goalBf,onInput:function(ev){setGoalBf(ev.target.value);}}))
+        )
+      ),
+      e('button',{onClick:generate,disabled:loading,style:{padding:'17px',borderRadius:16,background:loading?'#E8E8F0':'linear-gradient(135deg,#7B2FFF,#00C6FF)',border:'none',color:loading?'#B0B0C0':'white',fontSize:16,fontWeight:800,cursor:loading?'default':'pointer',fontFamily:'inherit',boxShadow:loading?'none':'0 8px 24px rgba(123,47,255,0.3)',transition:'all 0.2s'}},loading?'🤖 Analyzing...':'🤖 Generate Quick Analysis'),
+      error?e('div',{style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}},'⚠️ '+error):null,
+      analysis?e('div',{style:{background:'#fff',borderRadius:16,padding:'18px',border:'1px solid '+BORDER}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
+          e('div',{style:{fontSize:13,fontWeight:700,color:TEXT}},'📋 Weekly Analysis'),
+          analysisDate?e('div',{style:{fontSize:11,color:MUTED}},analysisDate):null
+        ),
+        e('div',{style:{lineHeight:1.6}},...renderAnalysis(analysis)),
+        e('button',{onClick:function(){setAnalysis(null);setAnalysisDate(null);save('coachAnalysis',null);save('coachAnalysisDate',null);},style:{marginTop:14,background:'none',border:'1px solid '+BORDER,borderRadius:8,padding:'6px 14px',fontSize:12,color:MUTED,cursor:'pointer',fontFamily:'inherit'}},'Clear')
+      ):!loading?e('div',{style:{background:'#F8FAFC',borderRadius:16,padding:'24px',border:'1px dashed '+BORDER,textAlign:'center'}},
+        e('div',{style:{fontSize:32,marginBottom:8}},'🤖'),
+        e('div',{style:{fontSize:14,fontWeight:600,color:TEXT,marginBottom:4}},'AI Fitness Coach'),
+        e('div',{style:{fontSize:13,color:MUTED}},'Reads your workout history, muscle balance, and nutrition — then gives a written plan.')
+      ):null
+    );
+  }
+
+  function renderCheckinForm() {
+    var form=checkinForm;
+    function setField(k,v){setCheckinForm(function(p){return Object.assign({},p,{[k]:v});});}
+    var programmedDays=programMeta?programMeta.daysPerWeek:(currentProgram?(currentProgram.days||[]).length:4);
+
+    function handlePhoto(ev) {
+      var file=ev.target.files[0]; if(!file) return;
+      var reader=new FileReader();
+      reader.onload=function(re){setField('photoBase64',re.target.result.split(',')[1]);};
+      reader.readAsDataURL(file);
     }
 
-    return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
-      // Inputs card
-      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
-        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:12}}, '⚙️ Your Stats'),
-        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}},
-          e('div', {},
-            e('div', {style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}}, 'Current Weight'),
-            e('input', {className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:weight,onInput:function(ev){setWeight(ev.target.value);}})
+    function getWorkoutSummary() {
+      var td=today(),lines=[];
+      for(var i=0;i<7;i++){var dt=new Date(td+'T12:00:00');dt.setDate(dt.getDate()-i);var dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');(safeLog[dk]||[]).forEach(function(s){var gs=(s.groups||[]).map(function(gid){var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});return g?g.name:gid;});var exStr=(s.exercises||[]).map(function(ex){return ex.name+(ex.weight?' '+ex.weight+'lbs':'')+(ex.reps?' x'+ex.reps:'');}).join(', ');lines.push(dk+': '+(s.programDay?s.programDay+' — ':'')+gs.join(', ')+(exStr?' ('+exStr+')':'')+(s.note?' · '+s.note:''));});}
+      return lines.join('\n')||'No sessions this week';
+    }
+
+    function getMacroSummary() {
+      var mld=load('macroLog')||{},td=today(),lines=[];
+      for(var j=0;j<7;j++){var dt=new Date(td+'T12:00:00');dt.setDate(dt.getDate()-j);var dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');var meals=mld[dk]||[];if(meals.length){var t=meals.reduce(function(a,m){a.cal+=parseFloat(m.cal)||0;a.protein+=parseFloat(m.protein)||0;return a;},{cal:0,protein:0});lines.push(dk+': '+Math.round(t.cal)+'kcal, '+Math.round(t.protein)+'g protein');}}
+      return lines.join('\n')||null;
+    }
+
+    async function submitCheckin() {
+      setCheckinLoading(true);setCheckinError(null);
+      try {
+        var streak=0,rl=load('routineLog')||{},td=today();
+        for(var si=0;si<60;si++){var dt=new Date(td+'T12:00:00');dt.setDate(dt.getDate()-si);var dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');if(rl[dk+'_test'])continue;if(rl[dk+'_done'])streak++;else break;}
+        var wtEntries=Object.entries(bodyWeightLog).sort(function(a,b){return a[0]<b[0]?-1:1;}).slice(-4).map(function(en){return en[0]+': '+en[1]+'lbs';}).join(', ');
+        var checkinData={sessionsCompleted:form.sessionsCompleted||0,programmedDays:programmedDays,energy:form.energy,soreness:form.hasSoreness?(Array.isArray(form.soreness)?form.soreness.join(', '):form.soreness):null,pain:form.hasPain?form.pain:null,weight:form.weight,sleepQuality:form.sleepQuality,cpapCompliance:form.cpapCompliance,openNotes:form.openNotes,hasPhoto:!!form.photoBase64,workoutSummary:getWorkoutSummary(),macroSummary:getMacroSummary(),currentProgram:currentProgram,morningStreak:streak,weightTrend:wtEntries||null};
+        var resp=await fetch(COACH_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'weekly-checkin',checkinData:checkinData,photo:form.photoBase64||null})});
+        if(!resp.ok){var errt=await resp.text();throw new Error(errt);}
+        var result=await resp.json();
+        if(result.error) throw new Error(result.error);
+        if(form.weight){var nbw=Object.assign({},bodyWeightLog,{[today()]:parseFloat(form.weight)});setBodyWeightLog(nbw);save('bodyWeightLog',nbw);}
+        if(result.parsed&&result.parsed.updatedProgram&&result.parsed.updatedProgram.days){setCurrentProgram(result.parsed.updatedProgram);save('currentProgram',result.parsed.updatedProgram);}
+        var nh=Object.assign({},checkinHistory,{[today()]:{formAnswers:form,coachResponse:result.parsed||result.content,programSnapshot:currentProgram}});
+        setCheckinHistory(nh);save('checkinHistory',nh);
+        setCheckinResponse(result.parsed||{weeklySnapshot:result.content});
+        setCoachPhase('checkinResult');
+      } catch(err){setCheckinError(err.message||'Something went wrong.');}
+      setCheckinLoading(false);
+    }
+
+    var SORE_GROUPS=MUSCLE_GROUPS.map(function(g){return g.name;});
+    function toggleSore(name){var arr=Array.isArray(form.soreness)?form.soreness:[];setField('soreness',arr.includes(name)?arr.filter(function(x){return x!==name;}):[...arr,name]);}
+
+    return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      e('button',{onClick:function(){setCoachPhase('main');},style:{alignSelf:'flex-start',background:'none',border:'none',color:MUTED,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',padding:0}},'← Back'),
+      e('div',{style:{fontSize:18,fontWeight:800,color:TEXT}},'📊 Weekly Check-In'),
+      e('div',{style:{fontSize:13,color:MUTED,marginTop:-8}},'Honest data in → better program out.'),
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:14}},'🏋️ Training This Week'),
+        e('div',{style:{marginBottom:14}},
+          e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}},'SESSIONS COMPLETED'),
+          e('div',{style:{display:'flex',gap:6}},
+            ...[0,1,2,3,4,5,6,7].slice(0,programmedDays+2).map(function(n){var s=parseInt(form.sessionsCompleted)===n;return e('button',{key:n,onClick:function(){setField('sessionsCompleted',n);},style:{flex:1,padding:'10px 0',borderRadius:10,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT:'#F8FAFC',color:s?'white':TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},n);})
+          )
+        ),
+        e('div',{style:{marginBottom:14}},
+          e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}},'WORKOUT ENERGY'),
+          e('div',{style:{display:'flex',gap:4}},
+            ...[[1,'🪫'],[2,'😴'],[3,'😐'],[4,'💪'],[5,'🔥']].map(function(o){var s=form.energy===o[0];return e('button',{key:o[0],onClick:function(){setField('energy',o[0]);},style:{flex:1,padding:'12px 4px',borderRadius:10,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT+'12':'#F8FAFC',fontSize:18,cursor:'pointer',fontFamily:'inherit',display:'flex',flexDirection:'column',alignItems:'center',gap:2}},e('span',{},o[1]),e('span',{style:{fontSize:9,color:s?ACCENT:MUTED,fontWeight:700}},o[0]));})
+          )
+        ),
+        e('div',{style:{marginBottom:14}},
+          e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}},'SORENESS 2+ DAYS?'),
+          e('div',{style:{display:'flex',gap:8,marginBottom:form.hasSoreness?10:0}},
+            ...[[false,'No'],[true,'Yes']].map(function(o){var s=form.hasSoreness===o[0];return e('button',{key:o[1],onClick:function(){setField('hasSoreness',o[0]);},style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT+'10':'#F8FAFC',color:s?ACCENT:TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},o[1]);})
           ),
-          e('div', {},
-            e('div', {style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}}, 'Goal Weight'),
-            e('input', {className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:goalWeight,onInput:function(ev){setGoalWeight(ev.target.value);}})
+          form.hasSoreness?e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...SORE_GROUPS.map(function(name){var arr=Array.isArray(form.soreness)?form.soreness:[];var s=arr.includes(name);return e('button',{key:name,onClick:function(){toggleSore(name);},style:{padding:'6px 12px',borderRadius:20,border:'1.5px solid '+(s?'#F59E0B':BORDER),background:s?'#FEF3C7':'#F8FAFC',color:s?'#92400E':TEXT,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},name);})
+          ):null
+        ),
+        e('div',{},
+          e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}},'PAIN OR JOINT ISSUES?'),
+          e('div',{style:{display:'flex',gap:8,marginBottom:form.hasPain?10:0}},
+            ...[[false,'No'],[true,'Yes']].map(function(o){var s=form.hasPain===o[0];return e('button',{key:o[1],onClick:function(){setField('hasPain',o[0]);},style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+(s?'#EF4444':BORDER),background:s?'#FEF2F2':'#F8FAFC',color:s?'#EF4444':TEXT,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},o[1]);})
           ),
-          e('div', {},
-            e('div', {style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}}, 'Goal BF%'),
-            e('input', {className:'input',type:'number',placeholder:'%',style:{marginBottom:0},value:goalBf,onInput:function(ev){setGoalBf(ev.target.value);}})
+          form.hasPain?e('textarea',{className:'input',style:{marginBottom:0,resize:'vertical'},placeholder:'Describe: what, where, when it started...',value:form.pain,onInput:function(ev){setField('pain',ev.target.value);}}):null
+        )
+      ),
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:14}},'⚖️ Body'),
+        e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}},
+          e('div',{},
+            e('div',{style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:4}},'Weight this morning (lbs)'),
+            e('input',{className:'input',type:'number',style:{marginBottom:0},placeholder:'e.g. 205',value:form.weight,onInput:function(ev){setField('weight',ev.target.value);}})
+          ),
+          e('div',{},
+            e('div',{style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:4}},'Sleep quality (1–5)'),
+            e('div',{style:{display:'flex',gap:4}},
+              ...[1,2,3,4,5].map(function(n){var s=form.sleepQuality===n;return e('button',{key:n,onClick:function(){setField('sleepQuality',n);},style:{flex:1,padding:'9px 0',borderRadius:8,border:'1.5px solid '+(s?PURPLE:BORDER),background:s?PURPLE:'#F8FAFC',color:s?'white':TEXT,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},n);})
+            )
+          )
+        ),
+        e('div',{},
+          e('div',{style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:6}},'CPAP COMPLIANCE'),
+          e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...['Every night','Most nights','Hit or miss','Didn\'t use it'].map(function(o){var s=form.cpapCompliance===o;return e('button',{key:o,onClick:function(){setField('cpapCompliance',o);},style:{padding:'9px 14px',borderRadius:20,border:'1.5px solid '+(s?ACCENT:BORDER),background:s?ACCENT+'12':'#F8FAFC',color:s?ACCENT:TEXT,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},o);})
           )
         )
       ),
-
-      // Generate button
-      e('button', {
-        onClick: generate,
-        disabled: loading,
-        style:{
-          padding:'17px',borderRadius:16,
-          background: loading ? '#E8E8F0' : 'linear-gradient(135deg,#7B2FFF,#00C6FF)',
-          border:'none',color:loading?'#B0B0C0':'white',
-          fontSize:16,fontWeight:800,cursor:loading?'default':'pointer',
-          fontFamily:'inherit',
-          boxShadow:loading?'none':'0 8px 24px rgba(123,47,255,0.3)',
-          transition:'all 0.2s',
-        }
-      }, loading ? '🤖 Analyzing your data...' : '🤖 Generate Weekly Analysis'),
-
-      error ? e('div', {style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}}, '⚠️ '+error) : null,
-
-      // Analysis output
-      analysis ? e('div', {style:{background:'#fff',borderRadius:16,padding:'18px',border:'1px solid '+BORDER}},
-        e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
-          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, '📋 Weekly Analysis'),
-          analysisDate ? e('div', {style:{fontSize:11,color:MUTED}}, analysisDate) : null
-        ),
-        e('div', {style:{lineHeight:1.6}}, ...renderAnalysis(analysis)),
-        e('button', {
-          onClick:function(){setAnalysis(null);setAnalysisDate(null);save('coachAnalysis',null);save('coachAnalysisDate',null);},
-          style:{marginTop:14,background:'none',border:'1px solid '+BORDER,borderRadius:8,padding:'6px 14px',fontSize:12,color:MUTED,cursor:'pointer',fontFamily:'inherit'}
-        }, 'Clear')
-      ) : !loading ? e('div', {style:{background:'#F8FAFC',borderRadius:16,padding:'24px',border:'1px dashed '+BORDER,textAlign:'center'}},
-        e('div', {style:{fontSize:32,marginBottom:8}}, '🤖'),
-        e('div', {style:{fontSize:14,fontWeight:600,color:TEXT,marginBottom:4}}, 'AI Fitness Coach'),
-        e('div', {style:{fontSize:13,color:MUTED}},'Reads your workout history, muscle balance, and nutrition logs — then gives a written weekly plan.')
-      ) : null
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}},'📸 Progress Photo (optional)'),
+        e('div',{style:{fontSize:11,color:MUTED,marginBottom:12}},'Front relaxed pose. Coach will assess lateral delt width, upper chest, arm development.'),
+        form.photoBase64?e('div',{style:{display:'flex',alignItems:'center',gap:10}},
+          e('div',{style:{background:'#D1FAE5',borderRadius:10,padding:'8px 14px',fontSize:12,fontWeight:700,color:'#065F46'}},'✅ Photo ready'),
+          e('button',{onClick:function(){setField('photoBase64',null);},style:{background:'none',border:'none',color:MUTED,fontSize:12,cursor:'pointer',fontFamily:'inherit'}},'Remove')
+        ):e('label',{style:{display:'block',cursor:'pointer'}},
+          e('div',{style:{border:'2px dashed '+BORDER,borderRadius:12,padding:'20px',textAlign:'center',background:'#F8FAFC'}},
+            e('div',{style:{fontSize:24,marginBottom:6}},'📷'),
+            e('div',{style:{fontSize:13,fontWeight:700,color:TEXT}},'Tap to add photo'),
+            e('div',{style:{fontSize:11,color:MUTED}},'Optional but adds real insight')
+          ),
+          e('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:handlePhoto})
+        )
+      ),
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}},'📝 Anything Else?'),
+        e('textarea',{className:'input',style:{marginBottom:0,minHeight:80,resize:'vertical'},placeholder:'Anything the coach should know about this week...',value:form.openNotes,onInput:function(ev){setField('openNotes',ev.target.value);}})
+      ),
+      checkinError?e('div',{style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}},'⚠️ '+checkinError):null,
+      e('button',{onClick:submitCheckin,disabled:checkinLoading,style:{padding:'17px',borderRadius:16,border:'none',background:checkinLoading?'#E8E8F0':'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:checkinLoading?'#B0B0C0':'white',fontSize:16,fontWeight:800,cursor:checkinLoading?'default':'pointer',fontFamily:'inherit',boxShadow:checkinLoading?'none':'0 8px 24px rgba(123,47,255,0.3)'}},checkinLoading?'🤖 Coach is reviewing...':'📤 Submit Check-In')
     );
+  }
+
+  function renderCheckinResult() {
+    var r=checkinResponse;
+    if(!r) return e('div',{style:{padding:24,textAlign:'center',color:MUTED}},'No check-in result.');
+    function sect(emoji,title,content,bg,borderColor,titleColor){
+      if(!content) return null;
+      return e('div',{style:{background:bg||'#fff',borderRadius:16,padding:'16px',border:'1px solid '+(borderColor||BORDER)}},
+        e('div',{style:{fontSize:12,fontWeight:700,color:titleColor||TEXT,marginBottom:8}},emoji+' '+title),
+        e('div',{style:{fontSize:13,lineHeight:1.7,color:'#444'}},content)
+      );
+    }
+    return e('div',{style:{display:'flex',flexDirection:'column',gap:14,padding:'16px'}},
+      e('button',{onClick:function(){setCoachPhase('main');},style:{alignSelf:'flex-start',background:'none',border:'none',color:MUTED,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',padding:0}},'← Back'),
+      e('div',{style:{fontSize:18,fontWeight:800,color:TEXT}},'🎯 Coach Feedback'),
+      sect('📊','Weekly Snapshot',r.weeklySnapshot,'#F0F9FF','#BAE6FD'),
+      sect('✅',"What's Working",r.whatWorking,'#F0FDF4','#BBF7D0','#15803D'),
+      sect('⚠️','What Needs Attention',r.whatNeedsAttention,'#FFFBEB','#FDE68A','#92400E'),
+      r.photoAssessment?sect('📸','Photo Assessment',r.photoAssessment,'#FAF5FF','#E9D5FF','#7C3AED'):null,
+      sect('🔄','Program Adjustments',r.programAdjustments),
+      r.focusCue?e('div',{style:{background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',borderRadius:16,padding:'18px',boxShadow:'0 8px 24px rgba(123,47,255,0.3)'}},
+        e('div',{style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.75)',letterSpacing:1,marginBottom:6}},"THIS WEEK'S FOCUS CUE"),
+        e('div',{style:{fontSize:15,fontWeight:800,color:'white',lineHeight:1.5}},r.focusCue)
+      ):null,
+      currentProgram?e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:13,fontWeight:800,color:TEXT,marginBottom:12}},'📋 Coming Week — Week '+currentProgram.weekNumber),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          ...(currentProgram.days||[]).map(function(day){
+            return e('div',{key:day.dayLabel,style:{background:'#F8FAFC',borderRadius:12,padding:'12px'}},
+              e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:4}},day.dayLabel+(day.scheduledDay?' — '+day.scheduledDay:'')),
+              e('div',{style:{display:'flex',flexDirection:'column',gap:3}},
+                ...(day.exercises||[]).map(function(ex){
+                  return e('div',{key:ex.name,style:{display:'flex',justifyContent:'space-between'}},
+                    e('div',{style:{fontSize:11,color:TEXT}},ex.name),
+                    e('div',{style:{fontSize:11,color:MUTED,fontWeight:700}},ex.sets+'×'+ex.reps+(ex.targetWeight?' @ '+ex.targetWeight+'lbs':''))
+                  );
+                })
+              )
+            );
+          })
+        )
+      ):null
+    );
+  }
+
+  function renderCoach() {
+    if(coachPhase==='onboarding') return renderOnboarding();
+    if(coachPhase==='checkin') return renderCheckinForm();
+    if(coachPhase==='checkinResult') return renderCheckinResult();
+    return renderMain();
   }
 
   return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
