@@ -7006,10 +7006,10 @@ function App() {
   const [middayPhase, setMiddayPhase] = useState('done'); // checkin|history|done
   const [middayLog, setMiddayLog] = useState({});
   const [routineLog, setRoutineLog] = useState({});
-  const [morningItems, setMorningItems] = useState(DEFAULT_MORNING_HABITS);
+  const [morningItems, setMorningItems] = useState(() => load('morningItems') || DEFAULT_MORNING_HABITS);
   const [eveningPhase, setEveningPhase] = useState('done'); // greeting|checklist|complete|done
   const [eveningLog, setEveningLog] = useState({});
-  const [eveningItems, setEveningItems] = useState(DEFAULT_EVENING_HABITS);
+  const [eveningItems, setEveningItems] = useState(() => load('eveningItems') || DEFAULT_EVENING_HABITS);
   const [postWorkoutPhase, setPostWorkoutPhase] = useState('done'); // greeting|checklist|complete|history|done
   const [pwLog, setPwLog] = useState({});
   const [pwItems, setPwItems] = useState(DEFAULT_POST_WORKOUT_HABITS);
