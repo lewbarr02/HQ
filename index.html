@@ -1823,6 +1823,7 @@ function TimeScreen({timeLog, setTimeLog, setTab}) {
   const [view, setView] = useState('timeline');
   const [selectedCat, setSelectedCat] = useState(null);
   const [hourLog, setHourLog] = useState({});
+  const [period, setPeriod] = useState('week');
 
   // Load hour log when date changes
   useEffect(function() {
@@ -1879,22 +1880,125 @@ function TimeScreen({timeLog, setTimeLog, setTab}) {
 
   var total = Object.values(log).reduce(function(s,v){return s+v;}, 0);
 
+  function getAuditData() {
+    var totals = {};
+    var now = new Date();
+    var days = period==='today' ? 1 : period==='week' ? 7 : 30;
+    for(var i=days-1; i>=0; i--) {
+      var d = new Date(now); d.setDate(d.getDate()-i);
+      var dk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      Object.keys(timeLog[dk]||{}).forEach(function(cat){ totals[cat]=(totals[cat]||0)+(timeLog[dk][cat]||0); });
+    }
+    return totals;
+  }
+
+  function renderPeriodPicker() {
+    return e('div', {style:{display:'flex',background:CARD2,borderRadius:12,padding:3,marginBottom:16,gap:3}},
+      ...['today','week','month'].map(function(p){
+        var lbl = p==='today'?'Today':p==='week'?'7 Days':'30 Days';
+        return e('button', {key:p, onClick:function(){setPeriod(p);}, style:{flex:1,padding:'8px',borderRadius:9,border:'none',background:period===p?'#fff':'transparent',color:period===p?TEXT:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:period===p?'0 1px 4px rgba(100,80,220,0.1)':'none',transition:'all 0.15s'}}, lbl);
+      })
+    );
+  }
+
+  function renderDonut() {
+    var data = getAuditData();
+    var auditTotal = Object.values(data).reduce(function(s,v){return s+v;},0);
+    if(auditTotal===0) return e('div',{style:{textAlign:'center',color:MUTED,padding:'40px 0',fontSize:14}},'No time logged for this period');
+    var R=80, r=50, cx=110, cy=115, C=2*Math.PI*R;
+    var cats = CAT_LIST.filter(function(c){return data[c]>0;});
+    var cumulative = 0;
+    var segments = cats.map(function(cat){
+      var prop = data[cat]/auditTotal;
+      var dash = prop*C;
+      var seg = {cat, dash, offset: cumulative, color: CAT_COLORS[cat], mins: data[cat], prop};
+      cumulative += dash;
+      return seg;
+    });
+    return e('div', {},
+      renderPeriodPicker(),
+      e('svg', {viewBox:'0 0 220 230', style:{width:'100%',maxWidth:280,display:'block',margin:'0 auto'}},
+        e('circle', {cx, cy, r:R, fill:'none', stroke:CARD2, strokeWidth:R-r}),
+        ...segments.map(function(seg){
+          return e('circle', {key:seg.cat, cx, cy, r:R, fill:'none', stroke:seg.color, strokeWidth:R-r,
+            strokeDasharray: seg.dash+' '+(C-seg.dash),
+            strokeDashoffset: -seg.offset,
+            transform:'rotate(-90 '+cx+' '+cy+')'
+          });
+        }),
+        e('text', {x:cx, y:cy-10, textAnchor:'middle', fontSize:24, fontWeight:800, fill:TEXT, fontFamily:'inherit'}, Math.round(auditTotal/60)+'h'),
+        e('text', {x:cx, y:cy+12, textAnchor:'middle', fontSize:11, fontWeight:600, fill:MUTED, fontFamily:'inherit'}, 'total logged')
+      ),
+      e('div', {style:{display:'flex',flexDirection:'column',gap:8,marginTop:8}},
+        ...segments.map(function(seg){
+          var pct = Math.round(seg.prop*100);
+          return e('div', {key:seg.cat, style:{display:'flex',alignItems:'center',gap:10}},
+            e('div', {style:{width:12,height:12,borderRadius:3,background:seg.color,flexShrink:0}}),
+            e('div', {style:{flex:1,fontSize:13,fontWeight:600,color:TEXT}}, seg.cat),
+            e('div', {style:{fontSize:13,fontWeight:700,color:seg.color}}, fmtTime(seg.mins)),
+            e('div', {style:{fontSize:11,color:MUTED,minWidth:32,textAlign:'right'}}, pct+'%')
+          );
+        })
+      )
+    );
+  }
+
+  function renderBubbles() {
+    var data = getAuditData();
+    var auditTotal = Object.values(data).reduce(function(s,v){return s+v;},0);
+    if(auditTotal===0) return e('div',{style:{textAlign:'center',color:MUTED,padding:'40px 0',fontSize:14}},'No time logged for this period');
+    var cats = CAT_LIST.filter(function(c){return data[c]>0;}).sort(function(a,b){return data[b]-data[a];});
+    var POSITIONS = [[140,125],[60,68],[225,68],[60,195],[225,195],[140,195]];
+    var MAX_R = [70,52,52,52,52,52];
+    return e('div', {},
+      renderPeriodPicker(),
+      e('svg', {viewBox:'0 0 285 260', style:{width:'100%',maxWidth:340,display:'block',margin:'0 auto'}},
+        ...cats.map(function(cat, i){
+          var pos = POSITIONS[i]||[140,130];
+          var maxR = MAX_R[i]||45;
+          var prop = data[cat]/auditTotal;
+          var radius = Math.max(28, Math.sqrt(prop)*maxR*2.2);
+          var color = CAT_COLORS[cat];
+          var hrs = (data[cat]/60).toFixed(1);
+          return e('g', {key:cat},
+            e('circle', {cx:pos[0], cy:pos[1], r:radius, fill:color+'22', stroke:color, strokeWidth:2.5}),
+            e('text', {x:pos[0], y:pos[1]-6, textAnchor:'middle', fontSize:radius>38?12:10, fontWeight:700, fill:color, fontFamily:'inherit'}, cat),
+            e('text', {x:pos[0], y:pos[1]+11, textAnchor:'middle', fontSize:radius>38?14:11, fontWeight:800, fill:color, fontFamily:'inherit'}, hrs+'h')
+          );
+        })
+      ),
+      e('div', {style:{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center',marginTop:4}},
+        ...cats.map(function(cat){
+          var pct = Math.round(data[cat]/auditTotal*100);
+          return e('div', {key:cat, style:{display:'flex',alignItems:'center',gap:5,background:CAT_COLORS[cat]+'12',borderRadius:20,padding:'4px 10px'}},
+            e('div', {style:{width:8,height:8,borderRadius:'50%',background:CAT_COLORS[cat]}}),
+            e('span', {style:{fontSize:11,fontWeight:700,color:CAT_COLORS[cat]}}, cat+' '+pct+'%')
+          );
+        })
+      )
+    );
+  }
+
   return e('div', {className:'content'},
     e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
       e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
       e('div', {style:{fontSize:22,fontWeight:800}}, '⏱ Time')
     ),
-    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+    (view==='timeline'||view==='totals') ? e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
       e('button', {className:'time-btn', onClick:function(){shiftDate(-1);}}, '‹'),
       e('div', {style:{fontSize:16,fontWeight:700,color:isToday?ACCENT:TEXT}}, isToday?'Today':display),
       e('button', {className:'time-btn', style:{opacity:isToday?0.3:1}, onClick:function(){shiftDate(1);}, disabled:isToday}, '›')
+    ) : null,
+
+    e('div', {style:{display:'flex',background:CARD2,borderRadius:14,padding:4,marginBottom:14,gap:3}},
+      e('button', {onClick:function(){setView('timeline');}, style:{flex:1,padding:'8px 4px',borderRadius:10,border:'none',background:view==='timeline'?'#fff':'transparent',color:view==='timeline'?TEXT:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:view==='timeline'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, '⏱'),
+      e('button', {onClick:function(){setView('totals');}, style:{flex:1,padding:'8px 4px',borderRadius:10,border:'none',background:view==='totals'?'#fff':'transparent',color:view==='totals'?TEXT:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:view==='totals'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, '📊'),
+      e('button', {onClick:function(){setView('donut');}, style:{flex:1,padding:'8px 4px',borderRadius:10,border:'none',background:view==='donut'?'#fff':'transparent',color:view==='donut'?TEXT:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:view==='donut'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, '🍩'),
+      e('button', {onClick:function(){setView('bubbles');}, style:{flex:1,padding:'8px 4px',borderRadius:10,border:'none',background:view==='bubbles'?'#fff':'transparent',color:view==='bubbles'?TEXT:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:view==='bubbles'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, '🫧')
     ),
 
-    e('div', {style:{display:'flex',background:CARD2,borderRadius:14,padding:4,marginBottom:14,gap:4}},
-      e('button', {onClick:function(){setView('timeline');}, style:{flex:1,padding:'9px',borderRadius:10,border:'none',background:view==='timeline'?'#fff':'transparent',color:view==='timeline'?TEXT:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:view==='timeline'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, '⏱ Timeline'),
-      e('button', {onClick:function(){setView('totals');}, style:{flex:1,padding:'9px',borderRadius:10,border:'none',background:view==='totals'?'#fff':'transparent',color:view==='totals'?TEXT:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:view==='totals'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, '📊 Totals')
-    ),
-
+    view==='donut' ? e('div', {className:'card'}, renderDonut()) :
+    view==='bubbles' ? e('div', {className:'card'}, renderBubbles()) :
     view==='timeline' ? e('div', {},
       e('div', {className:'card', style:{padding:'12px 14px',marginBottom:12}},
         e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}},
