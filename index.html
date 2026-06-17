@@ -464,6 +464,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var next = scheduled.concat([newBlock]);
     setScheduled(next);
     save('dayScheduled', next);
+    var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
     setDragItem(null);
   }
 
@@ -471,6 +472,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var next = scheduled.filter(function(s){ return s.schedId !== schedId; });
     setScheduled(next);
     save('dayScheduled', next);
+    var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
   }
 
   function DraggableChip({item}) {
@@ -1882,12 +1884,18 @@ function TimeScreen({timeLog, setTimeLog, setTab}) {
 
   function getAuditData() {
     var totals = {};
+    var COLOR_TO_CAT = {'#00C6FF':'Work','#7B2FFF':'Health','#FF6B9D':'Learning','#00E5CC':'Personal','#FFB347':'Creative','#4F46E5':'Personal','#F97316':'Personal'};
     var now = new Date();
     var days = period==='today' ? 1 : period==='week' ? 7 : 30;
+    var scheduledLog = load('scheduledLog') || {};
     for(var i=days-1; i>=0; i--) {
       var d = new Date(now); d.setDate(d.getDate()-i);
       var dk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
       Object.keys(timeLog[dk]||{}).forEach(function(cat){ totals[cat]=(totals[cat]||0)+(timeLog[dk][cat]||0); });
+      (scheduledLog[dk]||[]).forEach(function(block){
+        var cat = COLOR_TO_CAT[block.color] || 'Personal';
+        totals[cat] = (totals[cat]||0) + (block.durationMin||30);
+      });
     }
     return totals;
   }
