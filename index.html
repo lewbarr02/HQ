@@ -3491,13 +3491,32 @@ function MorningGreeting({ onStart, wakeLog }) {
   );
 }
 
-function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutineLog, morningItems, setMorningItems, habits }) {
+function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutineLog, morningItems, setMorningItems, habits, groceries, setGroceries }) {
   const td = today();
   const done = routineLog[td] || {};
   const [attempted, setAttempted] = useState(false);
   const [showBlockerModal, setShowBlockerModal] = useState(false);
   const [blockers, setBlockers] = useState({});
+  const [smartAnswers, setSmartAnswers] = useState({});
+  const [addedToList, setAddedToList] = useState({});
   const [editing, setEditing] = useState(false);
+
+  const SMART_PROMPTS = [
+    {match:'brush teeth', question:'Out of toothpaste?', item:'Toothpaste'},
+    {match:'fill water',  question:'Need more water?',   item:'Water'},
+  ];
+  function getSmartPrompt(itemName) {
+    var lower = (itemName||'').toLowerCase();
+    return SMART_PROMPTS.find(function(p){ return lower.includes(p.match); }) || null;
+  }
+  function addToMyList(itemName, habitId) {
+    var already = (groceries||[]).some(function(g){ return g.name.toLowerCase()===itemName.toLowerCase() && !g.done; });
+    if(!already) {
+      var next = [...(groceries||[]), {id:Date.now().toString(), name:itemName, list:'mine', done:false}];
+      if(setGroceries) { setGroceries(next); save('groceries', next); }
+    }
+    setAddedToList(function(prev){ return Object.assign({},prev,{[habitId]:true}); });
+  }
   const [newItemName, setNewItemName] = useState('');
   const [newItemEmoji, setNewItemEmoji] = useState('');
   var safeItems = morningItems || DEFAULT_MORNING_HABITS;
@@ -3693,20 +3712,36 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
           e('div', {style:{fontSize:17,fontWeight:800,marginBottom:4}}, "What's the blocker?"),
           e('div', {style:{fontSize:13,color:MUTED,marginBottom:20}}, "Tell me why each item didn't get done. This helps track patterns over time."),
           ...incomplete.map(function(h){
-            return e('div', {key:h.id, style:{marginBottom:14}},
+            var prompt = getSmartPrompt(h.name);
+            var answered = smartAnswers[h.id];
+            var alreadyAdded = addedToList[h.id];
+            return e('div', {key:h.id, style:{marginBottom:16}},
               e('div', {style:{fontSize:13,fontWeight:700,marginBottom:6,display:'flex',alignItems:'center',gap:6}},
                 e('span',{},h.emoji), e('span',{},h.name)
               ),
               e('input', {
                 className:'input',
-                style:{marginBottom:0,fontSize:13},
+                style:{marginBottom:prompt?8:0,fontSize:13},
                 placeholder:'What got in the way?',
                 value: blockers[h.id] || '',
                 onInput: function(ev){
                   var val = ev.target.value;
                   setBlockers(function(prev){ var n=Object.assign({},prev); n[h.id]=val; return n; });
                 }
-              })
+              }),
+              prompt ? e('div', {style:{background:'#F0F2F8',borderRadius:12,padding:'10px 12px'}},
+                e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}}, '💬 '+prompt.question),
+                answered === undefined
+                  ? e('div', {style:{display:'flex',gap:8}},
+                      e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'yes'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid #10B981',background:'rgba(16,185,129,0.08)',color:'#10B981',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Yes'),
+                      e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'no'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'No')
+                    )
+                  : answered === 'yes'
+                    ? alreadyAdded
+                      ? e('div', {style:{fontSize:12,fontWeight:700,color:'#10B981'}}, '✓ '+prompt.item+' added to My List')
+                      : e('button', {onClick:function(){addToMyList(prompt.item, h.id);}, style:{width:'100%',padding:'9px',borderRadius:10,border:'none',background:'#10B981',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Add '+prompt.item+' to My List')
+                    : e('div', {style:{fontSize:12,color:MUTED}}, 'Got it — no action needed')
+              ) : null
             );
           }),
           e('div', {style:{display:'flex',gap:10,marginTop:8}},
@@ -7729,6 +7764,8 @@ function App() {
       morningItems: morningItems,
       setMorningItems: setMorningItems,
       habits: habits,
+      groceries: groceries,
+      setGroceries: setGroceries,
     });
   }
   if(!splash && morningPhase === 'complete') {
