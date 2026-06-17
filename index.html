@@ -1397,20 +1397,42 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       ) : null,
       // Weekly habits
       habits.filter(function(h){return h.freq==='weekly';}).length > 0 ? e('div', {},
-        e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '📆 Weekly'),
-        e('div', {style:{display:'flex',gap:12,overflowX:'auto',paddingBottom:4}},
-          ...habits.filter(function(h){return h.freq==='weekly';}).map(function(h) {
-            const isDone = isWeeklyDone(h.id, td, habitLog);
-            return e('div', {key:h.id, onClick:()=>toggleHabit(h.id), style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:60}},
-              e('div', {className:'habit-circle'+(isDone?' done':''), style:{borderColor:isDone?h.color:'transparent', opacity: isDone?1:0.75}},
-                h.emoji,
-                isDone ? e('div', {style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:h.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, '✓') : null
-              ),
-              e('div', {style:{fontSize:10,fontWeight:700,color:isDone?TEXT:MUTED,textAlign:'center',maxWidth:60,lineHeight:1.2}}, h.name),
-              e('div', {style:{fontSize:9,color:isDone?h.color:MUTED,fontWeight:600}}, isDone?'✓ week':'this wk')
-            );
-          })
-        )
+        (function(){
+          var weeklyHabits = habits.filter(function(h){return h.freq==='weekly';});
+          var overdueHabits = weeklyHabits.filter(function(h){return !isWeeklyDone(h.id,td,habitLog);});
+          var dayOfWeek = new Date(td+'T12:00:00').getDay(); // 0=Sun,1=Mon...
+          var daysIntoWeek = dayOfWeek===0?6:dayOfWeek-1; // Mon=0..Sun=6
+          var isUrgent = daysIntoWeek >= 4; // Thu or later = red
+          var isWarning = daysIntoWeek >= 2; // Wed or later = amber
+          var nudgeColor = isUrgent ? '#EF4444' : '#F59E0B';
+          var nudgeBg = isUrgent ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)';
+          var nudgeBorder = isUrgent ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)';
+          var daysLeft = 7 - daysIntoWeek;
+          return e('div', {},
+            e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '📆 Weekly'),
+            overdueHabits.length > 0 && isWarning ? e('div', {style:{marginBottom:10,padding:'8px 12px',borderRadius:10,background:nudgeBg,border:'1px solid '+nudgeBorder,display:'flex',alignItems:'center',gap:8}},
+              e('span',{style:{fontSize:14}}, isUrgent?'🚨':'⚠️'),
+              e('div',{style:{flex:1}},
+                e('div',{style:{fontSize:12,fontWeight:700,color:nudgeColor}}, overdueHabits.length+' weekly habit'+(overdueHabits.length>1?'s':'')+' not done yet'),
+                e('div',{style:{fontSize:11,color:nudgeColor,opacity:0.8}}, daysLeft+' day'+(daysLeft!==1?'s':'')+' left this week — '+overdueHabits.map(function(h){return h.emoji+' '+h.name;}).join(', '))
+              )
+            ) : null,
+            e('div', {style:{display:'flex',gap:12,overflowX:'auto',paddingBottom:4}},
+              ...weeklyHabits.map(function(h) {
+                const isDone = isWeeklyDone(h.id, td, habitLog);
+                var circleColor = isDone ? h.color : (isWarning && !isDone ? nudgeColor : MUTED);
+                return e('div', {key:h.id, onClick:()=>toggleHabit(h.id), style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:60}},
+                  e('div', {className:'habit-circle'+(isDone?' done':''), style:{borderColor:circleColor, opacity:1}},
+                    h.emoji,
+                    isDone ? e('div', {style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:h.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, '✓') : null
+                  ),
+                  e('div', {style:{fontSize:10,fontWeight:700,color:isDone?TEXT:MUTED,textAlign:'center',maxWidth:60,lineHeight:1.2}}, h.name),
+                  e('div', {style:{fontSize:9,fontWeight:700,color:isDone?h.color:circleColor}}, isDone?'✓ week':daysLeft+'d left')
+                );
+              })
+            )
+          );
+        })()
       ) : null,
       e('button', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:10,marginTop:2,fontSize:13,fontWeight:700,color:ACCENT,cursor:'pointer',border:'none',background:'none',width:'100%',fontFamily:'inherit'},onClick:()=>setTab('habits')},
         e('span',{},'View habit progress'), e('span',{},'›')
