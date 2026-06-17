@@ -188,6 +188,13 @@ Work through this in order. Check off items as they are completed.
 - [x] **Calendar API + event display** *(Day 3)* — Fetch events, overlay on HQ day view alongside priorities.
 - [x] **Conflict detection + time picker integration** *(Day 4)* — Grey out booked times, warn on conflicts, show next free slot in email time picker.
 
+**Phase 3 — AI Calendar Layer** *(2-3 sessions, requires Supabase edge function + Claude API)*
+- [ ] **Supabase `ai-calendar` edge function** — Proxies Claude API call. API key lives in Supabase secrets. Receives day bundle, returns schedule suggestion.
+- [ ] **Day data bundle** — Frontend packages today's calendar events, priorities (with times), non-negotiable habits, routine status, current time, and flow state history into a single payload.
+- [ ] **Reschedule UI** — "🤖 Reschedule my day" button on Day screen. User describes what changed (e.g. "gym cancelled, meeting moved to 2pm"), sends to Claude.
+- [ ] **Claude prompt + response display** — Prompt enforces fixed structure (routines, non-negotiables locked), treats everything else as flexible. Response shown as a readable suggested schedule with reasoning.
+- [ ] **Apply suggestions** — Tap a suggested time on a priority to apply it directly. One-tap accept flow.
+
 ### 🔁 ROUTINES
 - [x] **Midday check-in routine** — A second routine flow midday — quick pulse check, priority reset, catch anything that slipped in the morning.
 - [x] **Evening routine + CPAP reminder** — Wind-down checklist. CPAP goes on as a hard step — foundational to 5am wake goal.
