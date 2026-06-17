@@ -352,6 +352,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [calEvents, setCalEvents] = useState([]);
   const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
   const [dragItem, setDragItem] = useState(null);
+  const dragItemRef = useRef(null);
   const [dragOverMinute, setDragOverMinute] = useState(null);
   const [splitView, setSplitView] = useState(() => load('daySplitView') !== false);
   const timelineRef = useRef(null);
@@ -457,17 +458,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   });
 
   function handleDragStart(item) {
+    dragItemRef.current = item;
     setDragItem(item);
   }
 
   function handleDragOver(ev) {
     ev.preventDefault();
-    if (!timelineRef.current || !dragItem) return;
+    var di = dragItemRef.current;
+    if (!timelineRef.current || !di) return;
     var rect = timelineRef.current.getBoundingClientRect();
     var y = ev.clientY - rect.top;
     var rawMin = START_MIN + y / PX_PER_MIN;
     var snapped = Math.round(rawMin / 15) * 15;
-    setDragOverMinute(Math.max(START_MIN, Math.min(END_MIN - (dragItem.durationMin||30), snapped)));
+    setDragOverMinute(Math.max(START_MIN, Math.min(END_MIN - (di.durationMin||30), snapped)));
   }
 
   function handleDragLeave() {
@@ -477,17 +480,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   function handleDrop(ev) {
     ev.preventDefault();
     setDragOverMinute(null);
-    if (!dragItem || !timelineRef.current) return;
+    var di = dragItemRef.current;
+    if (!di || !timelineRef.current) return;
     var rect = timelineRef.current.getBoundingClientRect();
     var y = ev.clientY - rect.top;
     var rawMin = START_MIN + y / PX_PER_MIN;
     var snapped = Math.round(rawMin / 15) * 15;
-    var minute = Math.max(START_MIN, Math.min(END_MIN - dragItem.durationMin, snapped));
-    var newBlock = {schedId: Date.now().toString(), id: dragItem.id, label: dragItem.label, color: dragItem.color, durationMin: dragItem.durationMin, minute: minute};
+    var minute = Math.max(START_MIN, Math.min(END_MIN - di.durationMin, snapped));
+    var newBlock = {schedId: Date.now().toString(), id: di.id, label: di.label, color: di.color, durationMin: di.durationMin, minute: minute};
     var next = scheduled.concat([newBlock]);
     setScheduled(next);
     save('dayScheduled', next);
     var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
+    dragItemRef.current = null;
     setDragItem(null);
   }
 
@@ -502,7 +507,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     return e('div', {
       draggable: true,
       onDragStart: () => handleDragStart(item),
-      onDragEnd: () => setDragItem(null),
+      onDragEnd: () => { dragItemRef.current = null; setDragItem(null); },
       style:{
         padding:'10px 12px',
         borderRadius:10,
@@ -636,7 +641,9 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           return e(BlockItem, {key:'sched-'+s.schedId, min:s.minute, durationMin:s.durationMin, color:s.color, label:s.label, sublabel:minToTimeStr(s.minute), done:false,
             onRemove:()=>removeScheduled(s.schedId),
             onDragStart:()=>{
-              setDragItem({id:s.id, label:s.label, color:s.color, durationMin:s.durationMin});
+              var item = {id:s.id, label:s.label, color:s.color, durationMin:s.durationMin};
+              dragItemRef.current = item;
+              setDragItem(item);
               removeScheduled(s.schedId);
             }});
         }),
