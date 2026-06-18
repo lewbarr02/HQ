@@ -8223,9 +8223,13 @@ function App() {
       ...NAV.map(n => {
         var active = tab===n.id||(n.id==='more'&&moreOpen);
         var color = active ? ACCENT : '#8E8EAA';
+        var mineCount = n.id==='grocery' ? (groceries||[]).filter(function(g){return (g.list||'wife')==='mine'&&!g.done;}).length : 0;
         return e('button', {key:n.id, className:'nav-btn'+(active?' active':''),
           onClick:()=>{if(n.id==='more'){setMoreOpen(o=>!o);}else{setTab(n.id);setMoreOpen(false);}}},
-          e(NavIcon, {name:n.icon, size:22, color:color}),
+          e('div', {style:{position:'relative',display:'inline-flex'}},
+            e(NavIcon, {name:n.icon, size:22, color:color}),
+            mineCount > 0 ? e('span', {style:{position:'absolute',top:-5,right:-7,background:'#EF4444',color:'#fff',borderRadius:99,fontSize:10,fontWeight:900,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',lineHeight:1,boxShadow:'0 1px 4px rgba(0,0,0,0.25)'}}, mineCount) : null
+          ),
           n.label
         );
       })
