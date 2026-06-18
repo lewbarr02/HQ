@@ -1009,8 +1009,8 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
   var [sentFlash, setSentFlash] = React.useState(null); // {text, dest}
   var inputRef = React.useRef(null);
 
-  var todayIdeas = (ideaLog || []).filter(function(i){ return i.date === td; }).slice().reverse();
-  var unsortedCount = todayIdeas.filter(function(i){ return !i.sorted; }).length;
+  var allIdeas = (ideaLog || []).slice().reverse();
+  var unsortedCount = allIdeas.filter(function(i){ return !i.sorted; }).length;
 
   function addIdea() {
     var text = input.trim();
@@ -1124,7 +1124,7 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
         e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '💡 Quick Ideas'),
         unsortedCount > 0 ? e('div', {style:{fontSize:11,fontWeight:800,color:'#F97316',background:'#F9731618',borderRadius:8,padding:'2px 7px'}}, unsortedCount + ' to sort') : null
       ),
-      todayIdeas.length > 0 ? e('button', {onClick:function(){ setExpanded(!expanded); }, style:{fontSize:11,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, expanded ? 'Hide ↑' : 'Show ↓') : null
+      allIdeas.length > 0 ? e('button', {onClick:function(){ setExpanded(!expanded); }, style:{fontSize:11,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, expanded ? 'Hide ↑' : 'Show ↓') : null
     ),
     e('div', {style:{display:'flex',gap:8}},
       e('input', {
@@ -1140,13 +1140,13 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
         style:{padding:'10px 14px',borderRadius:12,background:input.trim()?'linear-gradient(135deg,'+IDEA_ACCENT+',#F97316)':'#E8E8F0',border:'none',color:input.trim()?'white':MUTED,fontSize:16,cursor:input.trim()?'pointer':'default',transition:'all 0.2s',fontFamily:'inherit'}
       }, '→')
     ),
-    expanded && todayIdeas.length > 0 ? e('div', {style:{marginTop:10,display:'flex',flexDirection:'column',gap:6}},
-      ...todayIdeas.map(function(idea){
+    expanded && allIdeas.length > 0 ? e('div', {style:{marginTop:10,display:'flex',flexDirection:'column',gap:6}},
+      ...allIdeas.map(function(idea){
         var t = new Date(idea.time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
         return e('div', {key:idea.id, style:{display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px',background:IDEA_ACCENT+'08',borderRadius:12,border:'1px solid '+IDEA_ACCENT+'20'}},
           e('div', {style:{flex:1}},
             e('div', {style:{fontSize:13,color:TEXT,lineHeight:1.5}}, idea.text),
-            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, t)
+            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, idea.date === td ? 'Today · '+t : idea.date+' · '+t)
           ),
           e('button', {onClick:function(){ setSortingIdea(idea); setPickingProject(false); }, title:'Sort to a list', style:{background:'#F9731618',border:'none',borderRadius:8,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:'#F97316',fontWeight:700}}, 'Sort →'),
           e('button', {onClick:function(){ discussIdea(idea); }, title:'Discuss with Claude', style:{background:PURPLE+'12',border:'none',borderRadius:8,padding:'5px 8px',fontSize:13,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:PURPLE,fontWeight:700}}, '💬'),
@@ -7835,40 +7835,40 @@ function App() {
   const [splash, setSplash] = useState(true);
   const [tab, setTab] = useState('today');
   const [moreOpen, setMoreOpen] = useState(false);
-  const [habits, setHabits] = useState(DEFAULT_HABITS);
-  const [habitLog, setHabitLog] = useState({});
+  const [habits, setHabits] = useState(() => load('habits') || DEFAULT_HABITS);
+  const [habitLog, setHabitLog] = useState(() => load('habitLog') || {});
   const [projectItems, setProjectItems] = useState(() => load('projectItems') || [{id:'proj1',name:'Home',emoji:'🏠',color:'#10B981'}]);
   const [projectLog, setProjectLog] = useState(() => load('projectLog') || {});
-  const [timeLog, setTimeLog] = useState({});
-  const [goals, setGoals] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [notes, setNotes] = useState([]);
-  const [groceries, setGroceries] = useState([]);
+  const [timeLog, setTimeLog] = useState(() => load('timeLog') || {});
+  const [goals, setGoals] = useState(() => load('goals') || []);
+  const [projects, setProjects] = useState(() => load('projects') || []);
+  const [notes, setNotes] = useState(() => load('notes') || []);
+  const [groceries, setGroceries] = useState(() => load('groceries') || []);
   const [inventory, setInventory] = useState(() => load('inventory') || []);
-  const [brainDump, setBrainDump] = useState('');
-  const [areasData, setAreasData] = useState({});
+  const [brainDump, setBrainDump] = useState(() => load('brainDump') || '');
+  const [areasData, setAreasData] = useState(() => load('areasData') || {});
   const [morningPhase, setMorningPhase] = useState('done');
-  const [middayPhase, setMiddayPhase] = useState('done'); // checkin|history|done
-  const [middayLog, setMiddayLog] = useState({});
-  const [routineLog, setRoutineLog] = useState({});
+  const [middayPhase, setMiddayPhase] = useState('done');
+  const [middayLog, setMiddayLog] = useState(() => load('middayLog') || {});
+  const [routineLog, setRoutineLog] = useState(() => load('routineLog') || {});
   const [morningItems, setMorningItems] = useState(() => load('morningItems') || DEFAULT_MORNING_HABITS);
-  const [eveningPhase, setEveningPhase] = useState('done'); // greeting|checklist|complete|done
-  const [eveningLog, setEveningLog] = useState({});
+  const [eveningPhase, setEveningPhase] = useState('done');
+  const [eveningLog, setEveningLog] = useState(() => load('eveningLog') || {});
   const [eveningItems, setEveningItems] = useState(() => load('eveningItems') || DEFAULT_EVENING_HABITS);
-  const [postWorkoutPhase, setPostWorkoutPhase] = useState('done'); // greeting|checklist|complete|history|done
-  const [pwLog, setPwLog] = useState({});
-  const [pwItems, setPwItems] = useState(DEFAULT_POST_WORKOUT_HABITS);
-  const [cleaningPhase, setCleaningPhase] = useState('done'); // greeting|checklist|complete|history|done
-  const [cleaningLog, setCleaningLog] = useState({});
-  const [cleaningItems, setCleaningItems] = useState(DEFAULT_CLEANING_HABITS);
+  const [postWorkoutPhase, setPostWorkoutPhase] = useState('done');
+  const [pwLog, setPwLog] = useState(() => load('pwLog') || {});
+  const [pwItems, setPwItems] = useState(() => load('pwItems') || DEFAULT_POST_WORKOUT_HABITS);
+  const [cleaningPhase, setCleaningPhase] = useState('done');
+  const [cleaningLog, setCleaningLog] = useState(() => load('cleaningLog') || {});
+  const [cleaningItems, setCleaningItems] = useState(() => load('cleaningItems') || DEFAULT_CLEANING_HABITS);
   const [ideaLog, setIdeaLog] = useState(() => load('ideaLog') || []);
   const [backlog, setBacklog] = useState(() => load('backlog') || []);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
-  const [workoutLog, setWorkoutLog] = useState({});
-  const [wakeLog, setWakeLog] = useState({});
-  const [cpapLog, setCpapLog] = useState({});
-  const [projectData, setProjectData] = useState({phase:'Marketing Assets', percent:80, lastAction:null});
+  const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
+  const [wakeLog, setWakeLog] = useState(() => load('wakeLog') || {});
+  const [cpapLog, setCpapLog] = useState(() => load('cpapLog') || {});
+  const [projectData, setProjectData] = useState(() => load('projectData') || {phase:'Marketing Assets', percent:80, lastAction:null});
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
   const [calendarConnected, setCalendarConnected] = useState(() => !!localStorage.getItem('hq_calTokens'));
 
