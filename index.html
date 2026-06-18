@@ -1156,7 +1156,7 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -7830,7 +7830,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
