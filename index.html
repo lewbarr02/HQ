@@ -185,6 +185,25 @@ function save(k,v){
   _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);});
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
+
+function takeAutoBackup() {
+  var today = new Date().toISOString().slice(0,10);
+  if (localStorage.getItem('hq_lastBackup') === today) return;
+  var snapshot = {};
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k && k.startsWith('hq_') && !k.startsWith('hq_autobackup_') && k !== 'hq_lastBackup') {
+      try { snapshot[k.slice(3)] = JSON.parse(localStorage.getItem(k)); } catch(ex) {}
+    }
+  }
+  try { localStorage.setItem('hq_autobackup_'+today, JSON.stringify({date:today, data:snapshot})); } catch(ex) {}
+  localStorage.setItem('hq_lastBackup', today);
+  var bks = [];
+  for (var j = 0; j < localStorage.length; j++) { var bk = localStorage.key(j); if (bk && bk.startsWith('hq_autobackup_')) bks.push(bk); }
+  bks.sort().reverse().slice(7).forEach(function(bk){ localStorage.removeItem(bk); });
+}
+takeAutoBackup();
+
 async function syncFromSupabase(){
   const {data,error}=await _SB.from('hq_data').select('key,value').eq('user_id','lewis');
   if(error||!data)return;
@@ -2845,27 +2864,30 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
   var [status, setStatus] = useState('');
   var [importing, setImporting] = useState(false);
   var [importText, setImportText] = useState('');
+  var [autoBackups] = useState(function() {
+    var bks = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.startsWith('hq_autobackup_')) {
+        try { bks.push(JSON.parse(localStorage.getItem(k))); } catch(ex) {}
+      }
+    }
+    return bks.sort(function(a,b){ return b.date.localeCompare(a.date); });
+  });
 
   function exportData() {
-    var data = {
-      version: 1,
-      exported: new Date().toISOString(),
-      habits: habits,
-      habitLog: habitLog,
-      timeLog: timeLog,
-      goals: goals,
-      projects: projects,
-      notes: notes,
-      groceries: groceries,
-      brainDump: brainDump,
-    };
-    var json = JSON.stringify(data, null, 2);
-    // Copy to clipboard
+    var snapshot = {version:2, exported: new Date().toISOString()};
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.startsWith('hq_') && !k.startsWith('hq_autobackup_') && k !== 'hq_lastBackup') {
+        try { snapshot[k.slice(3)] = JSON.parse(localStorage.getItem(k)); } catch(ex) {}
+      }
+    }
+    var json = JSON.stringify(snapshot, null, 2);
     navigator.clipboard.writeText(json).then(function() {
-      setStatus('✅ Data copied to clipboard! Paste it into Notes app to save.');
+      setStatus('✅ Data copied to clipboard! Paste into Notes to save.');
       setTimeout(function(){setStatus('');}, 4000);
     }).catch(function() {
-      // Fallback - show in textarea
       setImportText(json);
       setImporting(true);
       setStatus('📋 Copy the text below to save your data.');
@@ -2876,6 +2898,20 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
     try {
       var data = JSON.parse(importText);
       if (!data.version) throw new Error('Invalid format');
+      if (data.habits) { setHabits(data.habits); save('habits', data.habits); }
+      if (data.habitLog) { setHabitLog(data.habitLog); save('habitLog', data.habitLog); }
+      // v2: all-keys format — write directly to localStorage and reload
+      if (data.version === 2) {
+        var reserved = new Set(['version','exported']);
+        Object.keys(data).forEach(function(k) {
+          if (reserved.has(k)) return;
+          try { localStorage.setItem('hq_'+k, JSON.stringify(data[k])); } catch(ex) {}
+        });
+        setStatus('✅ Data restored! Reloading…');
+        setTimeout(function(){ window.location.reload(); }, 1200);
+        return;
+      }
+      // v1 legacy
       if (data.habits) { setHabits(data.habits); save('habits', data.habits); }
       if (data.habitLog) { setHabitLog(data.habitLog); save('habitLog', data.habitLog); }
       if (data.timeLog) { setTimeLog(data.timeLog); save('timeLog', data.timeLog); }
@@ -2893,7 +2929,16 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
     }
   }
 
-  var dataKeys = ['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump'];
+  function restoreBackup(backup) {
+    if (!window.confirm('Restore data from ' + backup.date + '? Current data will be overwritten.')) return;
+    var reserved = new Set(['date']);
+    Object.keys(backup.data).forEach(function(k) {
+      if (reserved.has(k)) return;
+      try { localStorage.setItem('hq_'+k, JSON.stringify(backup.data[k])); } catch(ex) {}
+    });
+    window.location.reload();
+  }
+
   var totalItems = habits.length + goals.length + projects.length + notes.length + groceries.length + Object.keys(habitLog).length;
 
   return e('div', {className:'content'},
@@ -2901,7 +2946,7 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
       e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
       e('div', {style:{fontSize:22,fontWeight:800}}, '💾 Data')
     ),
-    e('div', {style:{fontSize:14,color:MUTED,marginBottom:16}}, 'Export your data to back it up or move it to a new device.'),
+    e('div', {style:{fontSize:14,color:MUTED,marginBottom:16}}, 'Export, import, or restore from an automatic daily backup.'),
 
     // Stats
     e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:16}},
@@ -2918,17 +2963,38 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
       );})
     ),
 
+    // Auto-backups
+    e('div', {className:'card'},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '🔄 Auto-Backups'),
+      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'HQ saves a full snapshot every day automatically. Last 7 days kept.'),
+      autoBackups.length === 0
+        ? e('div', {style:{fontSize:13,color:MUTED,fontStyle:'italic'}}, 'No backups yet — one will be created next time you open the app.')
+        : autoBackups.map(function(bk) {
+            var keyCount = Object.keys(bk.data || {}).length;
+            return e('div', {key:bk.date, style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
+              e('div', {},
+                e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, bk.date),
+                e('div', {style:{fontSize:12,color:MUTED}}, keyCount + ' data keys saved')
+              ),
+              e('button', {
+                onClick: function(){ restoreBackup(bk); },
+                style:{fontSize:12,fontWeight:700,padding:'6px 14px',borderRadius:20,background:'rgba(0,198,255,0.1)',border:'1px solid rgba(0,198,255,0.3)',color:ACCENT,cursor:'pointer'}
+              }, 'Restore')
+            );
+          })
+    ),
+
     // Export
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '📤 Export'),
-      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'Copies all your HQ data as JSON. Paste into Notes or save anywhere.'),
+      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'Copies ALL your HQ data as JSON. Paste into Notes or save anywhere.'),
       e('button', {className:'btn-primary', onClick:exportData}, '📋 Copy All Data to Clipboard')
     ),
 
     // Import
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '📥 Import'),
-      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'Paste previously exported HQ data below to restore everything.'),
+      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'Paste previously exported HQ data to restore everything.'),
       !importing ? e('button', {className:'btn-ghost', style:{width:'100%'}, onClick:function(){setImporting(true);}}, '📂 Paste Data to Import')
       : e('div', {},
         e('textarea', {className:'input', style:{minHeight:120,resize:'none',fontFamily:'monospace',fontSize:12}, placeholder:'Paste your exported JSON here...', value:importText, onInput:function(ev){setImportText(ev.target.value);}}),
