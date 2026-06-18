@@ -301,6 +301,7 @@ var NAV_ICONS = {
   more:   '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   cart:   '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
   day:    '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="8" y2="18"/>',
+  check:  '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
 };
 
 function NavIcon({ name, size, color }) {
@@ -2254,6 +2255,175 @@ function TimeScreen({timeLog, setTimeLog, setTab}) {
   );
 }
 
+
+function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, setBacklog}) {
+  const td = today();
+  const CAT_COLORS = {'Work':ACCENT,'Job Search':'#00E5CC','Health':'#00C864','Personal':'#FFB347','Finance':'#FF6B9D','Family':'#7B2FFF','Moonshot':PURPLE,'Personal Growth':'#F97316'};
+  const CAT_OPTS = ['Work','Job Search','Health','Personal','Finance','Family','Moonshot','Personal Growth'];
+
+  const [priorities, setPriorities] = React.useState(() => load('priorities') || []);
+  const [addingP, setAddingP] = React.useState(false);
+  const [newPN, setNewPN] = React.useState(''), [newPC, setNewPC] = React.useState('Work'), [newPT, setNewPT] = React.useState('');
+  const [section, setSection] = React.useState('todo'); // todo | backlog | projects
+  const [expandedP, setExpandedP] = React.useState(null);
+  const [addingTaskFor, setAddingTaskFor] = React.useState(null);
+  const [newTask, setNewTask] = React.useState('');
+
+  function savePriorities(next) { setPriorities(next); save('priorities', next); }
+  function toggleTask(pid, tid) {
+    var next = (projects||[]).map(p => p.id===pid ? {...p, tasks: p.tasks.map(t => t.id===tid ? {...t, done:!t.done} : t)} : p);
+    setProjects(next); save('projects', next);
+  }
+  function addTask(pid) {
+    if(!newTask.trim()) return;
+    var next = (projects||[]).map(p => p.id===pid ? {...p, tasks:[...p.tasks,{id:Date.now().toString(),text:newTask,done:false}]} : p);
+    setProjects(next); save('projects', next); setNewTask(''); setAddingTaskFor(null);
+  }
+  function moveBacklogToToday(item) {
+    savePriorities([...priorities, {id: Date.now().toString(), name: item.text, cat: 'Personal', time: '', done: false, color: MUTED}]);
+    var next = (backlog||[]).filter(b => b.id !== item.id);
+    setBacklog(next); save('backlog', next);
+  }
+  function deleteBacklog(id) {
+    var next = (backlog||[]).filter(b => b.id !== id);
+    setBacklog(next); save('backlog', next);
+  }
+
+  const donePct = priorities.length ? Math.round(priorities.filter(p=>p.done).length/priorities.length*100) : 0;
+  const activeProjects = (projects||[]).filter(p=>!p.done);
+
+  return e('div', {className:'content'},
+    e('div', {style:{fontSize:22,fontWeight:800,marginBottom:16}}, '✅ To-Do'),
+
+    // Tab switcher
+    e('div', {style:{display:'flex',background:CARD2,borderRadius:14,padding:4,marginBottom:16,gap:4}},
+      e('button', {onClick:()=>setSection('todo'), style:{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:section==='todo'?'#fff':'transparent',color:section==='todo'?TEXT:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:section==='todo'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, 'Today'),
+      e('button', {onClick:()=>setSection('backlog'), style:{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:section==='backlog'?'#fff':'transparent',color:section==='backlog'?TEXT:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:section==='backlog'?'0 1px 4px rgba(100,80,220,0.12)':'none',position:'relative'}},
+        e('span',{style:{position:'relative'}}, 'Later',
+          (backlog||[]).length > 0 ? e('span',{style:{position:'absolute',top:-6,right:-10,background:'#F97316',color:'#fff',borderRadius:99,fontSize:10,fontWeight:800,padding:'1px 5px',lineHeight:1.2}}, (backlog||[]).length) : null
+        )
+      ),
+      e('button', {onClick:()=>setSection('projects'), style:{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:section==='projects'?'#fff':'transparent',color:section==='projects'?TEXT:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:section==='projects'?'0 1px 4px rgba(100,80,220,0.12)':'none'}}, 'Projects')
+    ),
+
+    // TODAY section
+    section === 'todo' ? e('div', {},
+      priorities.length > 0 ? e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+        e('div', {style:{flex:1,height:6,background:CARD2,borderRadius:3,overflow:'hidden'}},
+          e('div', {style:{height:'100%',width:donePct+'%',background:'linear-gradient(90deg,'+ACCENT+','+PURPLE+')',borderRadius:3,transition:'width 0.3s'}})
+        ),
+        e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,flexShrink:0}}, priorities.filter(p=>p.done).length+'/'+priorities.length+' done')
+      ) : null,
+      priorities.length === 0 && !addingP
+        ? e('div', {style:{textAlign:'center',padding:'40px 16px',color:MUTED}},
+            e('div', {style:{fontSize:36,marginBottom:10}}, '✅'),
+            e('div', {style:{fontSize:15,fontWeight:600,marginBottom:4}}, 'Nothing on the list'),
+            e('div', {style:{fontSize:13}}, 'Add a priority or move something from Later.')
+          )
+        : e('div', {className:'card'},
+            ...priorities.map(p => e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
+              e('div', {style:{width:3,height:36,borderRadius:2,background:p.color||MUTED,flexShrink:0}}),
+              e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x))}, p.done?'✓':''),
+              e('div', {style:{flex:1}},
+                e('div', {style:{fontSize:14,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none'}}, p.name),
+                e('div', {style:{fontSize:11,color:MUTED,marginTop:1}}, p.cat+(p.time?' · '+p.time:''))
+              ),
+              e('button', {onClick:()=>savePriorities(priorities.filter(x=>x.id!==p.id)), style:{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:16,padding:4}}, '✕')
+            )),
+            addingP ? e('div', {style:{marginTop:12}},
+              e('input', {className:'input', placeholder:'Task name...', value:newPN, onInput:ev=>setNewPN(ev.target.value)}),
+              e('div', {style:{display:'flex',gap:8,marginBottom:10}},
+                e('select', {className:'input', style:{flex:1,marginBottom:0}, value:newPC, onChange:ev=>setNewPC(ev.target.value)},
+                  ...CAT_OPTS.map(c=>e('option',{key:c},c))
+                ),
+                e('input', {type:'time', className:'input', style:{flex:1,marginBottom:0}, value:newPT, onInput:ev=>setNewPT(ev.target.value)})
+              ),
+              e('div', {style:{display:'flex',gap:10}},
+                e('button', {className:'btn-ghost', onClick:()=>setAddingP(false)}, 'Cancel'),
+                e('button', {className:'btn-primary', onClick:()=>{
+                  if(!newPN.trim())return;
+                  savePriorities([...priorities,{id:Date.now().toString(),name:newPN,cat:newPC,time:newPT,done:false,color:CAT_COLORS[newPC]||MUTED}]);
+                  setNewPN('');setAddingP(false);
+                }}, 'Add')
+              )
+            ) : null
+          ),
+      e('button', {style:{width:'100%',padding:14,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:ACCENT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:10}, onClick:()=>setAddingP(true)}, '+ Add Task'),
+      priorities.filter(p=>p.done).length > 0 ? e('button', {onClick:()=>savePriorities(priorities.filter(p=>!p.done)), style:{width:'100%',marginTop:8,padding:10,borderRadius:12,border:'none',background:'transparent',color:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Clear completed (' + priorities.filter(p=>p.done).length + ')') : null
+    )
+
+    // BACKLOG section
+    : section === 'backlog' ? e('div', {},
+      (backlog||[]).length === 0
+        ? e('div', {style:{textAlign:'center',padding:'48px 16px',color:MUTED}},
+            e('div', {style:{fontSize:36,marginBottom:12}}, '⏳'),
+            e('div', {style:{fontSize:15,fontWeight:600,marginBottom:4}}, 'Nothing here yet'),
+            e('div', {style:{fontSize:13}}, 'Sort ideas to "Do It Later" and they\'ll land here.')
+          )
+        : e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:4}}, (backlog||[]).length + ' items waiting'),
+            ...(backlog||[]).map(function(item) {
+              return e('div', {key:item.id, className:'card', style:{padding:'12px 14px',display:'flex',alignItems:'flex-start',gap:12}},
+                e('div', {style:{flex:1}},
+                  e('div', {style:{fontSize:14,fontWeight:600,color:TEXT,lineHeight:1.4}}, item.text),
+                  e('div', {style:{fontSize:11,color:MUTED,marginTop:3}}, 'Added ' + item.added)
+                ),
+                e('div', {style:{display:'flex',flexDirection:'column',gap:6,flexShrink:0}},
+                  e('button', {onClick:()=>moveBacklogToToday(item), style:{fontSize:12,fontWeight:700,padding:'6px 10px',borderRadius:10,border:'1.5px solid '+ACCENT,background:'transparent',color:ACCENT,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, '→ Today'),
+                  e('button', {onClick:()=>deleteBacklog(item.id), style:{fontSize:12,fontWeight:700,padding:'6px 10px',borderRadius:10,border:'1.5px solid #FF6B9D',background:'transparent',color:'#FF6B9D',cursor:'pointer',fontFamily:'inherit'}}, '✕')
+                )
+              );
+            })
+          )
+    )
+
+    // PROJECTS section
+    : e('div', {},
+      activeProjects.length === 0
+        ? e('div', {style:{textAlign:'center',padding:'48px 16px',color:MUTED}},
+            e('div', {style:{fontSize:36,marginBottom:12}}, '🗂'),
+            e('div', {style:{fontSize:15,fontWeight:600,marginBottom:4}}, 'No active projects'),
+            e('div', {style:{fontSize:13}}, 'Add projects from Goals & Projects.')
+          )
+        : e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
+            ...activeProjects.map(p => {
+              const doneTasks=p.tasks.filter(t=>t.done).length, totalTasks=p.tasks.length;
+              const pct=totalTasks?Math.round(doneTasks/totalTasks*100):0;
+              const isExp=expandedP===p.id;
+              return e('div', {key:p.id, className:'card', style:{borderLeft:'4px solid '+p.color,padding:16}},
+                e('div', {style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',cursor:'pointer'}, onClick:()=>setExpandedP(isExp?null:p.id)},
+                  e('div', {},
+                    e('div', {style:{fontSize:15,fontWeight:600}}, p.title),
+                    p.desc?e('div', {style:{fontSize:12,color:MUTED,marginTop:2}}, p.desc):null
+                  ),
+                  e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+                    e('span', {style:{fontSize:12,fontWeight:700,color:p.color}}, doneTasks+'/'+totalTasks),
+                    e('span', {style:{color:MUTED,fontSize:16}}, isExp?'▾':'›')
+                  )
+                ),
+                totalTasks>0?e('div', {style:{height:6,background:CARD2,borderRadius:3,overflow:'hidden',margin:'8px 0'}},
+                  e('div', {style:{height:'100%',width:pct+'%',background:p.color,borderRadius:3}})
+                ):null,
+                isExp?e('div', {},
+                  ...p.tasks.map(t => e('div', {key:t.id, onClick:()=>toggleTask(p.id,t.id), style:{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:'1px solid rgba(100,80,220,0.07)',cursor:'pointer'}},
+                    e('div', {style:{width:20,height:20,borderRadius:'50%',flexShrink:0,border:'2px solid '+(t.done?p.color:BORDER),background:t.done?p.color:'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontSize:11}}, t.done?'✓':''),
+                    e('span', {style:{fontSize:14,color:t.done?MUTED:TEXT,textDecoration:t.done?'line-through':'none',flex:1}}, t.text)
+                  )),
+                  addingTaskFor===p.id?e('div', {style:{marginTop:10}},
+                    e('input', {className:'input', placeholder:'New task...', value:newTask, onInput:ev=>setNewTask(ev.target.value)}),
+                    e('div', {style:{display:'flex',gap:8}},
+                      e('button', {className:'btn-ghost', onClick:()=>setAddingTaskFor(null)}, 'Cancel'),
+                      e('button', {className:'btn-primary', onClick:()=>addTask(p.id)}, 'Add')
+                    )
+                  ):e('button', {style:{display:'flex',alignItems:'center',paddingTop:8,fontSize:13,fontWeight:700,color:ACCENT,cursor:'pointer',border:'none',background:'none',fontFamily:'inherit'},onClick:()=>setAddingTaskFor(p.id)}, '+ Add task')
+                ):null
+              );
+            })
+          ),
+      e('button', {onClick:()=>setTab('goals'), style:{width:'100%',marginTop:12,padding:14,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:MUTED,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, '⚙️ Manage Goals & Projects')
+    )
+  );
+}
 
 function GoalsScreen({goals, setGoals, projects, setProjects, setTab, backlog, setBacklog}) {
   const [view, setView] = useState('goals');
@@ -7811,8 +7981,7 @@ function App() {
     {id:'today', icon:'home',   label:'Home'},
     {id:'day',   icon:'day',    label:'Day'},
     {id:'areas', icon:'grid',   label:'Areas'},
-    {id:'grocery', icon:'cart', label:'Shop'},
-    {id:'time',  icon:'clock',  label:'Time'},
+    {id:'todo',  icon:'check',  label:'To-Do'},
     {id:'more',  icon:'more',   label:'More'},
   ];
   const MORE_ITEMS = [
@@ -7823,6 +7992,7 @@ function App() {
     {id:'photos',icon:'📸',label:'Progress Photos'},
     {id:'grocery',icon:'🛒',label:'Shopping'},
     {id:'notes',icon:'📝',label:'Notes'},
+    {id:'time',icon:'⏱️',label:'Time'},
     {id:'review',icon:'📊',label:'Review'},
     {id:'notifications',icon:'🔔',label:'Notifications'},
     {id:'data',icon:'💾',label:'Import / Export Data'},
@@ -7835,6 +8005,7 @@ function App() {
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
+      case 'todo': return e(TodoScreen, {goals,setGoals,projects,setProjects,setTab,backlog,setBacklog});
       case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab,backlog,setBacklog});
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
