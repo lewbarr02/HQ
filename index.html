@@ -227,9 +227,11 @@ async function _syncPull(){
       await _syncPush();
       return false;
     }
-    // Remote has data — write every row to localStorage
-    data.forEach(function(row){try{localStorage.setItem('hq_'+row.key,JSON.stringify(row.value));}catch(ex){}});
+    // Remote has data — only reload if newer than last local sync
     var maxTs = Math.max.apply(null, data.map(function(row){return new Date(row.updated_at).getTime();}));
+    var lastSync = parseInt(localStorage.getItem('hq_lastSync')||'0', 10);
+    if(maxTs <= lastSync) return false;
+    data.forEach(function(row){try{localStorage.setItem('hq_'+row.key,JSON.stringify(row.value));}catch(ex){}});
     localStorage.setItem('hq_lastSync', maxTs.toString());
     return true;
   }catch(e){console.warn('[HQ sync] pull failed (offline?):',e.message); return false;}
