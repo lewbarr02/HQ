@@ -7861,7 +7861,7 @@ function App() {
   const [cleaningPhase, setCleaningPhase] = useState('done'); // greeting|checklist|complete|history|done
   const [cleaningLog, setCleaningLog] = useState({});
   const [cleaningItems, setCleaningItems] = useState(DEFAULT_CLEANING_HABITS);
-  const [ideaLog, setIdeaLog] = useState([]);
+  const [ideaLog, setIdeaLog] = useState(() => load('ideaLog') || []);
   const [backlog, setBacklog] = useState(() => load('backlog') || []);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
