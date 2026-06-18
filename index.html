@@ -1209,6 +1209,179 @@ function DateNightCard({dateNights, setDateNights, setTab}) {
   );
 }
 
+function HomeMaintenanceScreen({homeItems, setHomeItems, setTab}) {
+  var HM_GREEN = '#10B981';
+  var PRIORITIES = [
+    {id:'urgent', label:'Urgent', color:'#EF4444', bg:'#EF444415'},
+    {id:'soon',   label:'Soon',   color:'#F59E0B', bg:'#F59E0B15'},
+    {id:'someday',label:'Someday',color:'#8B5CF6', bg:'#8B5CF615'},
+  ];
+  var TABS = [{id:'fix',label:'🔧 Fix List'},{id:'upgrade',label:'⬆️ Upgrades'}];
+  var [activeTab, setActiveTab] = useState('fix');
+  var [showForm, setShowForm] = useState(false);
+  var [form, setForm] = useState({desc:'', room:'', priority:'soon', cost:'', note:'', type:'fix'});
+  var [deleteId, setDeleteId] = useState(null);
+  var [editId, setEditId] = useState(null);
+
+  var items = homeItems || [];
+  var fixItems = items.filter(function(i){return i.type==='fix' && !i.done;});
+  var upgradeItems = items.filter(function(i){return i.type==='upgrade' && !i.done;});
+  var doneItems = items.filter(function(i){return i.done;});
+  var urgentCount = fixItems.filter(function(i){return i.priority==='urgent';}).length;
+
+  function openForm(type) {
+    setForm({desc:'', room:'', priority:'soon', cost:'', note:'', type:type});
+    setEditId(null);
+    setShowForm(true);
+  }
+
+  function openEdit(item) {
+    setForm({desc:item.desc, room:item.room||'', priority:item.priority, cost:item.cost||'', note:item.note||'', type:item.type});
+    setEditId(item.id);
+    setShowForm(true);
+  }
+
+  function saveItem() {
+    if(!form.desc.trim()) return;
+    var next;
+    if(editId) {
+      next = items.map(function(i){return i.id===editId ? Object.assign({},i,form) : i;});
+    } else {
+      next = [...items, {id:Date.now().toString(), done:false, addedDate:today(), ...form}];
+    }
+    setHomeItems(next); save('homeItems', next);
+    setShowForm(false); setEditId(null);
+  }
+
+  function toggleDone(id) {
+    var next = items.map(function(i){return i.id===id ? Object.assign({},i,{done:!i.done, doneDate:!i.done?today():null}) : i;});
+    setHomeItems(next); save('homeItems', next);
+  }
+
+  function deleteItem(id) {
+    var next = items.filter(function(i){return i.id!==id;});
+    setHomeItems(next); save('homeItems', next);
+    setDeleteId(null);
+  }
+
+  function priColor(p) { return (PRIORITIES.find(function(x){return x.id===p;})||PRIORITIES[1]).color; }
+  function priBg(p)    { return (PRIORITIES.find(function(x){return x.id===p;})||PRIORITIES[1]).bg; }
+
+  function ItemCard(item) {
+    return e('div',{key:item.id, style:{background:'white',borderRadius:14,padding:'12px 14px',marginBottom:8,border:'1.5px solid '+(item.priority==='urgent'?'#EF444430':BORDER)}},
+      e('div',{style:{display:'flex',alignItems:'flex-start',gap:10}},
+        e('button',{onClick:function(){toggleDone(item.id);},style:{width:22,height:22,borderRadius:'50%',border:'2px solid '+(item.done?HM_GREEN:BORDER),background:item.done?HM_GREEN:'white',flexShrink:0,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',marginTop:1}},
+          item.done ? e('span',{style:{color:'white',fontSize:12,fontWeight:900}},'✓') : null
+        ),
+        e('div',{style:{flex:1,minWidth:0}},
+          e('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:4}},
+            e('div',{style:{fontSize:14,fontWeight:700,color:item.done?MUTED:TEXT,textDecoration:item.done?'line-through':'none',flex:1}}, item.desc),
+            e('div',{style:{fontSize:10,fontWeight:700,color:priColor(item.priority),background:priBg(item.priority),padding:'2px 7px',borderRadius:8,flexShrink:0}}, item.priority.toUpperCase())
+          ),
+          e('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+            item.room ? e('span',{style:{fontSize:11,color:MUTED,fontWeight:600}}, '📍 '+item.room) : null,
+            item.cost ? e('span',{style:{fontSize:11,color:MUTED,fontWeight:600}}, '💰 ~$'+item.cost) : null
+          ),
+          item.note ? e('div',{style:{fontSize:12,color:MUTED,marginTop:4}}, item.note) : null
+        ),
+        e('div',{style:{display:'flex',gap:4,flexShrink:0}},
+          deleteId===item.id
+            ? e('div',{style:{display:'flex',gap:4}},
+                e('button',{onClick:function(){deleteItem(item.id);},style:{fontSize:11,fontWeight:700,color:'white',background:'#EF4444',border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, 'Del'),
+                e('button',{onClick:function(){setDeleteId(null);},style:{fontSize:11,fontWeight:700,color:MUTED,background:CARD2,border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, '✕')
+              )
+            : e('div',{style:{display:'flex',gap:4}},
+                e('button',{onClick:function(){openEdit(item);},style:{fontSize:14,background:'none',border:'none',cursor:'pointer',color:MUTED,padding:2}}, '✏️'),
+                e('button',{onClick:function(){setDeleteId(item.id);},style:{fontSize:14,background:'none',border:'none',cursor:'pointer',color:MUTED,padding:2}}, '🗑')
+              )
+        )
+      )
+    );
+  }
+
+  var listItems = activeTab==='fix' ? fixItems : upgradeItems;
+  var byPriority = {};
+  PRIORITIES.forEach(function(p){ byPriority[p.id] = listItems.filter(function(i){return i.priority===p.id;}); });
+
+  return e('div',{style:{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#F7F8FC'}},
+    // header
+    e('div',{style:{display:'flex',alignItems:'center',gap:12,padding:'16px 16px 0'}},
+      e('button',{onClick:function(){setTab('today');},style:{background:CARD2,border:'none',width:36,height:36,borderRadius:'50%',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}, '‹'),
+      e('div',{style:{flex:1}},
+        e('div',{style:{fontSize:20,fontWeight:800}}, '🏠 Home'),
+        urgentCount>0 ? e('div',{style:{fontSize:11,fontWeight:700,color:'#EF4444'}}, urgentCount+' urgent fix'+(urgentCount>1?'es':'')+' need attention') : null
+      ),
+      e('button',{onClick:function(){openForm(activeTab==='fix'?'fix':'upgrade');},style:{background:HM_GREEN,border:'none',borderRadius:12,padding:'8px 14px',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Add')
+    ),
+    // tabs
+    e('div',{style:{display:'flex',gap:8,padding:'12px 16px 0'}},
+      TABS.map(function(t){
+        var active = activeTab===t.id;
+        var count = t.id==='fix' ? fixItems.length : upgradeItems.length;
+        return e('button',{key:t.id, onClick:function(){setActiveTab(t.id);setShowForm(false);},
+          style:{flex:1,padding:'8px',borderRadius:12,border:'1.5px solid '+(active?HM_GREEN:BORDER),background:active?HM_GREEN+'15':'white',color:active?HM_GREEN:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}},
+          t.label + (count>0?' ('+count+')':'')
+        );
+      })
+    ),
+    e('div',{style:{flex:1,overflowY:'auto',padding:16,display:'flex',flexDirection:'column',gap:0}},
+      // add form
+      showForm ? e('div',{style:{background:'white',borderRadius:16,padding:16,marginBottom:12,border:'1.5px solid '+HM_GREEN+'40'}},
+        e('div',{style:{fontSize:14,fontWeight:700,marginBottom:12,color:HM_GREEN}}, (editId?'Edit':'Add')+(form.type==='fix'?' Fix Item':' Upgrade')),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+          e('input',{type:'text', value:form.desc, onInput:function(ev){setForm(Object.assign({},form,{desc:ev.target.value}));}, placeholder:'What needs '+(form.type==='fix'?'fixing':'upgrading')+'?',
+            style:{width:'100%',padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}}),
+          e('div',{style:{display:'flex',gap:8}},
+            e('input',{type:'text', value:form.room, onInput:function(ev){setForm(Object.assign({},form,{room:ev.target.value}));}, placeholder:'Room (e.g. Kitchen)',
+              style:{flex:1,padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:13,fontFamily:'inherit',boxSizing:'border-box'}}),
+            form.type==='upgrade' ? e('input',{type:'text', value:form.cost, onInput:function(ev){setForm(Object.assign({},form,{cost:ev.target.value}));}, placeholder:'Est. cost $',
+              style:{width:100,padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:13,fontFamily:'inherit',boxSizing:'border-box'}}) : null
+          ),
+          e('div',{},
+            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}}, 'PRIORITY'),
+            e('div',{style:{display:'flex',gap:6}},
+              PRIORITIES.map(function(p){
+                var sel = form.priority===p.id;
+                return e('button',{key:p.id,onClick:function(){setForm(Object.assign({},form,{priority:p.id}));},
+                  style:{flex:1,padding:'7px 4px',borderRadius:10,border:'1.5px solid '+(sel?p.color:BORDER),background:sel?p.bg:'white',color:sel?p.color:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, p.label);
+              })
+            )
+          ),
+          e('textarea',{value:form.note, onInput:function(ev){setForm(Object.assign({},form,{note:ev.target.value}));}, placeholder:'Notes (optional)', rows:2,
+            style:{width:'100%',padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:13,fontFamily:'inherit',resize:'none',boxSizing:'border-box'}}),
+          e('div',{style:{display:'flex',gap:8}},
+            e('button',{onClick:function(){setShowForm(false);setEditId(null);},style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'white',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel'),
+            e('button',{onClick:saveItem,style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:HM_GREEN,color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, editId?'Save Changes':'Add Item')
+          )
+        )
+      ) : null,
+
+      // list grouped by priority
+      listItems.length === 0 && !showForm ? e('div',{style:{textAlign:'center',padding:'40px 20px',color:MUTED}},
+        e('div',{style:{fontSize:40,marginBottom:12}}, activeTab==='fix'?'🔧':'⬆️'),
+        e('div',{style:{fontSize:16,fontWeight:700,marginBottom:8}}, activeTab==='fix'?'No fixes logged':'No upgrades yet'),
+        e('button',{onClick:function(){openForm(activeTab==='fix'?'fix':'upgrade');},style:{marginTop:8,padding:'10px 24px',borderRadius:12,border:'none',background:HM_GREEN,color:'white',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '+ Add One')
+      ) : PRIORITIES.map(function(p){
+        var grp = byPriority[p.id];
+        if(!grp || grp.length===0) return null;
+        return e('div',{key:p.id,style:{marginBottom:12}},
+          e('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:6}},
+            e('div',{style:{fontSize:11,fontWeight:700,color:p.color,textTransform:'uppercase',letterSpacing:1}},' '+p.label),
+            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED}}, '('+grp.length+')')
+          ),
+          grp.map(ItemCard)
+        );
+      }),
+
+      // done section
+      doneItems.length > 0 ? e('div',{style:{marginTop:8}},
+        e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}, '✓ Completed ('+doneItems.length+')'),
+        doneItems.slice(0,5).map(ItemCard)
+      ) : null
+    )
+  );
+}
+
 function DateNightsScreen({dateNights, setDateNights, setTab}) {
   var DN_PINK = '#FF6B9D';
   var TYPES = ['Dinner out','Movie','Adventure','Stay-in','Day trip','Concert/Show','Other'];
@@ -1369,7 +1542,7 @@ function DateNightsScreen({dateNights, setDateNights, setTab}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, dateNights, setDateNights}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, dateNights, setDateNights, homeItems, setHomeItems}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -1719,11 +1892,15 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
           {name:'Waterproof',emoji:'☂️',color:'#3B82F6'},
           {name:'Learning Center',emoji:'📚',color:'#8B5CF6'},
           {name:'Family',emoji:'👨‍👩‍👦',color:'#EC4899'},
-          {name:'Home',emoji:'🏠',color:'#10B981'},
-        ].map(p => e('button', {key:p.name, onClick:p.onClick||undefined, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'14px 8px',borderRadius:16,background:p.color+'10',border:'1.5px solid '+p.color+'25',cursor:p.onClick?'pointer':'default',fontFamily:'inherit'}},
-          e('div',{style:{fontSize:28,lineHeight:1}},p.emoji),
-          e('div',{style:{fontSize:11,fontWeight:700,color:p.color,textAlign:'center',lineHeight:1.2}},p.name)
-        ))
+          {name:'Home',emoji:'🏠',color:'#10B981',onClick:()=>setTab('homemaintenance')},
+        ].map(function(p) {
+          var urgentBadge = p.name==='Home' ? (homeItems||[]).filter(function(i){return !i.done && i.priority==='urgent';}).length : 0;
+          return e('button', {key:p.name, onClick:p.onClick||undefined, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'14px 8px',borderRadius:16,background:p.color+'10',border:'1.5px solid '+(urgentBadge>0?'#EF4444':p.color+'25'),cursor:p.onClick?'pointer':'default',fontFamily:'inherit',position:'relative'}},
+            urgentBadge>0 ? e('div',{style:{position:'absolute',top:-4,right:-4,background:'#EF4444',color:'white',borderRadius:99,fontSize:10,fontWeight:900,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',boxShadow:'0 1px 4px rgba(0,0,0,0.25)'}}, urgentBadge) : null,
+            e('div',{style:{fontSize:28,lineHeight:1}},p.emoji),
+            e('div',{style:{fontSize:11,fontWeight:700,color:p.color,textAlign:'center',lineHeight:1.2}},p.name)
+          );
+        })
       )
     ),
     e('div', {className:'card'},
@@ -8127,6 +8304,7 @@ function App() {
   const [ideaLog, setIdeaLog] = useState(() => load('ideaLog') || []);
   const [backlog, setBacklog] = useState(() => load('backlog') || []);
   const [dateNights, setDateNights] = useState(() => load('dateNights') || []);
+  const [homeItems, setHomeItems] = useState(() => load('homeItems') || []);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
@@ -8172,8 +8350,8 @@ function App() {
       }
     });
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);save('habits',migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights','homeItems'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);save('habits',migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);else if(k==='homeItems')setHomeItems(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -8266,7 +8444,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,dateNights,setDateNights});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,dateNights,setDateNights,homeItems,setHomeItems});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
@@ -8277,6 +8455,7 @@ function App() {
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog});
       case 'datenights': return e(DateNightsScreen, {dateNights,setDateNights,setTab});
+      case 'homemaintenance': return e(HomeMaintenanceScreen, {homeItems,setHomeItems,setTab});
       case 'macros': return e(MacroScreen, {setTab});
       case 'foodpipeline': return e(FoodPipelineScreen, {setTab});
       case 'photos': return e(ProgressPhotosScreen, {setTab});
