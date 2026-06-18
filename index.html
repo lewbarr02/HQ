@@ -7978,13 +7978,14 @@ function App() {
   const dateStr = now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
 
   const NAV = [
-    {id:'today', icon:'home',   label:'Home'},
-    {id:'day',   icon:'day',    label:'Day'},
-    {id:'areas', icon:'grid',   label:'Areas'},
-    {id:'todo',  icon:'check',  label:'To-Do'},
-    {id:'more',  icon:'more',   label:'More'},
+    {id:'today',   icon:'home',  label:'Home'},
+    {id:'day',     icon:'day',   label:'Day'},
+    {id:'grocery', icon:'cart',  label:'Shop'},
+    {id:'todo',    icon:'check', label:'To-Do'},
+    {id:'more',    icon:'more',  label:'More'},
   ];
   const MORE_ITEMS = [
+    {id:'areas',icon:'⊞',label:'Areas'},
     {id:'calendar',icon:'📅',label:'Google Calendar'},
     {id:'fitness',icon:'💪',label:'Fitness'},
     {id:'macros',icon:'🥗',label:'Macros'},
