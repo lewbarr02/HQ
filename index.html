@@ -70,10 +70,13 @@
 const e = React.createElement;
 const {useState, useEffect, useRef} = React;
 
-const _SB = supabase.createClient(
-  'https://bfgybytjjubdnciraksj.supabase.co',
-  'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'
-);
+var _SB = null;
+try {
+  _SB = supabase.createClient(
+    'https://bfgybytjjubdnciraksj.supabase.co',
+    'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'
+  );
+} catch(err) { console.warn('[HQ] Supabase failed to init:', err.message); }
 
 const VAPID_PUBLIC_KEY = 'BDDwIvSClatsviwaLbE1igi80DCKUVLpyVE3F93820-6mximBR4hT9keOCmhdGWkImEXp4qQ2RXqyosJMAeryIk';
 
@@ -203,6 +206,7 @@ function save(k,v){
   _syncTimer = setTimeout(_syncPush, 1500);
 }
 async function _syncPush(){
+  if(!_SB) return;
   var keys = [..._pendingKeys]; _pendingKeys.clear();
   if(!keys.length) return;
   var rows = keys.map(function(k){
@@ -217,6 +221,7 @@ async function _syncPush(){
   }catch(e){console.warn('[HQ sync] push failed:',e.message);}
 }
 async function _syncPull(){
+  if(!_SB) return false;
   try{
     var {data,error} = await _SB.from('hq_data').select('key,value,updated_at').eq('user_id','lewis');
     if(error||!data) return false;
