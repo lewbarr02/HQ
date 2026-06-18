@@ -7985,8 +7985,8 @@ function App() {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(e(App));
 
-// Pull sync in background — reload once if remote had newer data
-_syncPull().then(function(pulled){ if(pulled) window.location.reload(); });
+// Pull sync in background — silently writes to localStorage for next session
+_syncPull();
 </script>
 </body>
 </html>
