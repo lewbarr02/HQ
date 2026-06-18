@@ -219,19 +219,20 @@ async function _syncPush(){
 async function _syncPull(){
   try{
     var {data,error} = await _SB.from('hq_data').select('key,value,updated_at').eq('user_id','lewis');
-    if(error||!data) return;
+    if(error||!data) return false;
     if(data.length === 0){
       // Supabase empty — push all local data as initial seed
       var allKeys = Object.keys(localStorage).filter(function(k){return k.startsWith('hq_')&&k!=='hq_lastSync';}).map(function(k){return k.slice(3);});
       allKeys.forEach(function(k){_pendingKeys.add(k);});
       await _syncPush();
-      return;
+      return false;
     }
     // Remote has data — write every row to localStorage
-    data.forEach(function(row){try{localStorage.setItem('hq_'+row.key,JSON.stringify(row.value));}catch{}});
+    data.forEach(function(row){try{localStorage.setItem('hq_'+row.key,JSON.stringify(row.value));}catch(ex){}});
     var maxTs = Math.max.apply(null, data.map(function(row){return new Date(row.updated_at).getTime();}));
     localStorage.setItem('hq_lastSync', maxTs.toString());
-  }catch(e){console.warn('[HQ sync] pull failed (offline?):',e.message);}
+    return true;
+  }catch(e){console.warn('[HQ sync] pull failed (offline?):',e.message); return false;}
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
 function fmtTime(mins){if(!mins)return"0m";const h=Math.floor(mins/60),m=mins%60;if(!h)return m+"m";if(!m)return h+"h";return h+"h "+m+"m";}
@@ -7979,20 +7980,11 @@ function App() {
   );
 }
 
-function Root() {
-  const [ready, setReady] = useState(false);
-  useEffect(function(){
-    _syncPull().then(function(){ setReady(true); });
-  }, []);
-  if(!ready) return e('div', {style:{position:'fixed',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#F7F8FC',gap:16}},
-    e('div', {style:{fontSize:36}}, '⚡'),
-    e('div', {style:{fontSize:13,fontWeight:700,color:'#8E8EAA',letterSpacing:1.5}}, 'SYNCING...')
-  );
-  return e(App);
-}
-
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(e(Root));
+root.render(e(App));
+
+// Pull sync in background — reload once if remote had newer data
+_syncPull().then(function(pulled){ if(pulled) window.location.reload(); });
 </script>
 </body>
 </html>
