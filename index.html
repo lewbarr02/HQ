@@ -1849,7 +1849,24 @@ function HabitsScreen({habits, setHabits, habitLog, setHabitLog, setTab}) {
   const EMOJIS = ['💪🏽','🏋️','📚','🧘','💧','😴','🏃','🥗','💊','✍️','🎯','🧹','🌿','☀️','🎸','🧠','🔌','🛁','🚗','👕'];
   const days = getDIM(year,month);
 
-  function addHabit(){if(!name.trim())return;const h={id:'h'+Date.now(),name,emoji:emoji||'⭐',color,freq,nonNeg:false};const next=[...habits,h];setHabits(next);save('habits',next);setName('');setEmoji('');setFreq('daily');setAdding(false);}
+  function addHabit(){if(!name.trim())return;const h={id:'h'+Date.now(),name,emoji:emoji||'⭐',color,freq,nonNeg:false,lastDone:null};const next=[...habits,h];setHabits(next);save('habits',next);setName('');setEmoji('');setFreq('daily');setAdding(false);}
+  function logDoneToday(id){const next=habits.map(h=>h.id===id?{...h,lastDone:today()}:h);setHabits(next);save('habits',next);}
+  function daysSince(dateStr){if(!dateStr)return null;const diff=new Date()-new Date(dateStr);return Math.floor(diff/86400000);}
+  function dueBadge(h){
+    var ds=daysSince(h.lastDone);
+    if(ds===null)return{label:'Never done',color:'#EF4444',urgent:true};
+    if(h.freq==='monthly'){
+      if(ds>35)return{label:ds+'d ago — overdue',color:'#EF4444',urgent:true};
+      if(ds>25)return{label:ds+'d ago — due soon',color:'#F97316',urgent:false};
+      return{label:ds+'d ago',color:'#10B981',urgent:false};
+    }
+    if(h.freq==='quarterly'){
+      if(ds>100)return{label:ds+'d ago — overdue',color:'#EF4444',urgent:true};
+      if(ds>80)return{label:ds+'d ago — due soon',color:'#F97316',urgent:false};
+      return{label:ds+'d ago',color:'#10B981',urgent:false};
+    }
+    return null;
+  }
   function removeHabit(id){const next=habits.filter(h=>h.id!==id);setHabits(next);save('habits',next);}
   function toggleNonNeg(id){const next=habits.map(h=>h.id===id?{...h,nonNeg:!h.nonNeg}:h);setHabits(next);save('habits',next);}
   function toggleDot(hid,dk){const log=habitLog[dk]||{};const next={...habitLog,[dk]:{...log,[hid]:!log[hid]}};setHabitLog(next);save('habitLog',next);}
@@ -1868,32 +1885,48 @@ function HabitsScreen({habits, setHabits, habitLog, setHabitLog, setTab}) {
 
   var dailyHabits = habits.filter(function(h){return (h.freq||'daily')==='daily';});
   var weeklyHabits = habits.filter(function(h){return h.freq==='weekly';});
+  var monthlyHabits = habits.filter(function(h){return h.freq==='monthly';});
+  var quarterlyHabits = habits.filter(function(h){return h.freq==='quarterly';});
 
   function renderHabitCard(h) {
     var isWeekly = h.freq==='weekly';
-    var countLabel;
+    var isMonthly = h.freq==='monthly';
+    var isQuarterly = h.freq==='quarterly';
+    var isLongFreq = isMonthly || isQuarterly;
+    var countLabel, freqBadgeColor, freqBadgeBg, freqLabel;
     if(isWeekly){
+      freqLabel='📆 Weekly'; freqBadgeColor='#B45309'; freqBadgeBg='#F59E0B18';
       var ws=getWeekStarts(year,month);
       var wdone=ws.filter(function(wStart){
         var wDk=wStart.getFullYear()+'-'+String(wStart.getMonth()+1).padStart(2,'0')+'-'+String(wStart.getDate()).padStart(2,'0');
         return isWeeklyDone(h.id,wDk,habitLog);
       }).length;
       countLabel=wdone+' week'+(wdone!==1?'s':'')+' this month';
+    } else if(isMonthly){
+      freqLabel='📅 Monthly'; freqBadgeColor='#7C3AED'; freqBadgeBg='#7C3AED18';
+      var badge=dueBadge(h);
+      countLabel=badge?badge.label:'—';
+    } else if(isQuarterly){
+      freqLabel='🗓 Quarterly'; freqBadgeColor='#0F766E'; freqBadgeBg='#0F766E18';
+      var badge=dueBadge(h);
+      countLabel=badge?badge.label:'—';
     } else {
+      freqLabel='📅 Daily'; freqBadgeColor=ACCENT; freqBadgeBg='#00C6FF18';
       var count=Array.from({length:days},(_,i)=>(habitLog[dateKey(year,month,i+1)]||{})[h.id]).filter(Boolean).length;
       countLabel=count+' days this month';
     }
-    return e('div', {key:h.id, className:'card', style:{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',marginBottom:8}},
+    var badge = isLongFreq ? dueBadge(h) : null;
+    return e('div', {key:h.id, className:'card', style:{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',marginBottom:8,borderLeft: badge&&badge.urgent ? '3px solid #EF4444' : 'none'}},
       e('div', {style:{width:44,height:44,borderRadius:'50%',background:h.color+'18',border:'2px solid '+h.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}, h.emoji),
       e('div', {style:{flex:1}},
         e('div', {style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}},
           e('div', {style:{fontSize:15,fontWeight:700,color:h.color}}, h.name),
-          e('div', {style:{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:isWeekly?'#F59E0B18':'#00C6FF18',color:isWeekly?'#B45309':ACCENT}}, isWeekly?'📆 Weekly':'📅 Daily'),
+          e('div', {style:{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:6,background:freqBadgeBg,color:freqBadgeColor}}, freqLabel),
           h.nonNeg ? e('div', {style:{fontSize:10,fontWeight:700,color:'#FF6B6B',background:'#FF6B6B15',padding:'2px 6px',borderRadius:6}}, '🔒 locked') : null
         ),
-        e('div', {style:{fontSize:11,color:MUTED,marginTop:2}}, countLabel)
+        e('div', {style:{fontSize:11,color:badge?badge.color:MUTED,marginTop:2,fontWeight:badge&&badge.urgent?700:400}}, countLabel)
       ),
-      e('button', {onClick:()=>toggleNonNeg(h.id), title:h.nonNeg?'Remove non-negotiable':'Mark as non-negotiable', style:{background:h.nonNeg?'#FF6B6B15':'transparent',border:'1.5px solid '+(h.nonNeg?'#FF6B6B':BORDER),color:h.nonNeg?'#FF6B6B':MUTED,borderRadius:10,padding:'6px 10px',fontSize:16,cursor:'pointer',fontFamily:'inherit',marginRight:4}}, h.nonNeg?'🔒':'🔓'),
+      isLongFreq ? e('button', {onClick:()=>logDoneToday(h.id), style:{background:'#10B98118',border:'1.5px solid #10B981',color:'#10B981',borderRadius:10,padding:'6px 10px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginRight:4,whiteSpace:'nowrap'}}, '✓ Done') : e('button', {onClick:()=>toggleNonNeg(h.id), title:h.nonNeg?'Remove non-negotiable':'Mark as non-negotiable', style:{background:h.nonNeg?'#FF6B6B15':'transparent',border:'1.5px solid '+(h.nonNeg?'#FF6B6B':BORDER),color:h.nonNeg?'#FF6B6B':MUTED,borderRadius:10,padding:'6px 10px',fontSize:16,cursor:'pointer',fontFamily:'inherit',marginRight:4}}, h.nonNeg?'🔒':'🔓'),
       e('button', {onClick:()=>removeHabit(h.id), style:{background:'rgba(255,107,157,0.1)',border:'1.5px solid #FF6B9D',color:'#FF6B9D',borderRadius:10,padding:'6px 12px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Remove')
     );
   }
@@ -1916,15 +1949,32 @@ function HabitsScreen({habits, setHabits, habitLog, setHabitLog, setTab}) {
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#B45309',marginBottom:8,marginLeft:2}}, '📆 Weekly Habits'),
       ...weeklyHabits.map(renderHabitCard)
     ) : null,
+    // Monthly section
+    monthlyHabits.length > 0 ? e('div', {style:{marginBottom:4}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#7C3AED',marginBottom:8,marginLeft:2}}, '📅 Monthly Habits'),
+      ...monthlyHabits.map(renderHabitCard)
+    ) : null,
+    // Quarterly section
+    quarterlyHabits.length > 0 ? e('div', {style:{marginBottom:4}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#0F766E',marginBottom:8,marginLeft:2}}, '🗓 Quarterly Habits'),
+      ...quarterlyHabits.map(renderHabitCard)
+    ) : null,
     adding ? e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'New Habit'),
       e('input', {className:'input', placeholder:'Habit name...', value:name, onInput:ev=>setName(ev.target.value)}),
       // Frequency toggle
       e('div', {style:{marginBottom:14}},
         e('div', {style:{fontSize:11,color:MUTED,fontWeight:700,marginBottom:8}}, 'FREQUENCY'),
-        e('div', {style:{display:'flex',gap:8,background:CARD2,borderRadius:12,padding:4}},
-          e('button', {onClick:()=>setFreq('daily'), style:{flex:1,padding:'9px 0',borderRadius:9,border:'none',background:freq==='daily'?'#fff':'transparent',color:freq==='daily'?ACCENT:MUTED,fontWeight:freq==='daily'?800:600,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:freq==='daily'?'0 1px 4px rgba(0,0,0,0.08)':'none',transition:'all 0.15s'}}, '📅 Daily'),
-          e('button', {onClick:()=>setFreq('weekly'), style:{flex:1,padding:'9px 0',borderRadius:9,border:'none',background:freq==='weekly'?'#fff':'transparent',color:freq==='weekly'?'#B45309':MUTED,fontWeight:freq==='weekly'?800:600,fontSize:13,cursor:'pointer',fontFamily:'inherit',boxShadow:freq==='weekly'?'0 1px 4px rgba(0,0,0,0.08)':'none',transition:'all 0.15s'}}, '📆 Weekly')
+        e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
+          ...[
+            {id:'daily',   label:'📅 Daily',     activeColor:ACCENT},
+            {id:'weekly',  label:'📆 Weekly',    activeColor:'#B45309'},
+            {id:'monthly', label:'📅 Monthly',   activeColor:'#7C3AED'},
+            {id:'quarterly',label:'🗓 Quarterly', activeColor:'#0F766E'},
+          ].map(function(f){
+            var active = freq===f.id;
+            return e('button', {key:f.id, onClick:()=>setFreq(f.id), style:{padding:'9px 14px',borderRadius:10,border:'1.5px solid '+(active?f.activeColor:BORDER),background:active?f.activeColor+'12':'transparent',color:active?f.activeColor:MUTED,fontWeight:active?800:600,fontSize:13,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s'}}, f.label);
+          })
         )
       ),
       e('div', {style:{marginBottom:10}},
