@@ -64,19 +64,28 @@
 <div id="root"></div>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 'use strict';
 const e = React.createElement;
 const {useState, useEffect, useRef} = React;
 
 var _SB = null;
-try {
-  _SB = supabase.createClient(
-    'https://bfgybytjjubdnciraksj.supabase.co',
-    'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'
-  );
-} catch(err) { console.warn('[HQ] Supabase failed to init:', err.message); }
+function _initSupabase() {
+  return new Promise(function(resolve) {
+    if (window.supabase) {
+      try { _SB = window.supabase.createClient('https://bfgybytjjubdnciraksj.supabase.co','sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'); } catch(e) {}
+      resolve(); return;
+    }
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js';
+    s.onload = function() {
+      try { _SB = window.supabase.createClient('https://bfgybytjjubdnciraksj.supabase.co','sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'); } catch(e) {}
+      resolve();
+    };
+    s.onerror = function() { resolve(); };
+    document.head.appendChild(s);
+  });
+}
 
 const VAPID_PUBLIC_KEY = 'BDDwIvSClatsviwaLbE1igi80DCKUVLpyVE3F93820-6mximBR4hT9keOCmhdGWkImEXp4qQ2RXqyosJMAeryIk';
 
@@ -7990,8 +7999,8 @@ function App() {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(e(App));
 
-// Pull sync in background — silently writes to localStorage for next session
-_syncPull();
+// Load Supabase dynamically after render so it never blocks the page
+_initSupabase().then(function() { _syncPull(); });
 </script>
 </body>
 </html>
