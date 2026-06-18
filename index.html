@@ -1161,7 +1161,215 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog}) {
+function DateNightCard({dateNights, setDateNights, setTab}) {
+  var DN_PINK = '#FF6B9D';
+  var sorted = (dateNights||[]).slice().sort(function(a,b){return b.date.localeCompare(a.date);});
+  var last = sorted[0];
+  var daysSince = last ? Math.floor((Date.now() - new Date(last.date+'T12:00:00').getTime()) / 86400000) : null;
+  var td = today();
+  var ym = td.slice(0,7);
+  var thisMonth = (dateNights||[]).filter(function(d){return d.date.startsWith(ym);}).length;
+  var statusColor = daysSince === null ? MUTED : daysSince <= 10 ? '#10B981' : daysSince <= 20 ? '#F59E0B' : '#EF4444';
+
+  // 30-day dot grid
+  var dots = [];
+  for(var i=29;i>=0;i--){
+    var d = new Date(); d.setDate(d.getDate()-i);
+    var ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    var hit = (dateNights||[]).some(function(n){return n.date===ds;});
+    dots.push(e('div',{key:ds,style:{width:8,height:8,borderRadius:'50%',background:hit?DN_PINK:CARD2,flexShrink:0}}));
+  }
+
+  return e('div',{className:'card',style:{marginBottom:12}},
+    e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+      e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        e('span',{style:{fontSize:20}},'💑'),
+        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Date Nights')
+      ),
+      e('button',{onClick:function(){setTab('datenights');},style:{fontSize:12,fontWeight:700,color:DN_PINK,background:DN_PINK+'15',border:'none',borderRadius:10,padding:'4px 10px',cursor:'pointer',fontFamily:'inherit'}}, 'View All')
+    ),
+    e('div',{style:{display:'flex',alignItems:'center',gap:16,marginBottom:12}},
+      e('div',{style:{textAlign:'center',flex:1}},
+        e('div',{style:{fontSize:32,fontWeight:900,color:statusColor,lineHeight:1}}, daysSince===null?'—':daysSince),
+        e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.6,marginTop:2}}, 'days since')
+      ),
+      e('div',{style:{width:1,height:40,background:BORDER}}),
+      e('div',{style:{flex:1}},
+        e('div',{style:{display:'flex',alignItems:'baseline',gap:4,marginBottom:4}},
+          e('span',{style:{fontSize:24,fontWeight:900,color:thisMonth>=1?DN_PINK:MUTED}}, thisMonth),
+          e('span',{style:{fontSize:12,color:MUTED,fontWeight:600}}, '/ 1 this month')
+        ),
+        e('div',{style:{height:6,background:CARD2,borderRadius:3,overflow:'hidden'}},
+          e('div',{style:{height:'100%',width:Math.min(thisMonth,1)*100+'%',background:DN_PINK,borderRadius:3,transition:'width 0.4s'}})
+        )
+      )
+    ),
+    e('div',{style:{display:'flex',gap:4,flexWrap:'wrap',marginBottom:12}}, dots),
+    e('button',{onClick:function(){setTab('datenights');},style:{width:'100%',padding:'10px',borderRadius:12,border:'1.5px dashed '+DN_PINK+'60',background:DN_PINK+'08',color:DN_PINK,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Log a Date Night')
+  );
+}
+
+function DateNightsScreen({dateNights, setDateNights, setTab}) {
+  var DN_PINK = '#FF6B9D';
+  var TYPES = ['Dinner out','Movie','Adventure','Stay-in','Day trip','Concert/Show','Other'];
+  var [showForm, setShowForm] = useState(false);
+  var [form, setForm] = useState({date:today(), type:'Dinner out', rating:5, note:''});
+  var [deleteId, setDeleteId] = useState(null);
+
+  var sorted = (dateNights||[]).slice().sort(function(a,b){return b.date.localeCompare(a.date);});
+  var td = today();
+  var ym = td.slice(0,7);
+  var thisMonth = (dateNights||[]).filter(function(d){return d.date.startsWith(ym);}).length;
+
+  var last = sorted[0];
+  var daysSince = last ? Math.floor((Date.now() - new Date(last.date+'T12:00:00').getTime()) / 86400000) : null;
+  var statusColor = daysSince===null?MUTED:daysSince<=10?'#10B981':daysSince<=20?'#F59E0B':'#EF4444';
+
+  // 30-day dot grid
+  var dots = [];
+  for(var i=29;i>=0;i--){
+    var d = new Date(); d.setDate(d.getDate()-i);
+    var ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    var hit = (dateNights||[]).some(function(n){return n.date===ds;});
+    dots.push(e('div',{key:ds,title:ds,style:{width:10,height:10,borderRadius:'50%',background:hit?DN_PINK:CARD2,flexShrink:0,cursor:hit?'pointer':'default'}}));
+  }
+
+  function saveEntry() {
+    if(!form.date) return;
+    var entry = {id:Date.now().toString(), date:form.date, type:form.type, rating:form.rating, note:form.note.trim()};
+    var next = [...(dateNights||[]), entry];
+    setDateNights(next); save('dateNights', next);
+    setShowForm(false); setForm({date:today(), type:'Dinner out', rating:5, note:''});
+  }
+
+  function deleteEntry(id) {
+    var next = (dateNights||[]).filter(function(n){return n.id!==id;});
+    setDateNights(next); save('dateNights', next);
+    setDeleteId(null);
+  }
+
+  function fmtDate(ds) {
+    var dt = new Date(ds+'T12:00:00');
+    return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  }
+
+  function starStr(r) { return '★'.repeat(r)+'☆'.repeat(5-r); }
+
+  // months for history grouping
+  var byMonth = {};
+  sorted.forEach(function(n){
+    var mk = n.date.slice(0,7);
+    if(!byMonth[mk]) byMonth[mk] = [];
+    byMonth[mk].push(n);
+  });
+
+  return e('div',{style:{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#F7F8FC'}},
+    // header
+    e('div',{style:{display:'flex',alignItems:'center',gap:12,padding:'16px 16px 0'}},
+      e('button',{onClick:function(){setTab('today');},style:{background:CARD2,border:'none',width:36,height:36,borderRadius:'50%',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}, '‹'),
+      e('div',{style:{fontSize:20,fontWeight:800,flex:1}}, '💑 Date Nights'),
+      e('button',{onClick:function(){setShowForm(true);},style:{background:DN_PINK,border:'none',borderRadius:12,padding:'8px 14px',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Log')
+    ),
+    e('div',{style:{flex:1,overflowY:'auto',padding:16,display:'flex',flexDirection:'column',gap:12}},
+      // stat row
+      e('div',{className:'card',style:{marginBottom:0}},
+        e('div',{style:{display:'flex',gap:0}},
+          e('div',{style:{flex:1,textAlign:'center',padding:'8px 0'}},
+            e('div',{style:{fontSize:28,fontWeight:900,color:statusColor}}, daysSince===null?'—':daysSince),
+            e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.5,marginTop:2}}, 'days since')
+          ),
+          e('div',{style:{width:1,background:BORDER,margin:'4px 0'}}),
+          e('div',{style:{flex:1,textAlign:'center',padding:'8px 0'}},
+            e('div',{style:{fontSize:28,fontWeight:900,color:thisMonth>=1?DN_PINK:MUTED}}, thisMonth+'/1'),
+            e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.5,marginTop:2}}, 'this month')
+          ),
+          e('div',{style:{width:1,background:BORDER,margin:'4px 0'}}),
+          e('div',{style:{flex:1,textAlign:'center',padding:'8px 0'}},
+            e('div',{style:{fontSize:28,fontWeight:900,color:DN_PINK}}, sorted.length),
+            e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.5,marginTop:2}}, 'total')
+          )
+        ),
+        e('div',{style:{marginTop:12}},
+          e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.8,marginBottom:6}}, 'Last 30 days'),
+          e('div',{style:{display:'flex',gap:3,flexWrap:'wrap'}}, dots)
+        )
+      ),
+
+      // log form
+      showForm ? e('div',{className:'card',style:{border:'1.5px solid '+DN_PINK+'40',background:DN_PINK+'06',marginBottom:0}},
+        e('div',{style:{fontSize:14,fontWeight:700,marginBottom:12,color:DN_PINK}}, 'Log a Date Night'),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+          e('div',{},
+            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:4}}, 'DATE'),
+            e('input',{type:'date',value:form.date,max:td,onChange:function(ev){setForm(Object.assign({},form,{date:ev.target.value}));},style:{width:'100%',padding:'8px 10px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:14,fontFamily:'inherit',background:'white',boxSizing:'border-box'}})
+          ),
+          e('div',{},
+            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}}, 'TYPE'),
+            e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+              TYPES.map(function(t){
+                var sel = form.type===t;
+                return e('button',{key:t,onClick:function(){setForm(Object.assign({},form,{type:t}));},style:{padding:'6px 12px',borderRadius:20,border:'1.5px solid '+(sel?DN_PINK:BORDER),background:sel?DN_PINK:'white',color:sel?'white':TEXT,fontWeight:sel?700:500,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, t);
+              })
+            )
+          ),
+          e('div',{},
+            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}}, 'RATING'),
+            e('div',{style:{display:'flex',gap:8}},
+              [1,2,3,4,5].map(function(r){
+                return e('button',{key:r,onClick:function(){setForm(Object.assign({},form,{rating:r}));},style:{fontSize:24,cursor:'pointer',background:'none',border:'none',opacity:form.rating>=r?1:0.25,transition:'opacity 0.15s'}}, '★');
+              })
+            )
+          ),
+          e('div',{},
+            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:4}}, 'NOTE (optional)'),
+            e('textarea',{value:form.note,onInput:function(ev){setForm(Object.assign({},form,{note:ev.target.value}));},placeholder:'What did you do? Favorite moment?',rows:2,style:{width:'100%',padding:'8px 10px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:13,fontFamily:'inherit',resize:'none',boxSizing:'border-box'}})
+          ),
+          e('div',{style:{display:'flex',gap:8}},
+            e('button',{onClick:function(){setShowForm(false);},style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'white',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel'),
+            e('button',{onClick:saveEntry,style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:DN_PINK,color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Save Date Night 💑')
+          )
+        )
+      ) : null,
+
+      // history
+      sorted.length === 0 ? e('div',{style:{textAlign:'center',padding:'40px 20px',color:MUTED}},
+        e('div',{style:{fontSize:40,marginBottom:12}},'💑'),
+        e('div',{style:{fontSize:16,fontWeight:700,marginBottom:8}},'No date nights logged yet'),
+        e('div',{style:{fontSize:13}},"Tap + Log to add your first one"),
+        e('button',{onClick:function(){setShowForm(true);},style:{marginTop:16,padding:'10px 24px',borderRadius:12,border:'none',background:DN_PINK,color:'white',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '+ Log Date Night')
+      ) : Object.keys(byMonth).sort(function(a,b){return b.localeCompare(a);}).map(function(mk){
+        var label = new Date(mk+'-15').toLocaleDateString('en-US',{month:'long',year:'numeric'});
+        return e('div',{key:mk},
+          e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}, label),
+          e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+            byMonth[mk].map(function(n){
+              return e('div',{key:n.id,className:'card',style:{marginBottom:0,padding:'12px 14px'}},
+                e('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
+                  e('div',{style:{flex:1}},
+                    e('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
+                      e('div',{style:{fontSize:13,fontWeight:700,color:TEXT}}, fmtDate(n.date)),
+                      e('div',{style:{fontSize:11,fontWeight:700,color:DN_PINK,background:DN_PINK+'15',padding:'2px 8px',borderRadius:8}}, n.type)
+                    ),
+                    e('div',{style:{fontSize:14,color:'#F59E0B',letterSpacing:1}}, starStr(n.rating||5)),
+                    n.note ? e('div',{style:{fontSize:12,color:MUTED,marginTop:4}}, n.note) : null
+                  ),
+                  deleteId===n.id
+                    ? e('div',{style:{display:'flex',gap:6}},
+                        e('button',{onClick:function(){deleteEntry(n.id);},style:{fontSize:11,fontWeight:700,color:'white',background:'#EF4444',border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, 'Delete'),
+                        e('button',{onClick:function(){setDeleteId(null);},style:{fontSize:11,fontWeight:700,color:MUTED,background:CARD2,border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
+                      )
+                    : e('button',{onClick:function(){setDeleteId(n.id);},style:{fontSize:16,background:'none',border:'none',cursor:'pointer',color:MUTED,padding:4}}, '⋯')
+                )
+              );
+            })
+          )
+        );
+      })
+    )
+  );
+}
+
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, dateNights, setDateNights}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -1352,6 +1560,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
     e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog}),
     e(QuickShoppingCard, {groceries, setGroceries}),
+    e(DateNightCard, {dateNights, setDateNights, setTab}),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
@@ -7917,6 +8126,7 @@ function App() {
   const [cleaningItems, setCleaningItems] = useState(() => load('cleaningItems') || DEFAULT_CLEANING_HABITS);
   const [ideaLog, setIdeaLog] = useState(() => load('ideaLog') || []);
   const [backlog, setBacklog] = useState(() => load('backlog') || []);
+  const [dateNights, setDateNights] = useState(() => load('dateNights') || []);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
@@ -7962,8 +8172,8 @@ function App() {
       }
     });
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);save('habits',migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);save('habits',migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
@@ -8042,6 +8252,7 @@ function App() {
     {id:'areas',icon:'⊞',label:'Areas'},
     {id:'calendar',icon:'📅',label:'Google Calendar'},
     {id:'fitness',icon:'💪',label:'Fitness'},
+    {id:'datenights',icon:'💑',label:'Date Nights'},
     {id:'macros',icon:'🥗',label:'Macros'},
     {id:'foodpipeline',icon:'🍽️',label:'Food Pipeline'},
     {id:'photos',icon:'📸',label:'Progress Photos'},
@@ -8055,7 +8266,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,dateNights,setDateNights});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
@@ -8065,6 +8276,7 @@ function App() {
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog});
+      case 'datenights': return e(DateNightsScreen, {dateNights,setDateNights,setTab});
       case 'macros': return e(MacroScreen, {setTab});
       case 'foodpipeline': return e(FoodPipelineScreen, {setTab});
       case 'photos': return e(ProgressPhotosScreen, {setTab});
