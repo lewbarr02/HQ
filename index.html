@@ -1042,6 +1042,15 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
   }
 
   var [pickingGrocery, setPickingGrocery] = React.useState(false);
+  var [editingIdea, setEditingIdea] = React.useState(null); // id of idea being edited
+  var [editDraft, setEditDraft] = React.useState('');
+
+  function saveEdit(id) {
+    if (!editDraft.trim()) return;
+    var next = (ideaLog || []).map(function(i){ return i.id === id ? Object.assign({}, i, {text: editDraft.trim()}) : i; });
+    setIdeaLog(next); save('ideaLog', next);
+    setEditingIdea(null);
+  }
 
   function fileIdea(idea, dest, subId) {
     var text = idea.text;
@@ -1147,11 +1156,24 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
     expanded && allIdeas.length > 0 ? e('div', {style:{marginTop:10,display:'flex',flexDirection:'column',gap:6}},
       ...allIdeas.map(function(idea){
         var t = new Date(idea.time).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-        return e('div', {key:idea.id, style:{display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px',background:IDEA_ACCENT+'08',borderRadius:12,border:'1px solid '+IDEA_ACCENT+'20'}},
+        var isEditing = editingIdea === idea.id;
+        return e('div', {key:idea.id, style:{display:'flex',alignItems:'flex-start',gap:8,padding:'10px 12px',background:IDEA_ACCENT+'08',borderRadius:12,border:'1px solid '+(isEditing?IDEA_ACCENT+'60':IDEA_ACCENT+'20')}},
           e('div', {style:{flex:1}},
-            e('div', {style:{fontSize:13,color:TEXT,lineHeight:1.5}}, idea.text),
+            isEditing
+              ? e('input', {
+                  autoFocus:true,
+                  value:editDraft,
+                  onChange:function(ev){setEditDraft(ev.target.value);},
+                  onKeyDown:function(ev){ if(ev.key==='Enter') saveEdit(idea.id); if(ev.key==='Escape'){setEditingIdea(null);} },
+                  onBlur:function(){ saveEdit(idea.id); },
+                  style:{width:'100%',fontSize:13,padding:'4px 8px',borderRadius:8,border:'1.5px solid '+IDEA_ACCENT,fontFamily:'inherit',outline:'none'}
+                })
+              : e('div', {style:{fontSize:13,color:TEXT,lineHeight:1.5}}, idea.text),
             e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, idea.date === td ? 'Today · '+t : idea.date+' · '+t)
           ),
+          isEditing
+            ? e('button', {onClick:function(){ saveEdit(idea.id); }, style:{background:IDEA_ACCENT+'20',border:'none',borderRadius:8,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:IDEA_ACCENT,fontWeight:700}}, '✓')
+            : e('button', {onClick:function(){ setEditingIdea(idea.id); setEditDraft(idea.text); }, title:'Edit', style:{background:'none',border:'none',borderRadius:8,padding:'5px 6px',fontSize:13,cursor:'pointer',flexShrink:0,color:MUTED}}, '✏️'),
           e('button', {onClick:function(){ setSortingIdea(idea); setPickingProject(false); }, title:'Sort to a list', style:{background:'#F9731618',border:'none',borderRadius:8,padding:'5px 8px',fontSize:12,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:'#F97316',fontWeight:700}}, 'Sort →'),
           e('button', {onClick:function(){ discussIdea(idea); }, title:'Discuss with Claude', style:{background:PURPLE+'12',border:'none',borderRadius:8,padding:'5px 8px',fontSize:13,cursor:'pointer',flexShrink:0,fontFamily:'inherit',color:PURPLE,fontWeight:700}}, '💬'),
           e('button', {onClick:function(){ deleteIdea(idea.id); }, style:{background:'none',border:'none',color:MUTED,fontSize:14,cursor:'pointer',padding:'4px',flexShrink:0}}, '✕')
