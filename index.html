@@ -3338,6 +3338,7 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog,
   var [year,setYear]=useState(now.getFullYear());
   var [month,setMonth]=useState(now.getMonth());
   var [activeTab,setActiveTab]=useState('overview');
+  var [winsFilter,setWinsFilter]=useState('week');
   var days=getDIM(year,month);
 
   var habitData=habits.map(function(h){
@@ -3572,9 +3573,6 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog,
         }
       }
       allWins.sort(function(a,b){return b.date.localeCompare(a.date);});
-
-      // Week / Month / All filter
-      var [winsFilter, setWinsFilter] = useState('week');
 
       var startOf = {
         week: (function(){
