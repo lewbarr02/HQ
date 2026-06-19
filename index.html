@@ -739,7 +739,7 @@ function FlowStateCard({flowLog, setFlowLog, routineLog, flowModal, setFlowModal
   }
 
   function enterFlow() {
-    Notification.requestPermission();
+    if (typeof Notification !== 'undefined' && Notification.requestPermission) Notification.requestPermission();
     var s = {id: Date.now().toString(), date: td, startTime: new Date().toISOString(), endTime: null, checkIns: [], endQuality: null};
     var next = [...sessions, s];
     setFlowLog(next); save('flowLog', next);
