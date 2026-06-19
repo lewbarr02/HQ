@@ -1564,7 +1564,7 @@ function DateNightsScreen({dateNights, setDateNights, setTab}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, dateNights, setDateNights, homeItems, setHomeItems}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -1683,6 +1683,33 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
       e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
     ),
+    (function(){
+      var pending = (returns||[]).filter(function(r){return !r.done;});
+      if(!pending.length) return null;
+      var soonest = pending.reduce(function(best,r){
+        if(!r.deadline) return best;
+        if(!best || r.deadline < best) return r.deadline;
+        return best;
+      }, null);
+      var daysLeft = soonest ? Math.ceil((new Date(soonest+'T23:59:59')-new Date())/86400000) : null;
+      var urgent = daysLeft !== null && daysLeft <= 3;
+      var bg = urgent ? '#FEF2F2' : '#FFFBEB';
+      var border = urgent ? '#FCA5A5' : '#FCD34D';
+      var dot = urgent ? '#EF4444' : '#F59E0B';
+      var dlText = daysLeft === null ? '' : daysLeft < 0 ? ' · ⚠️ OVERDUE' : daysLeft === 0 ? ' · Due TODAY' : daysLeft === 1 ? ' · 1 day left' : ' · '+daysLeft+' days left';
+      return e('button', {
+        onClick:function(){setTab('returns');},
+        style:{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'14px 16px',borderRadius:16,border:'2px solid '+border,background:bg,cursor:'pointer',fontFamily:'inherit',textAlign:'left',marginBottom:16,boxShadow:urgent?'0 2px 12px rgba(239,68,68,0.15)':'0 2px 8px rgba(245,158,11,0.1)'}
+      },
+        e('div', {style:{width:10,height:10,borderRadius:'50%',background:dot,flexShrink:0,boxShadow:'0 0 0 3px '+dot+'30'}}),
+        e('div', {style:{flex:1,minWidth:0}},
+          e('div', {style:{fontSize:14,fontWeight:800,color:TEXT}}, '📦 '+pending.length+' item'+(pending.length!==1?'s':'')+' to return'+dlText),
+          e('div', {style:{fontSize:12,color:MUTED,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, pending.map(function(r){return r.item;}).join(' · '))
+        ),
+        e('span', {style:{color:MUTED,fontSize:16,flexShrink:0}}, '›')
+      );
+    })(),
+
     e('div', {style:{marginBottom:16}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Routines'),
       e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
@@ -3091,6 +3118,112 @@ function GoalsScreen({goals, setGoals, projects, setProjects, setTab, backlog, s
             })
           )
     )
+  );
+}
+
+// ─── RETURNS TRACKER ──────────────────────────────────────────────────────────
+function ReturnsScreen({returns, setReturns, setTab}) {
+  const [adding, setAdding] = useState(false);
+  const [item, setItem] = useState('');
+  const [store, setStore] = useState('');
+  const [deadline, setDeadline] = useState('');
+  const [showDone, setShowDone] = useState(false);
+
+  function addReturn() {
+    if(!item.trim()) return;
+    var next = [...returns, {id:Date.now().toString(), item:item.trim(), store:store.trim(), deadline:deadline, done:false}];
+    setReturns(next); save('returns', next);
+    setItem(''); setStore(''); setDeadline(''); setAdding(false);
+  }
+
+  function toggleDone(id) {
+    var next = returns.map(function(r){ return r.id===id ? Object.assign({},r,{done:!r.done}) : r; });
+    setReturns(next); save('returns', next);
+  }
+
+  function remove(id) {
+    var next = returns.filter(function(r){ return r.id!==id; });
+    setReturns(next); save('returns', next);
+  }
+
+  function daysLeft(dl) {
+    if(!dl) return null;
+    var diff = Math.ceil((new Date(dl+'T23:59:59') - new Date()) / 86400000);
+    return diff;
+  }
+
+  var pending = returns.filter(function(r){return !r.done;});
+  var done = returns.filter(function(r){return r.done;});
+
+  return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,marginBottom:20}},
+      e('div', {style:{flex:1}},
+        e('div', {style:{fontSize:22,fontWeight:800,color:TEXT}}, '📦 Returns'),
+        e('div', {style:{fontSize:13,color:MUTED,marginTop:2}}, pending.length+' item'+(pending.length!==1?'s':'')+' need returning')
+      ),
+      e('button', {onClick:function(){setAdding(true);}, style:{padding:'9px 16px',borderRadius:12,border:'none',background:PURPLE,color:'white',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, '+ Add')
+    ),
+
+    adding ? e('div', {style:{background:'#fff',borderRadius:16,padding:16,border:'1.5px solid '+BORDER,marginBottom:16,boxShadow:'0 2px 12px rgba(100,80,220,0.08)'}},
+      e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:12}}, 'New Return'),
+      e('input', {className:'input',placeholder:'Item (e.g. Blue shirt from Amazon)',value:item,onInput:function(ev){setItem(ev.target.value);},style:{marginBottom:8,fontSize:14}}),
+      e('input', {className:'input',placeholder:'Store / Retailer (optional)',value:store,onInput:function(ev){setStore(ev.target.value);},style:{marginBottom:8,fontSize:14}}),
+      e('div', {style:{marginBottom:12}},
+        e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:6}}, 'Return deadline'),
+        e('input', {type:'date',value:deadline,onChange:function(ev){setDeadline(ev.target.value);},style:{width:'100%',padding:'10px 12px',borderRadius:12,border:'1.5px solid '+BORDER,fontSize:14,fontFamily:'inherit',background:'#fff',color:TEXT,boxSizing:'border-box'}})
+      ),
+      e('div', {style:{display:'flex',gap:8}},
+        e('button', {onClick:addReturn, style:{flex:1,padding:'11px',borderRadius:12,border:'none',background:PURPLE,color:'white',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Save'),
+        e('button', {onClick:function(){setAdding(false);setItem('');setStore('');setDeadline('');}, style:{padding:'11px 16px',borderRadius:12,border:'1.5px solid '+BORDER,background:'none',color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
+      )
+    ) : null,
+
+    pending.length === 0 && !adding ?
+      e('div', {style:{textAlign:'center',padding:'48px 24px',color:MUTED}},
+        e('div', {style:{fontSize:40,marginBottom:12}}, '✅'),
+        e('div', {style:{fontSize:16,fontWeight:700,color:TEXT,marginBottom:6}}, 'Nothing to return!'),
+        e('div', {style:{fontSize:14}}, "You're all caught up.")
+      ) :
+
+    e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
+      ...pending.map(function(r){
+        var dl = daysLeft(r.deadline);
+        var urgent = dl !== null && dl <= 3;
+        var warning = dl !== null && dl <= 7 && dl > 3;
+        var dlColor = urgent ? '#EF4444' : warning ? '#F59E0B' : '#10B981';
+        var dlLabel = dl === null ? null : dl < 0 ? '⚠️ EXPIRED' : dl === 0 ? '⚠️ Due TODAY' : dl === 1 ? '⚠️ Due TOMORROW' : dl+' days left';
+        return e('div', {key:r.id, style:{background:'#fff',borderRadius:16,padding:'14px 16px',border:'1.5px solid '+(urgent?'#FCA5A5':warning?'#FCD34D':BORDER),boxShadow:urgent?'0 2px 12px rgba(239,68,68,0.1)':'0 1px 4px rgba(0,0,0,0.05)'}},
+          e('div', {style:{display:'flex',alignItems:'flex-start',gap:10}},
+            e('button', {onClick:function(){toggleDone(r.id);}, style:{width:22,height:22,borderRadius:7,flexShrink:0,border:'2px solid '+(PURPLE),background:'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',marginTop:2}}, null),
+            e('div', {style:{flex:1,minWidth:0}},
+              e('div', {style:{fontSize:15,fontWeight:700,color:TEXT,marginBottom:r.store||r.deadline?4:0,lineHeight:1.3}}, r.item),
+              r.store ? e('div', {style:{fontSize:12,color:MUTED,marginBottom:r.deadline?3:0}}, '🏪 '+r.store) : null,
+              r.deadline ? e('div', {style:{fontSize:12,fontWeight:700,color:dlColor}}, dlLabel) : null
+            ),
+            e('button', {onClick:function(){remove(r.id);}, style:{background:'none',border:'none',color:MUTED,fontSize:18,cursor:'pointer',padding:'0 2px',lineHeight:1,flexShrink:0}}, '×')
+          )
+        );
+      })
+    ),
+
+    done.length > 0 ? e('div', {style:{marginTop:20}},
+      e('button', {onClick:function(){setShowDone(function(v){return !v;});}, style:{background:'none',border:'none',color:MUTED,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',padding:0,marginBottom:10}},
+        (showDone?'▾ ':'▸ ')+'Returned ('+done.length+')'
+      ),
+      showDone ? e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+        ...done.map(function(r){
+          return e('div', {key:r.id, style:{background:'#F9FAFB',borderRadius:14,padding:'12px 14px',border:'1.5px solid #E5E7EB',opacity:0.7,display:'flex',alignItems:'center',gap:10}},
+            e('span', {style:{fontSize:16}}, '✅'),
+            e('div', {style:{flex:1,minWidth:0}},
+              e('div', {style:{fontSize:14,fontWeight:600,color:MUTED,textDecoration:'line-through'}}, r.item),
+              r.store ? e('div', {style:{fontSize:11,color:MUTED}}, r.store) : null
+            ),
+            e('button', {onClick:function(){toggleDone(r.id);}, style:{background:'none',border:'none',color:MUTED,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',padding:0}}, 'Undo'),
+            e('button', {onClick:function(){remove(r.id);}, style:{background:'none',border:'none',color:'#FCA5A5',fontSize:16,cursor:'pointer',padding:'0 2px',lineHeight:1}}, '×')
+          );
+        })
+      ) : null
+    ) : null
   );
 }
 
@@ -8640,6 +8773,7 @@ function App() {
   const [backlog, setBacklog] = useState(() => load('backlog') || []);
   const [dateNights, setDateNights] = useState(() => load('dateNights') || []);
   const [homeItems, setHomeItems] = useState(() => load('homeItems') || []);
+  const [returns, setReturns] = useState(() => load('returns') || []);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
@@ -8770,6 +8904,7 @@ function App() {
     {id:'foodpipeline',icon:'🍽️',label:'Food Pipeline'},
     {id:'photos',icon:'📸',label:'Progress Photos'},
     {id:'grocery',icon:'🛒',label:'Shopping'},
+    {id:'returns',icon:'📦',label:'Returns'},
     {id:'notes',icon:'📝',label:'Notes'},
     {id:'time',icon:'⏱️',label:'Time'},
     {id:'review',icon:'📊',label:'Review'},
@@ -8779,7 +8914,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,dateNights,setDateNights,homeItems,setHomeItems});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
@@ -8796,6 +8931,7 @@ function App() {
       case 'photos': return e(ProgressPhotosScreen, {setTab});
       case 'notifications': return e(NotificationsScreen, {setTab});
       case 'grocery': return e(ShoppingScreen, {groceries,setGroceries,inventory,setInventory,setTab});
+      case 'returns': return e(ReturnsScreen, {returns,setReturns,setTab});
       case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump,setTab});
       case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,eveningLog,middayLog,morningItems,eveningItems,setTab});
       case 'data': return e(DataScreen, {habits,habitLog,timeLog,goals,projects,notes,groceries,brainDump,setHabits,setHabitLog,setTimeLog,setGoals,setProjects,setNotes,setGroceries,setBrainDump,setTab});
