@@ -963,10 +963,16 @@ var SHOP_LISTS = [
   {id:'amazon', label:'Amazon', emoji:'📦', color:'#F97316'},
 ];
 
-function QuickShoppingCard({groceries, setGroceries}) {
+function QuickShoppingCard({groceries, setGroceries, returns, setReturns, setTab}) {
   var [input, setInput] = React.useState('');
   var [sent, setSent] = React.useState(null);
+  var [addingReturn, setAddingReturn] = React.useState(false);
+  var [retItem, setRetItem] = React.useState('');
+  var [retStore, setRetStore] = React.useState('');
+  var [retDeadline, setRetDeadline] = React.useState('');
   var inputRef = React.useRef(null);
+
+  var pendingReturns = (returns||[]).filter(function(r){return !r.done;});
 
   function addToList(listId) {
     var text = input.trim();
@@ -980,11 +986,72 @@ function QuickShoppingCard({groceries, setGroceries}) {
     if(inputRef.current) inputRef.current.focus();
   }
 
+  function saveReturn() {
+    if(!retItem.trim()) return;
+    var next = [...(returns||[]), {id:Date.now().toString(), item:retItem.trim(), store:retStore.trim(), deadline:retDeadline, done:false}];
+    setReturns(next); save('returns', next);
+    setRetItem(''); setRetStore(''); setRetDeadline(''); setAddingReturn(false);
+  }
+
+  function markReturnDone(id) {
+    var next = (returns||[]).map(function(r){return r.id===id?Object.assign({},r,{done:true}):r;});
+    setReturns(next); save('returns', next);
+  }
+
+  function daysLeft(dl) {
+    if(!dl) return null;
+    return Math.ceil((new Date(dl+'T23:59:59')-new Date())/86400000);
+  }
+
   return e('div', {style:{background:'#fff',border:'1px solid rgba(255,107,157,0.3)',borderRadius:18,padding:14,marginBottom:12,position:'relative'}},
     sent ? e('div', {style:{position:'absolute',inset:0,borderRadius:18,background:'rgba(255,255,255,0.95)',zIndex:5,display:'flex',alignItems:'center',justifyContent:'center',gap:8,fontSize:14,fontWeight:700,color:TEXT}},
       '✓ Added to ', e('span', {style:{color:'#FF6B9D'}}, sent)
     ) : null,
-    e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, '🛒 Shopping'),
+
+    // Header row
+    e('div', {style:{display:'flex',alignItems:'center',marginBottom:10}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,flex:1}}, '🛒 Shopping'),
+      pendingReturns.length > 0 ? e('button', {
+        onClick:function(){setTab('returns');},
+        style:{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,background:'#EF444415',border:'1.5px solid #EF444440',cursor:'pointer',fontFamily:'inherit'}
+      },
+        e('span', {style:{fontSize:10,fontWeight:800,color:'#EF4444'}}, '📦 '+pendingReturns.length+' to return')
+      ) : null
+    ),
+
+    // Quick-add return form
+    addingReturn ? e('div', {style:{background:'#FEF2F2',borderRadius:14,padding:12,marginBottom:10,border:'1.5px solid #FCA5A5'}},
+      e('div', {style:{fontSize:12,fontWeight:700,color:'#EF4444',marginBottom:8}}, '📦 Add Return'),
+      e('input', {className:'input',placeholder:'Item to return',value:retItem,onInput:function(ev){setRetItem(ev.target.value);},style:{marginBottom:6,fontSize:13}}),
+      e('input', {className:'input',placeholder:'Store (optional)',value:retStore,onInput:function(ev){setRetStore(ev.target.value);},style:{marginBottom:6,fontSize:13}}),
+      e('input', {type:'date',value:retDeadline,onChange:function(ev){setRetDeadline(ev.target.value);},style:{width:'100%',padding:'8px 12px',borderRadius:10,border:'1.5px solid #FCA5A5',fontSize:13,fontFamily:'inherit',background:'#fff',color:TEXT,boxSizing:'border-box',marginBottom:8}}),
+      e('div', {style:{display:'flex',gap:6}},
+        e('button', {onClick:saveReturn,style:{flex:1,padding:'9px',borderRadius:10,border:'none',background:'#EF4444',color:'white',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Save'),
+        e('button', {onClick:function(){setAddingReturn(false);setRetItem('');setRetStore('');setRetDeadline('');},style:{padding:'9px 14px',borderRadius:10,border:'1.5px solid #FCA5A5',background:'none',color:'#EF4444',fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
+      )
+    ) : null,
+
+    // Pending returns list (compact)
+    pendingReturns.length > 0 && !addingReturn ? e('div', {style:{marginBottom:10}},
+      ...pendingReturns.map(function(r){
+        var dl = daysLeft(r.deadline);
+        var urgent = dl !== null && dl <= 3;
+        var dlLabel = dl === null ? '' : dl < 0 ? ' · OVERDUE' : dl === 0 ? ' · Today!' : dl === 1 ? ' · Tomorrow' : ' · '+dl+'d left';
+        return e('div', {key:r.id, style:{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:10,background:urgent?'#FEF2F2':'#FFF7ED',border:'1px solid '+(urgent?'#FCA5A5':'#FCD34D'),marginBottom:5}},
+          e('span', {style:{fontSize:13,flex:1,fontWeight:600,color:TEXT,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, r.item+(r.store?' · '+r.store:'')),
+          r.deadline ? e('span', {style:{fontSize:11,fontWeight:700,color:urgent?'#EF4444':'#D97706',flexShrink:0}}, dlLabel) : null,
+          e('button', {onClick:function(){markReturnDone(r.id);},style:{background:'none',border:'none',fontSize:16,cursor:'pointer',padding:'0 2px',lineHeight:1,flexShrink:0}}, '✓')
+        );
+      })
+    ) : null,
+
+    // Add return button (when no form open)
+    !addingReturn ? e('button', {
+      onClick:function(){setAddingReturn(true);},
+      style:{width:'100%',padding:'7px',borderRadius:10,border:'1.5px dashed #FCA5A580',background:'none',color:'#EF4444',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:10}
+    }, '+ Add Return') : null,
+
+    // Shopping input
     e('input', {
       ref: inputRef,
       value: input,
@@ -1683,33 +1750,6 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
       e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
     ),
-    (function(){
-      var pending = (returns||[]).filter(function(r){return !r.done;});
-      if(!pending.length) return null;
-      var soonest = pending.reduce(function(best,r){
-        if(!r.deadline) return best;
-        if(!best || r.deadline < best) return r.deadline;
-        return best;
-      }, null);
-      var daysLeft = soonest ? Math.ceil((new Date(soonest+'T23:59:59')-new Date())/86400000) : null;
-      var urgent = daysLeft !== null && daysLeft <= 3;
-      var bg = urgent ? '#FEF2F2' : '#FFFBEB';
-      var border = urgent ? '#FCA5A5' : '#FCD34D';
-      var dot = urgent ? '#EF4444' : '#F59E0B';
-      var dlText = daysLeft === null ? '' : daysLeft < 0 ? ' · ⚠️ OVERDUE' : daysLeft === 0 ? ' · Due TODAY' : daysLeft === 1 ? ' · 1 day left' : ' · '+daysLeft+' days left';
-      return e('button', {
-        onClick:function(){setTab('returns');},
-        style:{display:'flex',alignItems:'center',gap:12,width:'100%',padding:'14px 16px',borderRadius:16,border:'2px solid '+border,background:bg,cursor:'pointer',fontFamily:'inherit',textAlign:'left',marginBottom:16,boxShadow:urgent?'0 2px 12px rgba(239,68,68,0.15)':'0 2px 8px rgba(245,158,11,0.1)'}
-      },
-        e('div', {style:{width:10,height:10,borderRadius:'50%',background:dot,flexShrink:0,boxShadow:'0 0 0 3px '+dot+'30'}}),
-        e('div', {style:{flex:1,minWidth:0}},
-          e('div', {style:{fontSize:14,fontWeight:800,color:TEXT}}, '📦 '+pending.length+' item'+(pending.length!==1?'s':'')+' to return'+dlText),
-          e('div', {style:{fontSize:12,color:MUTED,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, pending.map(function(r){return r.item;}).join(' · '))
-        ),
-        e('span', {style:{color:MUTED,fontSize:16,flexShrink:0}}, '›')
-      );
-    })(),
-
     e('div', {style:{marginBottom:16}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Routines'),
       e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
@@ -1785,7 +1825,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
     ),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
     e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog}),
-    e(QuickShoppingCard, {groceries, setGroceries}),
+    e(QuickShoppingCard, {groceries, setGroceries, returns, setReturns, setTab}),
     e(DateNightCard, {dateNights, setDateNights, setTab}),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
