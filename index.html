@@ -1562,6 +1562,8 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
     return v <= 12 && v > 0 ? Math.round(v/12*100) : v;
   });
   const [sleep, setSleep] = useState(() => parseFloat(localStorage.getItem('hq_sleep_'+td)||'0'));
+  const [wins, setWins] = useState(() => JSON.parse(localStorage.getItem('hq_wins_'+td)||'[]'));
+  const [winDraft, setWinDraft] = useState('');
   const [intentEditing, setIntentEditing] = useState(false);
   const [intentFocusDraft, setIntentFocusDraft] = useState('');
   const [intentEnergyDraft, setIntentEnergyDraft] = useState(null);
@@ -1575,6 +1577,8 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
     var wv = parseInt(localStorage.getItem('hq_water_'+qlDate)||'0');
     setWater(wv <= 12 && wv > 0 ? Math.round(wv/12*100) : wv);
     setSleep(parseFloat(localStorage.getItem('hq_sleep_'+qlDate)||'0'));
+    setWins(JSON.parse(localStorage.getItem('hq_wins_'+qlDate)||'[]'));
+    setWinDraft('');
   }, [qlDate]);
 
   useEffect(() => {
@@ -2049,6 +2053,44 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
             style:{padding:'8px 16px',borderRadius:12,border:'1.5px solid rgba(100,80,220,0.18)',background:CARD2,color:MUTED,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
           }, 'Reset') : null
         )
+      ),
+      e('div', {style:{marginBottom:14}},
+        e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '🏆 SMALL WINS'),
+        e('div', {style:{display:'flex',gap:6,marginBottom:8}},
+          e('input', {
+            className:'input',
+            placeholder:'What did you get done today?',
+            value:winDraft,
+            onInput:function(ev){setWinDraft(ev.target.value);},
+            onKeyDown:function(ev){
+              if(ev.key==='Enter' && winDraft.trim()){
+                var next=[...wins,{id:Date.now().toString(),text:winDraft.trim()}];
+                setWins(next);localStorage.setItem('hq_wins_'+qlDate,JSON.stringify(next));setWinDraft('');
+              }
+            },
+            style:{marginBottom:0,flex:1,fontSize:13},
+          }),
+          e('button', {
+            onClick:function(){
+              if(!winDraft.trim()) return;
+              var next=[...wins,{id:Date.now().toString(),text:winDraft.trim()}];
+              setWins(next);localStorage.setItem('hq_wins_'+qlDate,JSON.stringify(next));setWinDraft('');
+            },
+            style:{padding:'10px 16px',borderRadius:12,border:'none',background:ACCENT,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',flexShrink:0}
+          }, '+')
+        ),
+        wins.length > 0 ? e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
+          ...wins.map(function(w){
+            return e('div', {key:w.id, style:{display:'flex',alignItems:'center',gap:8,background:'rgba(0,198,255,0.06)',borderRadius:10,padding:'8px 10px',border:'1px solid rgba(0,198,255,0.15)'}},
+              e('span', {style:{fontSize:14,flexShrink:0}}, '✅'),
+              e('span', {style:{fontSize:13,color:TEXT,flex:1,lineHeight:1.4}}, w.text),
+              e('button', {onClick:function(){
+                var next=wins.filter(function(x){return x.id!==w.id;});
+                setWins(next);localStorage.setItem('hq_wins_'+qlDate,JSON.stringify(next));
+              }, style:{background:'none',border:'none',fontSize:14,color:MUTED,cursor:'pointer',padding:'0 2px',lineHeight:1}}, '×')
+            );
+          })
+        ) : null
       ),
       e('div', {},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
@@ -4612,6 +4654,8 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
   const priorities = load('priorities') || [];
   const todayPriorities = priorities.filter(p => !p.done);
   const [wins, setWins] = useState({});
+  const [freeWins, setFreeWins] = useState([]);
+  const [winText, setWinText] = useState('');
 
   useEffect(function(){ setTimeout(function(){ setShow(true); }, 50); }, []);
 
@@ -4627,6 +4671,12 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
     };
     setMiddayLog(newLog);
     save('middayLog', newLog);
+    // Merge freeWins into the daily wins log
+    if (freeWins.length > 0) {
+      var existing = JSON.parse(localStorage.getItem('hq_wins_'+td)||'[]');
+      var merged = existing.concat(freeWins);
+      localStorage.setItem('hq_wins_'+td, JSON.stringify(merged));
+    }
     onDone();
   }
 
@@ -4693,6 +4743,44 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
           );
         })
       ) : null,
+
+      // Free-text small wins
+      e('div', {style:{marginBottom:24}},
+        e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:4,textAlign:'left'}}, '🏆 Any small wins from the morning?'),
+        e('div', {style:{fontSize:12,color:MUTED,marginBottom:10,textAlign:'left'}}, 'Worked out, finished a task, made progress — it counts.'),
+        e('div', {style:{display:'flex',gap:6,marginBottom:8}},
+          e('input', {
+            className:'input',
+            placeholder:'e.g. Finished the report, worked out...',
+            value:winText,
+            onInput:function(ev){setWinText(ev.target.value);},
+            onKeyDown:function(ev){
+              if(ev.key==='Enter'&&winText.trim()){
+                var next=[...freeWins,{id:Date.now().toString(),text:winText.trim()}];
+                setFreeWins(next);setWinText('');
+              }
+            },
+            style:{marginBottom:0,flex:1,fontSize:13},
+          }),
+          e('button', {
+            onClick:function(){
+              if(!winText.trim()) return;
+              var next=[...freeWins,{id:Date.now().toString(),text:winText.trim()}];
+              setFreeWins(next);setWinText('');
+            },
+            style:{padding:'10px 14px',borderRadius:12,border:'none',background:MIDDAY,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',flexShrink:0}
+          }, '+')
+        ),
+        freeWins.length > 0 ? e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
+          ...freeWins.map(function(w){
+            return e('div', {key:w.id, style:{display:'flex',alignItems:'center',gap:8,background:'rgba(245,158,11,0.06)',borderRadius:10,padding:'8px 10px',border:'1px solid rgba(245,158,11,0.2)'}},
+              e('span', {style:{fontSize:14,flexShrink:0}}, '✅'),
+              e('span', {style:{fontSize:13,color:TEXT,flex:1,lineHeight:1.4}}, w.text),
+              e('button', {onClick:function(){setFreeWins(freeWins.filter(function(x){return x.id!==w.id;}));}, style:{background:'none',border:'none',fontSize:14,color:MUTED,cursor:'pointer',padding:'0 2px'}}, '×')
+            );
+          })
+        ) : null
+      ),
 
       // Afternoon focus
       e('div', {style:{marginBottom:20}},
