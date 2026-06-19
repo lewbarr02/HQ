@@ -3333,7 +3333,7 @@ function NotesScreen({notes, setNotes, brainDump, setBrainDump, setTab}) {
   );
 }
 
-function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog, middayLog, morningItems, eveningItems, setTab}) {
+function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog, middayLog, morningItems, eveningItems, setTab, winsData}) {
   var now=new Date();
   var [year,setYear]=useState(now.getFullYear());
   var [month,setMonth]=useState(now.getMonth());
@@ -3420,7 +3420,8 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog,
     e('div', {style:{display:'flex',gap:8,marginBottom:16}},
       e('button', {onClick:function(){setActiveTab('overview');}, style:{flex:1,padding:'9px 0',borderRadius:12,border:'none',background:activeTab==='overview'?ACCENT:'#F0F2F8',color:activeTab==='overview'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '📈 Overview'),
       e('button', {onClick:function(){setActiveTab('blockers');}, style:{flex:1,padding:'9px 0',borderRadius:12,border:'none',background:activeTab==='blockers'?'#FF6B6B':'#F0F2F8',color:activeTab==='blockers'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}},
-        '⚠️ Blockers'+(totalBlockerDays>0?' ('+totalBlockerDays+')':''))
+        '⚠️ Blockers'+(totalBlockerDays>0?' ('+totalBlockerDays+')':'')),
+      e('button', {onClick:function(){setActiveTab('wins');}, style:{flex:1,padding:'9px 0',borderRadius:12,border:'none',background:activeTab==='wins'?'#00C864':'#F0F2F8',color:activeTab==='wins'?'#fff':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '🏆 Wins')
     ),
 
     activeTab==='overview' ? e('div', {},
@@ -3551,7 +3552,93 @@ function ReviewScreen({habits, habitLog, timeLog, goals, routineLog, eveningLog,
       ) : null,
 
       e('div', {style:{height:20}})
-    ) : null
+    ) : null,
+
+    activeTab==='wins' ? (function(){
+      var WIN_GREEN = '#00C864';
+      var now = new Date();
+      var todayStr = today();
+
+      // Build all wins from localStorage
+      var allWins = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.startsWith('hq_wins_')) {
+          var dateStr = k.replace('hq_wins_','');
+          try {
+            var dayWins = JSON.parse(localStorage.getItem(k) || '[]');
+            if (dayWins.length > 0) allWins.push({date: dateStr, wins: dayWins});
+          } catch(ex) {}
+        }
+      }
+      allWins.sort(function(a,b){return b.date.localeCompare(a.date);});
+
+      // Week / Month / All filter
+      var [winsFilter, setWinsFilter] = useState('week');
+
+      var startOf = {
+        week: (function(){
+          var d = new Date(now); d.setDate(d.getDate() - d.getDay()); return d.toISOString().slice(0,10);
+        })(),
+        month: todayStr.slice(0,7)+'-01',
+        quarter: (function(){
+          var qStart = Math.floor(now.getMonth()/3)*3;
+          return now.getFullYear()+'-'+String(qStart+1).padStart(2,'0')+'-01';
+        })(),
+        all: '0000-00-00',
+      };
+
+      var filtered = allWins.filter(function(d){ return d.date >= startOf[winsFilter]; });
+      var totalCount = filtered.reduce(function(s,d){return s+d.wins.length;},0);
+
+      return e('div', {},
+        // Filter pills
+        e('div', {style:{display:'flex',gap:6,marginBottom:16}},
+          ...['week','month','quarter','all'].map(function(f){
+            var labels = {week:'This Week',month:'This Month',quarter:'This Quarter',all:'All Time'};
+            var active = winsFilter===f;
+            return e('button', {key:f, onClick:function(){setWinsFilter(f);}, style:{
+              flex:1, padding:'7px 0', borderRadius:12, border:'none',
+              background: active?WIN_GREEN:'#F0F2F8',
+              color: active?'#fff':MUTED,
+              fontWeight:700, fontSize:11, cursor:'pointer', fontFamily:'inherit'
+            }}, labels[f]);
+          })
+        ),
+
+        // Summary count
+        e('div', {style:{textAlign:'center',marginBottom:16}},
+          e('div', {style:{fontSize:36,fontWeight:800,color:WIN_GREEN}}, totalCount),
+          e('div', {style:{fontSize:12,color:MUTED,fontWeight:700,textTransform:'uppercase',letterSpacing:1}}, 'wins logged')
+        ),
+
+        filtered.length === 0
+          ? e('div', {className:'card', style:{textAlign:'center',padding:'40px 16px'}},
+              e('div', {style:{fontSize:36,marginBottom:8}}, '🏆'),
+              e('div', {style:{fontSize:15,fontWeight:700,color:TEXT,marginBottom:6}}, 'No wins logged yet'),
+              e('div', {style:{fontSize:13,color:MUTED}}, 'Add wins in the Daily Log — anything counts.')
+            )
+          : e('div', {},
+              ...filtered.map(function(day){
+                var d = new Date(day.date+'T12:00:00');
+                var isToday = day.date === todayStr;
+                var label = isToday ? 'Today' : d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+                return e('div', {key:day.date, className:'card', style:{marginBottom:12}},
+                  e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:isToday?WIN_GREEN:MUTED,marginBottom:10}}, label),
+                  e('div', {style:{display:'flex',flexDirection:'column',gap:7}},
+                    ...day.wins.map(function(w){
+                      return e('div', {key:w.id, style:{display:'flex',alignItems:'flex-start',gap:8}},
+                        e('span', {style:{fontSize:14,flexShrink:0,marginTop:1}}, '✅'),
+                        e('span', {style:{fontSize:14,color:TEXT,lineHeight:1.5}}, w.text)
+                      );
+                    })
+                  )
+                );
+              })
+            ),
+        e('div', {style:{height:20}})
+      );
+    })() : null
   );
 }
 
