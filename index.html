@@ -4129,10 +4129,13 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
   const [sleepHours, setSleepHours] = useState('');
   const [sleepMins, setSleepMins] = useState('');
   const [show, setShow] = useState(false);
+  const [phase, setPhase] = useState('checkin');
+  const [calEvents, setCalEvents] = useState(null);
+  const [selectedTime, setSelectedTime] = useState(null);
 
   useEffect(function(){ setTimeout(function(){setShow(true);}, 50); }, []);
 
-  function handleDone() {
+  function saveCheckinData() {
     var newLog = Object.assign({}, routineLog);
     if(energy) newLog[td+'_energy'] = energy;
     if(focus.trim()) newLog[td+'_focus'] = focus.trim();
@@ -4141,7 +4144,111 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
     var h = parseFloat(sleepHours)||0;
     var m = parseFloat(sleepMins)||0;
     if(h || m) localStorage.setItem('hq_sleep_'+td, String(h + m/60));
+  }
+
+  function handleDone() {
+    saveCheckinData();
+    if(focus.trim()) {
+      setPhase('lockin');
+      gcalFetchToday().then(function(evs){ setCalEvents(evs); });
+    } else {
+      onDone();
+    }
+  }
+
+  function focusFuzzyMatch(evs) {
+    if(!evs || !evs.length || !focus.trim()) return null;
+    var words = focus.trim().toLowerCase().split(/\s+/).filter(function(w){return w.length>2;});
+    return evs.find(function(ev){
+      var title = (ev.title||'').toLowerCase();
+      return words.some(function(w){return title.includes(w);});
+    }) || null;
+  }
+
+  function fmtEventTime(ev) {
+    if(ev.allDay) return 'All day';
+    var s = new Date(ev.start);
+    var en = new Date(ev.end);
+    return s.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) + ' – ' + en.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  }
+
+  function openGcalWithFocus(timeStr) {
+    var now = new Date();
+    var parts = timeStr.match(/^(\d+):(\d+)\s+(AM|PM)$/i);
+    var hh = parseInt(parts[1]), mm = parseInt(parts[2]), ampm = parts[3].toUpperCase();
+    if(ampm==='PM' && hh!==12) hh+=12;
+    if(ampm==='AM' && hh===12) hh=0;
+    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm);
+    var end = new Date(start.getTime() + 60*60*1000);
+    function fmt(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+'00';}
+    window.open('https://calendar.google.com/calendar/r/eventedit?text='+encodeURIComponent(focus.trim())+'&dates='+fmt(start)+'/'+fmt(end), '_blank');
     onDone();
+  }
+
+  function isSlotOccupied(timeStr, evs) {
+    if(!evs) return false;
+    var parts = timeStr.match(/^(\d+):(\d+)\s+(AM|PM)$/i);
+    var hh = parseInt(parts[1]), mm = parseInt(parts[2]), ampm = parts[3].toUpperCase();
+    if(ampm==='PM' && hh!==12) hh+=12;
+    if(ampm==='AM' && hh===12) hh=0;
+    var now = new Date();
+    var slotStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm).getTime();
+    var slotEnd = slotStart + 60*60*1000;
+    return evs.some(function(ev){
+      if(ev.allDay) return false;
+      var es = new Date(ev.start).getTime(), ee = new Date(ev.end).getTime();
+      return es < slotEnd && ee > slotStart;
+    });
+  }
+
+  if(phase === 'lockin') {
+    var TIME_SLOTS = ['8:00 AM','9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM'];
+    var loading = calEvents === null;
+    var match = !loading ? focusFuzzyMatch(calEvents) : null;
+
+    return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#F7F8FC',padding:'32px 28px',paddingTop:'calc(32px + env(safe-area-inset-top))',paddingBottom:'calc(32px + env(safe-area-inset-bottom))'}},
+      e('div', {style:{width:'100%',maxWidth:340,opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all 0.4s ease'}},
+        e('div', {style:{fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:MUTED,marginBottom:20,textAlign:'center'}}, 'Lock It In'),
+        e('div', {style:{background:'#fff',borderRadius:18,padding:'18px 20px',border:'1.5px solid '+BORDER,textAlign:'center',marginBottom:24,boxShadow:'0 2px 12px rgba(100,80,220,0.07)'}},
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,color:MUTED,textTransform:'uppercase',marginBottom:6}}, "Today's #1 Focus"),
+          e('div', {style:{fontSize:19,fontWeight:800,color:TEXT}}, focus.trim())
+        ),
+
+        loading ? e('div', {style:{textAlign:'center',color:MUTED,fontSize:14,padding:'24px 0'}},
+          e('div', {style:{fontSize:24,marginBottom:10}}, '📅'),
+          'Checking your calendar...'
+        ) :
+
+        match ?
+          e('div', {},
+            e('div', {style:{background:'#F0FDF4',borderRadius:16,padding:'16px 20px',border:'1.5px solid #86EFAC',marginBottom:20,textAlign:'center'}},
+              e('div', {style:{fontSize:22,marginBottom:6}}, '✅'),
+              e('div', {style:{fontSize:13,fontWeight:700,color:'#15803D',marginBottom:8}}, "Already on your calendar"),
+              e('div', {style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:4}}, match.title),
+              e('div', {style:{fontSize:13,color:MUTED}}, fmtEventTime(match))
+            ),
+            e('button', {onClick:onDone, style:{width:'100%',padding:18,borderRadius:18,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(0,198,255,0.3)'}}, "Perfect, let's go →")
+          ) :
+
+          e('div', {},
+            e('div', {style:{fontSize:15,fontWeight:600,color:TEXT,textAlign:'center',marginBottom:4}}, 'When will you work on this?'),
+            e('div', {style:{fontSize:12,color:MUTED,textAlign:'center',marginBottom:16}}, calEvents && calEvents.length ? 'Grey = already booked' : 'Pick a time to block off'),
+            e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:20}},
+              ...TIME_SLOTS.map(function(t){
+                var isSel = selectedTime===t;
+                var busy = isSlotOccupied(t, calEvents);
+                return e('button', {key:t,
+                  onClick:function(){if(!busy)setSelectedTime(t);},
+                  style:{padding:'10px 4px',borderRadius:12,border:'2px solid '+(isSel?ACCENT:busy?'#E5E7EB':BORDER),background:isSel?ACCENT+'12':busy?'#F9FAFB':'#fff',fontSize:13,fontWeight:700,color:isSel?ACCENT:busy?'#D1D5DB':TEXT,cursor:busy?'default':'pointer',fontFamily:'inherit',transition:'all 0.15s'}},
+                  t
+                );
+              })
+            ),
+            selectedTime ? e('button', {onClick:function(){openGcalWithFocus(selectedTime);}, style:{width:'100%',padding:18,borderRadius:18,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(0,198,255,0.3)',marginBottom:12}}, '📅 Add to Calendar →') : null,
+            e('button', {onClick:onDone, style:{width:'100%',padding:12,borderRadius:14,background:'none',border:'1.5px solid '+BORDER,color:MUTED,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop: selectedTime ? 0 : 0}}, 'Skip for now')
+          )
+      )
+    );
   }
 
   return e('div', {style:{
@@ -4763,6 +4870,13 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
   const [wins, setWins] = useState({});
   const [freeWins, setFreeWins] = useState([]);
   const [winText, setWinText] = useState('');
+  const SUPPLEMENTS = [
+    {id:'creatine',   label:'Creatine',         emoji:'💪'},
+    {id:'vitd',       label:'Vitamin D',         emoji:'☀️'},
+    {id:'omega3',     label:'Omega 3 Fish Oil',  emoji:'🐟'},
+    {id:'tongkat',    label:'Tongkat Ali',        emoji:'🌿'},
+  ];
+  const [supps, setSupps] = useState({});
 
   useEffect(function(){ setTimeout(function(){ setShow(true); }, 50); }, []);
 
@@ -4774,6 +4888,7 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
       focus: focus.trim() || null,
       blocker: blocker.trim() || null,
       wins: wins,
+      supps: supps,
       time: time,
     };
     setMiddayLog(newLog);
@@ -4823,6 +4938,31 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
             }},
               e('span', {style:{fontSize:24, lineHeight:1}}, opt.emoji),
               e('span', {style:{fontSize:9,fontWeight:700,color:sel?MIDDAY2:MUTED}}, opt.label)
+            );
+          })
+        )
+      ),
+
+      // Supplements
+      e('div', {style:{marginBottom:24}},
+        e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:10,textAlign:'left'}}, '💊 Supplements taken?'),
+        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+          ...SUPPLEMENTS.map(function(s){
+            var checked = !!supps[s.id];
+            return e('button', {key:s.id, onClick:function(){setSupps(function(prev){var n=Object.assign({},prev);n[s.id]=!n[s.id];return n;});}, style:{
+              display:'flex', alignItems:'center', gap:8,
+              padding:'10px 12px', borderRadius:12,
+              border:'1.5px solid '+(checked?MIDDAY:'#E8E8F0'),
+              background: checked ? MIDDAY+'15' : '#fff',
+              cursor:'pointer', fontFamily:'inherit', textAlign:'left',
+            }},
+              e('div', {style:{
+                width:20, height:20, borderRadius:6, flexShrink:0,
+                background: checked ? MIDDAY : 'transparent',
+                border:'2px solid '+(checked?MIDDAY:'#D0D0E0'),
+                display:'flex', alignItems:'center', justifyContent:'center',
+              }}, checked ? e('span', {style:{color:'#fff',fontSize:11,fontWeight:700}}, '✓') : null),
+              e('span', {style:{fontSize:12,fontWeight:700,color:checked?MIDDAY2:TEXT,lineHeight:1.3}}, s.emoji+' '+s.label)
             );
           })
         )
