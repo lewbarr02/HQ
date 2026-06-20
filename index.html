@@ -1012,8 +1012,8 @@ function QuickShoppingCard({groceries, setGroceries, returns, setReturns, setTab
     e('div', {style:{display:'flex',alignItems:'center',marginBottom:10}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,flex:1}}, '🛒 Shopping'),
       pendingReturns.length > 0 ? e('button', {
-        onClick:function(){setTab('returns');},
-        style:{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,background:'#EF444415',border:'1.5px solid #EF444440',cursor:'pointer',fontFamily:'inherit'}
+        onClick:function(){setTab('grocery');},
+        style:{display:'flex',alignItems:'center',gap:5,padding:'3px 8px',borderRadius:20,background:'#EF444415',border:'1.5px solid #EF444440',cursor:'pointer',fontFamily:'inherit'}
       },
         e('span', {style:{fontSize:10,fontWeight:800,color:'#EF4444'}}, '📦 '+pendingReturns.length+' to return')
       ) : null
@@ -1045,12 +1045,6 @@ function QuickShoppingCard({groceries, setGroceries, returns, setReturns, setTab
       })
     ) : null,
 
-    // Add return button (when no form open)
-    !addingReturn ? e('button', {
-      onClick:function(){setAddingReturn(true);},
-      style:{width:'100%',padding:'7px',borderRadius:10,border:'1.5px dashed #FCA5A580',background:'none',color:'#EF4444',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginBottom:10}
-    }, '+ Add Return') : null,
-
     // Shopping input
     e('input', {
       ref: inputRef,
@@ -1062,10 +1056,13 @@ function QuickShoppingCard({groceries, setGroceries, returns, setReturns, setTab
     }),
     e('div', {style:{display:'flex',gap:8}},
       ...SHOP_LISTS.map(function(l){
+        var count = (groceries||[]).filter(function(g){return (g.list||'wife')===l.id && !g.done;}).length;
         var active = input.trim();
         return e('button', {key:l.id, onClick:function(){addToList(l.id);},
-          style:{flex:1,padding:'9px 4px',borderRadius:12,border:'1.5px solid '+(active?l.color+'60':BORDER),background:active?l.color+'12':CARD2,color:active?l.color:MUTED,fontWeight:700,fontSize:12,cursor:active?'pointer':'default',fontFamily:'inherit',transition:'all 0.15s'}},
-          l.emoji + ' ' + l.label);
+          style:{flex:1,padding:'9px 4px',borderRadius:12,border:'1.5px solid '+(active?l.color+'60':BORDER),background:active?l.color+'12':CARD2,color:active?l.color:MUTED,fontWeight:700,fontSize:12,cursor:active?'pointer':'default',fontFamily:'inherit',transition:'all 0.15s',position:'relative'}},
+          l.emoji + ' ' + l.label,
+          count > 0 ? e('span', {style:{position:'absolute',top:-6,right:-4,minWidth:17,height:17,borderRadius:9,background:l.color,color:'white',fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1,padding:'0 3px',boxShadow:'0 1px 4px rgba(0,0,0,0.18)'}}, count) : null
+        );
       })
     )
   );
