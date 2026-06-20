@@ -108,7 +108,7 @@ async function gcalGetToken() {
 
 async function gcalFetchToday() {
   var token = await gcalGetToken();
-  if (!token) return [];
+  if (!token) return { error: 'no_token', events: [] };
   var now = new Date();
   var start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
   var end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
@@ -119,14 +119,18 @@ async function gcalFetchToday() {
       '&singleEvents=true&orderBy=startTime&maxResults=20',
       { headers: { 'Authorization': 'Bearer ' + token }, cache: 'no-store' }
     );
-    if (!r.ok) return [];
+    if (!r.ok) {
+      var errBody = await r.json().catch(function(){return {};});
+      return { error: 'http_' + r.status + ': ' + (errBody.error && errBody.error.message || r.statusText), events: [] };
+    }
     var data = await r.json();
-    return (data.items || []).map(function(ev) {
+    var events = (data.items || []).map(function(ev) {
       var s = ev.start.dateTime || ev.start.date;
       var e2 = ev.end.dateTime || ev.end.date;
       return { id: ev.id, title: ev.summary || '(no title)', start: s, end: e2, allDay: !ev.start.dateTime };
     });
-  } catch { return []; }
+    return { error: null, events: events };
+  } catch(ex) { return { error: 'exception: ' + ex.message, events: [] }; }
 }
 
 function gcalStartOAuth() {
@@ -375,6 +379,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const currentMinute = now.getHours() * 60 + now.getMinutes();
   const priorities = load('priorities') || [];
   const [calEvents, setCalEvents] = useState([]);
+  const [calSyncMsg, setCalSyncMsg] = useState('');
   const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
   const [dragItem, setDragItem] = useState(null);
   const dragItemRef = useRef(null);
@@ -385,12 +390,16 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [customForm, setCustomForm] = useState({label:'', color:'#10B981', durationMin:30});
   const timelineRef = useRef(null);
 
+  function doCalSync(showMsg) {
+    gcalFetchToday().then(function(res) {
+      setCalEvents(res.events);
+      if (showMsg) setCalSyncMsg(res.error ? '⚠️ ' + res.error : '✓ ' + res.events.length + ' event(s)');
+    });
+  }
   useEffect(() => {
-    gcalFetchToday().then(function(evs) { setCalEvents(evs); });
+    doCalSync(false);
     function onVisible() {
-      if (document.visibilityState === 'visible') {
-        gcalFetchToday().then(function(evs) { setCalEvents(evs); });
-      }
+      if (document.visibilityState === 'visible') doCalSync(false);
     }
     document.addEventListener('visibilitychange', onVisible);
     return function() { document.removeEventListener('visibilitychange', onVisible); };
@@ -622,11 +631,14 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
         e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, "Today's Schedule"),
         e('div', {style:{fontSize:12,color:MUTED,marginLeft:'auto',marginRight:8}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-        e('button', {
-          onClick: function(){ gcalFetchToday().then(function(evs){ setCalEvents(evs); }); },
-          title: 'Refresh calendar',
-          style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#4285F4',flexShrink:0,marginRight:4}
-        }, '🔄 Sync'),
+        e('div', {style:{display:'flex',flexDirection:'column',alignItems:'flex-end',flexShrink:0,marginRight:4}},
+          e('button', {
+            onClick: function(){ setCalSyncMsg('syncing…'); doCalSync(true); },
+            title: 'Refresh calendar',
+            style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#4285F4'}
+          }, '🔄 Sync'),
+          calSyncMsg ? e('div', {style:{fontSize:10,color:calSyncMsg.startsWith('⚠️')?'#EF4444':'#10B981',marginTop:2,whiteSpace:'nowrap'}}, calSyncMsg) : null
+        ),
         e('button', {
           onClick: exportICS,
           title: 'Export to calendar file',
@@ -4536,7 +4548,7 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
     saveCheckinData();
     if(focus.trim()) {
       setPhase('lockin');
-      gcalFetchToday().then(function(evs){ setCalEvents(evs); });
+      gcalFetchToday().then(function(res){ setCalEvents(res.events); });
     } else {
       onDone();
     }
@@ -6827,7 +6839,7 @@ function CalendarScreen({ calendarConnected, setCalendarConnected, setTab }) {
   useEffect(() => {
     if (!calendarConnected) return;
     setLoading(true);
-    gcalFetchToday().then(function(evs) { setCalEvents(evs); setLoading(false); });
+    gcalFetchToday().then(function(res) { setCalEvents(res.events); setLoading(false); });
   }, [calendarConnected]);
 
   function connect() { gcalStartOAuth(); }
