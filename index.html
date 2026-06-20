@@ -117,7 +117,7 @@ async function gcalFetchToday() {
       'https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=' +
       encodeURIComponent(start) + '&timeMax=' + encodeURIComponent(end) +
       '&singleEvents=true&orderBy=startTime&maxResults=20',
-      { headers: { 'Authorization': 'Bearer ' + token } }
+      { headers: { 'Authorization': 'Bearer ' + token }, cache: 'no-store' }
     );
     if (!r.ok) return [];
     var data = await r.json();
@@ -622,6 +622,11 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
         e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, "Today's Schedule"),
         e('div', {style:{fontSize:12,color:MUTED,marginLeft:'auto',marginRight:8}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+        e('button', {
+          onClick: function(){ gcalFetchToday().then(function(evs){ setCalEvents(evs); }); },
+          title: 'Refresh calendar',
+          style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#4285F4',flexShrink:0,marginRight:4}
+        }, '🔄 Sync'),
         e('button', {
           onClick: exportICS,
           title: 'Export to calendar file',
