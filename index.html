@@ -3267,7 +3267,7 @@ function ReturnsScreen({returns, setReturns, setTab}) {
   );
 }
 
-function ShoppingScreen({groceries, setGroceries, inventory, setInventory, setTab}) {
+function ShoppingScreen({groceries, setGroceries, inventory, setInventory, setTab, returns, setReturns}) {
   const LISTS = [
     {id:'wife',   label:'Wife',   emoji:'💌', color:'#FF6B9D', hint:'She shops — send her the list'},
     {id:'mine',   label:'Mine',   emoji:'🚶', color:ACCENT,    hint:'Grab in transit'},
@@ -3459,9 +3459,96 @@ function ShoppingScreen({groceries, setGroceries, inventory, setInventory, setTa
     );
   }
 
+  var pendingReturns = (returns||[]).filter(function(r){return !r.done;});
+  var [retItem, setRetItem] = useState('');
+  var [retStore, setRetStore] = useState('');
+  var [retDeadline, setRetDeadline] = useState('');
+  var [retAdding, setRetAdding] = useState(false);
+  var [showRetDone, setShowRetDone] = useState(false);
+
+  function addReturn() {
+    if(!retItem.trim()) return;
+    var next = [...(returns||[]), {id:Date.now().toString(), item:retItem.trim(), store:retStore.trim(), deadline:retDeadline, done:false}];
+    setReturns(next); save('returns', next);
+    setRetItem(''); setRetStore(''); setRetDeadline(''); setRetAdding(false);
+  }
+  function toggleReturn(id) {
+    var next = (returns||[]).map(function(r){return r.id===id?Object.assign({},r,{done:!r.done}):r;});
+    setReturns(next); save('returns', next);
+  }
+  function deleteReturn(id) {
+    var next = (returns||[]).filter(function(r){return r.id!==id;});
+    setReturns(next); save('returns', next);
+  }
+  function daysLeftRet(dl) {
+    if(!dl) return null;
+    return Math.ceil((new Date(dl+'T23:59:59')-new Date())/86400000);
+  }
+  function renderReturns() {
+    var retDone = (returns||[]).filter(function(r){return r.done;});
+    return e('div', {},
+      e('button', {onClick:function(){setRetAdding(true);}, style:{width:'100%',marginBottom:12,padding:'11px',borderRadius:12,border:'1.5px solid #EF4444',background:'rgba(239,68,68,0.06)',color:'#EF4444',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '+ Log a Return'),
+      retAdding ? e('div', {className:'card', style:{padding:'14px 16px',marginBottom:12,border:'1.5px solid #FCA5A5'}},
+        e('div', {style:{fontSize:13,fontWeight:700,color:'#EF4444',marginBottom:10}}, 'New Return'),
+        e('input', {className:'input', placeholder:'Item to return', value:retItem, onInput:function(ev){setRetItem(ev.target.value);}, style:{marginBottom:8,fontSize:14}}),
+        e('input', {className:'input', placeholder:'Store / Retailer (optional)', value:retStore, onInput:function(ev){setRetStore(ev.target.value);}, style:{marginBottom:8,fontSize:14}}),
+        e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:6}}, 'Return deadline'),
+        e('input', {type:'date', value:retDeadline, onChange:function(ev){setRetDeadline(ev.target.value);}, style:{width:'100%',padding:'10px 12px',borderRadius:12,border:'1.5px solid '+BORDER,fontSize:14,fontFamily:'inherit',background:'#fff',color:TEXT,boxSizing:'border-box',marginBottom:12}}),
+        e('div', {style:{display:'flex',gap:8}},
+          e('button', {onClick:addReturn, style:{flex:1,padding:'11px',borderRadius:12,border:'none',background:'#EF4444',color:'white',fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Save'),
+          e('button', {onClick:function(){setRetAdding(false);setRetItem('');setRetStore('');setRetDeadline('');}, style:{padding:'11px 16px',borderRadius:12,border:'1.5px solid '+BORDER,background:'none',color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
+        )
+      ) : null,
+      pendingReturns.length===0 && !retAdding ? e('div', {style:{textAlign:'center',color:MUTED,padding:'40px 0'}},
+        e('div', {style:{fontSize:36,marginBottom:8}}, '✅'),
+        e('div', {style:{fontSize:15,fontWeight:700,color:TEXT,marginBottom:4}}, 'Nothing to return!'),
+        e('div', {style:{fontSize:13}}, "You're all caught up.")
+      ) : null,
+      pendingReturns.length>0 ? e('div', {className:'card', style:{padding:'4px 14px',marginBottom:12}},
+        ...pendingReturns.map(function(r, idx){
+          var dl = daysLeftRet(r.deadline);
+          var urgent = dl!==null && dl<=3;
+          var warn = dl!==null && dl<=7 && dl>3;
+          var dlColor = urgent?'#EF4444':warn?'#F59E0B':'#10B981';
+          var dlLabel = dl===null?'':dl<0?'⚠️ EXPIRED':dl===0?'⚠️ Due TODAY':dl===1?'1 day left':dl+' days left';
+          return e('div', {key:r.id, style:{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:idx<pendingReturns.length-1?'1px solid rgba(100,80,220,0.07)':'none'}},
+            e('button', {onClick:function(){toggleReturn(r.id);}, style:{width:24,height:24,borderRadius:'50%',flexShrink:0,border:'2px solid #EF4444',background:'transparent',cursor:'pointer',fontFamily:'inherit'}}, ''),
+            e('div', {style:{flex:1,minWidth:0}},
+              e('div', {style:{fontSize:15,fontWeight:600}}, r.item),
+              r.store ? e('div', {style:{fontSize:12,color:MUTED}}, '🏪 '+r.store) : null,
+              r.deadline ? e('div', {style:{fontSize:12,fontWeight:700,color:dlColor}}, dlLabel) : null
+            ),
+            e('button', {onClick:function(){deleteReturn(r.id);}, style:{background:'none',border:'none',color:'#C0C0D0',cursor:'pointer',fontSize:18,padding:'0 4px',flexShrink:0}}, '×')
+          );
+        })
+      ) : null,
+      retDone.length>0 ? e('div', {style:{marginTop:4}},
+        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}},
+          e('button', {onClick:function(){setShowRetDone(function(v){return !v;});}, style:{fontSize:11,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',letterSpacing:1,textTransform:'uppercase'}},
+            (showRetDone?'▾ ':'▸ ')+'Returned ('+retDone.length+')'
+          )
+        ),
+        showRetDone ? e('div', {className:'card', style:{padding:'4px 14px',opacity:0.6}},
+          ...retDone.map(function(r,idx){
+            return e('div', {key:r.id, style:{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:idx<retDone.length-1?'1px solid rgba(100,80,220,0.07)':'none'}},
+              e('span', {style:{fontSize:16,flexShrink:0}}, '✅'),
+              e('div', {style:{flex:1,minWidth:0}},
+                e('div', {style:{fontSize:14,color:MUTED,textDecoration:'line-through'}}, r.item),
+                r.store ? e('div', {style:{fontSize:11,color:MUTED}}, r.store) : null
+              ),
+              e('button', {onClick:function(){toggleReturn(r.id);}, style:{background:'none',border:'none',color:MUTED,fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:'inherit',padding:0}}, 'Undo'),
+              e('button', {onClick:function(){deleteReturn(r.id);}, style:{background:'none',border:'none',color:'#C0C0D0',cursor:'pointer',fontSize:18,padding:'0 4px'}}, '×')
+            );
+          })
+        ) : null
+      ) : null
+    );
+  }
+
   var ALL_TABS = [
     ...LISTS.map(function(l){return {id:l.id,label:l.emoji+' '+l.label,color:l.color};}),
     {id:'inventory',label:'📋 Stock',color:'#10B981'},
+    {id:'returns',label:'📦 Returns',color:'#EF4444'},
   ];
 
   return e('div', {className:'content'},
@@ -3472,16 +3559,19 @@ function ShoppingScreen({groceries, setGroceries, inventory, setInventory, setTa
     e('div', {style:{display:'flex',gap:6,marginBottom:16,background:CARD2,borderRadius:14,padding:4}},
       ...ALL_TABS.map(function(t){
         var isSel = t.id===activeTab;
+        var badge = t.id==='inventory' && lowCount>0 ? lowCount : t.id==='returns' && pendingReturns.length>0 ? pendingReturns.length : null;
         return e('button', {key:t.id, onClick:function(){setActiveTab(t.id);}, style:{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:isSel?'#fff':'transparent',color:isSel?t.color:MUTED,fontWeight:isSel?800:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:isSel?'0 1px 4px rgba(0,0,0,0.08)':'none',transition:'all 0.15s',position:'relative'}},
           t.label,
-          t.id==='inventory' && lowCount>0 ? e('span',{style:{position:'absolute',top:4,right:6,width:16,height:16,borderRadius:'50%',background:'#F59E0B',color:'white',fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}, lowCount) : null
+          badge ? e('span',{style:{position:'absolute',top:4,right:6,width:16,height:16,borderRadius:'50%',background:t.id==='returns'?'#EF4444':'#F59E0B',color:'white',fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}, badge) : null
         );
       })
     ),
-    activeTab !== 'inventory'
-      ? e('div',{style:{fontSize:11,color:MUTED,textAlign:'center',marginBottom:12}}, LISTS.find(function(l){return l.id===activeTab;}).hint)
-      : e('div',{style:{fontSize:11,color:MUTED,textAlign:'center',marginBottom:12}}, 'Tap a status badge to cycle Full → Low → Out'),
-    activeTab==='inventory' ? renderInventory() : renderListTab()
+    activeTab==='inventory'
+      ? e('div',{style:{fontSize:11,color:MUTED,textAlign:'center',marginBottom:12}}, 'Tap a status badge to cycle Full → Low → Out')
+      : activeTab==='returns'
+        ? e('div',{style:{fontSize:11,color:MUTED,textAlign:'center',marginBottom:12}}, 'Track items you need to send back')
+        : e('div',{style:{fontSize:11,color:MUTED,textAlign:'center',marginBottom:12}}, LISTS.find(function(l){return l.id===activeTab;}).hint),
+    activeTab==='inventory' ? renderInventory() : activeTab==='returns' ? renderReturns() : renderListTab()
   );
 }
 
@@ -8970,7 +9060,7 @@ function App() {
       case 'foodpipeline': return e(FoodPipelineScreen, {setTab});
       case 'photos': return e(ProgressPhotosScreen, {setTab});
       case 'notifications': return e(NotificationsScreen, {setTab});
-      case 'grocery': return e(ShoppingScreen, {groceries,setGroceries,inventory,setInventory,setTab});
+      case 'grocery': return e(ShoppingScreen, {groceries,setGroceries,inventory,setInventory,setTab,returns,setReturns});
       case 'returns': return e(ReturnsScreen, {returns,setReturns,setTab});
       case 'notes': return e(NotesScreen, {notes,setNotes,brainDump,setBrainDump,setTab});
       case 'review': return e(ReviewScreen, {habits,habitLog,timeLog,goals,routineLog,eveningLog,middayLog,morningItems,eveningItems,setTab});
