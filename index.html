@@ -1793,6 +1793,11 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
   ]);
   const [addingP, setAddingP] = useState(false);
   const [newPN, setNewPN] = useState(''), [newPC, setNewPC] = useState('Work'), [newPT, setNewPT] = useState('09:00');
+  const [newPD, setNewPD] = useState(45);
+  const [newPPID, setNewPPID] = useState('');
+  const [hardStopModal, setHardStopModal] = useState(null);
+  const [hardStopText, setHardStopText] = useState('');
+  const [hardStopProjectId, setHardStopProjectId] = useState('');
   const [qlDate, setQlDate] = useState(td);
   const [workoutNote, setWorkoutNote] = useState(() => localStorage.getItem('hq_wn_'+td)||'');
   const [nutrition, setNutrition] = useState(() => localStorage.getItem('hq_nut_'+td)||null);
@@ -1840,6 +1845,60 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
     window.history.replaceState({}, '', window.location.pathname);
     setTimeout(() => setEmailToast(null), 10000);
   }, []);
+
+  // Request notification permission once
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  // Hard stop poller — checks every 30s if a timed block has ended
+  useEffect(() => {
+    function parseTimeStr(t) {
+      if (!t) return null;
+      var m24 = t.match(/^(\d{1,2}):(\d{2})$/);
+      if (m24) return parseInt(m24[1]) * 60 + parseInt(m24[2]);
+      var mam = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!mam) return null;
+      var h = parseInt(mam[1]), mn = parseInt(mam[2]), ap = mam[3].toUpperCase();
+      if (ap === 'PM' && h !== 12) h += 12;
+      if (ap === 'AM' && h === 12) h = 0;
+      return h * 60 + mn;
+    }
+    function check() {
+      var now = new Date();
+      var nowMin = now.getHours() * 60 + now.getMinutes();
+      var firedKey = 'hq_hs_fired_' + today();
+      var fired = JSON.parse(localStorage.getItem(firedKey) || '[]');
+      var triggered = false;
+      (load('priorities') || []).forEach(function(p) {
+        if (!p.time || !p.duration) return;
+        var startMin = parseTimeStr(p.time);
+        if (startMin === null) return;
+        var endMin = startMin + p.duration;
+        if (nowMin >= endMin && nowMin < endMin + 2 && !fired.includes(p.id)) {
+          fired.push(p.id);
+          localStorage.setItem(firedKey, JSON.stringify(fired));
+          if ('Notification' in window && Notification.permission === 'granted') {
+            var n = new Notification('⏱ Block complete — ' + p.name, {
+              body: "Time's up. What did you get done? Tap to log it.",
+              icon: '/icon-192.png',
+              tag: 'hs-' + p.id,
+            });
+            n.onclick = function() { window.focus(); };
+          }
+          setHardStopModal(p);
+          setHardStopText('');
+          setHardStopProjectId(p.projectId || '');
+          triggered = true;
+        }
+      });
+    }
+    check();
+    var iv = setInterval(check, 30000);
+    return function() { clearInterval(iv); };
+  }, [td]);
 
   function savePriorities(next){setPriorities(next);save('priorities',next);}
   function toggleHabit(id){const next={...habitLog,[td]:{...done,[id]:!done[id]}};setHabitLog(next);save('habitLog',next);}
@@ -2010,7 +2069,10 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
           e('div', {style:{fontSize:14,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none'}}, p.name),
           e('div', {style:{fontSize:11,color:MUTED,marginTop:1}}, p.cat)
         ),
-        e('div', {style:{fontSize:12,fontWeight:700,color:p.color}}, p.time),
+        e('div', {style:{textAlign:'right',flexShrink:0}},
+          e('div', {style:{fontSize:12,fontWeight:700,color:p.color}}, p.time||''),
+          p.duration ? e('div', {style:{fontSize:10,color:MUTED,fontWeight:600}}, p.duration>=60?(p.duration/60)+'h':p.duration+'m') : null
+        ),
         e('button', {onClick:()=>savePriorities(priorities.filter(x=>x.id!==p.id)), style:{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:16,padding:4}}, '✕')
       )),
       addingP ? e('div', {style:{marginTop:12}},
@@ -2021,12 +2083,26 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
           ),
           e('input', {type:'time', className:'input', style:{flex:1,marginBottom:0}, value:newPT, onInput:ev=>setNewPT(ev.target.value)})
         ),
+        e('div', {style:{display:'flex',gap:8,marginBottom:10}},
+          e('select', {className:'input', style:{flex:1,marginBottom:0}, value:newPD, onChange:ev=>setNewPD(parseInt(ev.target.value))},
+            e('option',{value:15},'15 min'),
+            e('option',{value:30},'30 min'),
+            e('option',{value:45},'45 min'),
+            e('option',{value:60},'1 hour'),
+            e('option',{value:90},'90 min'),
+            e('option',{value:120},'2 hours')
+          ),
+          (projects||[]).filter(function(p){return !p.done;}).length > 0 ? e('select', {className:'input', style:{flex:1,marginBottom:0}, value:newPPID, onChange:ev=>setNewPPID(ev.target.value)},
+            e('option',{value:''},'No project'),
+            ...(projects||[]).filter(function(p){return !p.done;}).map(function(p){return e('option',{key:p.id,value:p.id},(p.emoji||'📁')+' '+p.title);})
+          ) : null
+        ),
         e('div', {style:{display:'flex',gap:10}},
           e('button', {className:'btn-ghost', onClick:()=>setAddingP(false)}, 'Cancel'),
           e('button', {className:'btn-primary', onClick:()=>{
             if(!newPN.trim())return;
-            savePriorities([...priorities,{id:Date.now().toString(),name:newPN,cat:newPC,time:newPT,done:false,color:CAT_COLORS[newPC]||MUTED}]);
-            setNewPN('');setAddingP(false);
+            savePriorities([...priorities,{id:Date.now().toString(),name:newPN,cat:newPC,time:newPT,duration:newPD,projectId:newPPID||null,done:false,color:CAT_COLORS[newPC]||MUTED}]);
+            setNewPN('');setNewPD(45);setNewPPID('');setAddingP(false);
           }}, 'Add')
         )
       ) : e('button', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:10,fontSize:13,fontWeight:700,color:ACCENT,cursor:'pointer',border:'none',background:'none',width:'100%',fontFamily:'inherit'},onClick:()=>setAddingP(true)},
@@ -2397,7 +2473,85 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Daily Spark'),
       e('div', {style:{fontSize:15,lineHeight:1.65,color:TEXT,fontStyle:'italic',textAlign:'center'}}, '"'+quote+'"')
     ),
-    flowModal ? e(FlowCheckinModal, {activeSession: (flowLog||[]).find(function(s){return !s.endTime;}), flowLog, setFlowLog, onClose:()=>setFlowModal(false)}) : null
+    flowModal ? e(FlowCheckinModal, {activeSession: (flowLog||[]).find(function(s){return !s.endTime;}), flowLog, setFlowLog, onClose:()=>setFlowModal(false)}) : null,
+    hardStopModal ? (function(){
+      var p = hardStopModal;
+      var activeProjects = (projects||[]).filter(function(x){return !x.done;});
+      var linkedProject = activeProjects.find(function(x){return x.id === hardStopProjectId;});
+      var durationLabel = p.duration >= 60 ? (p.duration/60)+'h' : p.duration+'m';
+      function logAndClose() {
+        var text = hardStopText.trim();
+        if (text) {
+          var todayWins = JSON.parse(localStorage.getItem('hq_wins_' + td) || '[]');
+          var next = [...todayWins, {id: Date.now().toString(), text: text, source: 'hardstop', block: p.name}];
+          localStorage.setItem('hq_wins_' + td, JSON.stringify(next));
+          if (qlDate === td) setWins(next);
+        }
+        if (hardStopProjectId) {
+          var proj = activeProjects.find(function(x){return x.id === hardStopProjectId;});
+          if (proj) {
+            var pLog = load('projectLog') || {};
+            var dayLog = pLog[td] || [];
+            if (text) { dayLog = [...dayLog, {id: Date.now().toString(), block: p.name, note: text, time: new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}]; }
+            var newPLog = Object.assign({}, pLog, {[td]: dayLog, _lastAction: td, _lastProject: hardStopProjectId});
+            save('projectLog', newPLog);
+          }
+        }
+        setHardStopModal(null);
+        setHardStopText('');
+      }
+      var MESSAGES = [
+        "⏱ Block complete.",
+        "🔔 Time called.",
+        "🏁 Block's done.",
+        "⚡ Time's up.",
+      ];
+      var msgIdx = p.name.length % MESSAGES.length;
+      return e('div', {
+        style:{position:'fixed',inset:0,zIndex:10000,background:'rgba(26,24,51,0.85)',display:'flex',alignItems:'flex-end',justifyContent:'center',backdropFilter:'blur(4px)'},
+        onClick:function(ev){if(ev.target===ev.currentTarget)setHardStopModal(null);}
+      },
+        e('div', {style:{width:'100%',maxWidth:480,background:'#fff',borderRadius:'24px 24px 0 0',padding:'28px 24px 36px',boxShadow:'0 -8px 40px rgba(100,80,220,0.18)'}},
+          e('div', {style:{width:40,height:4,borderRadius:2,background:'rgba(100,80,220,0.18)',margin:'0 auto 24px'}}),
+          e('div', {style:{display:'flex',alignItems:'center',gap:12,marginBottom:20}},
+            e('div', {style:{width:48,height:48,borderRadius:16,background:p.color+'18',border:'2px solid '+p.color+'40',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}, '⏱'),
+            e('div', {},
+              e('div', {style:{fontSize:18,fontWeight:800,color:TEXT,lineHeight:1.2}}, MESSAGES[msgIdx]),
+              e('div', {style:{fontSize:13,color:MUTED,marginTop:3}}, p.name + ' · ' + durationLabel + ' block')
+            )
+          ),
+          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}}, 'What did you get done?'),
+          e('textarea', {
+            style:{width:'100%',minHeight:80,padding:'12px',borderRadius:12,border:'1.5px solid rgba(100,80,220,0.2)',fontFamily:'inherit',fontSize:14,color:TEXT,resize:'none',outline:'none',boxSizing:'border-box',lineHeight:1.5},
+            placeholder:'Quick note — what moved forward?',
+            value:hardStopText,
+            onInput:function(ev){setHardStopText(ev.target.value);},
+            autoFocus:true,
+          }),
+          activeProjects.length > 0 ? e('div', {style:{marginTop:12}},
+            e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:6}}, 'Tag a project (optional)'),
+            e('select', {
+              style:{width:'100%',padding:'10px 12px',borderRadius:12,border:'1.5px solid rgba(100,80,220,0.2)',fontFamily:'inherit',fontSize:13,color:TEXT,background:'#fff',outline:'none'},
+              value:hardStopProjectId,
+              onChange:function(ev){setHardStopProjectId(ev.target.value);}
+            },
+              e('option', {value:''}, '— none —'),
+              ...activeProjects.map(function(x){return e('option',{key:x.id,value:x.id}, (x.emoji||'📁')+' '+x.title);})
+            )
+          ) : null,
+          e('div', {style:{display:'flex',gap:10,marginTop:16}},
+            e('button', {
+              onClick:function(){setHardStopModal(null);},
+              style:{flex:1,padding:'13px',borderRadius:14,border:'1.5px solid rgba(100,80,220,0.15)',background:'#f0f2f8',color:MUTED,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+            }, 'Skip'),
+            e('button', {
+              onClick:logAndClose,
+              style:{flex:2,padding:'13px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:'white',fontSize:14,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}
+            }, hardStopText.trim() ? 'Log the win 🏆' : 'Mark done ✓')
+          )
+        )
+      );
+    })() : null
   );
 }
 </script>
