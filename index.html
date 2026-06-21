@@ -7567,19 +7567,67 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   var COACH_AUTH = 'Bearer sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4';
 
   function renderAnalysis(text) {
-    return text.split('\n').map(function(line, i) {
-      if(!line.trim()) return e('div',{key:i,style:{height:8}});
-      var h1 = line.match(/^#\s+(.+)/), h2 = line.match(/^##\s+(.+)/), h3 = line.match(/^###\s+(.+)/);
-      if(h1) return e('div',{key:i,style:{fontSize:17,fontWeight:800,color:TEXT,marginTop:8,marginBottom:2}},h1[1]);
-      if(h2) return e('div',{key:i,style:{fontSize:15,fontWeight:800,color:TEXT,marginTop:10,marginBottom:2,borderBottom:'1px solid '+BORDER,paddingBottom:4}},h2[1]);
-      if(h3) return e('div',{key:i,style:{fontSize:13,fontWeight:700,color:TEXT,marginTop:6,marginBottom:2}},h3[1]);
-      var parts = line.split(/(\*\*[^*]+\*\*)/g);
-      var rendered = parts.map(function(p,pi){
-        if(p.startsWith('**')&&p.endsWith('**')) return e('strong',{key:pi,style:{color:TEXT}},p.slice(2,-2));
+    var SEC = [
+      {match:['overall','assessment'],          icon:'🎯', color:'#EF4444', bg:'#FEF2F2'},
+      {match:['workout','training','focus','muscle','body part'], icon:'💪', color:'#3B82F6', bg:'#EFF6FF'},
+      {match:['nutrition','food','macro','calorie','diet'],       icon:'🥗', color:'#10B981', bg:'#F0FDF4'},
+      {match:['action','specific','this week','steps','todo'],    icon:'⚡', color:'#8B5CF6', bg:'#F5F3FF'},
+      {match:['track','date','timeline','goal','on-track'],       icon:'📅', color:'#F59E0B', bg:'#FFFBEB'},
+    ];
+    function getCfg(title) {
+      var t = title.toLowerCase();
+      for(var s of SEC) if(s.match.some(function(k){return t.includes(k);})) return s;
+      return {icon:'📌', color:PURPLE, bg:'#F5F3FF'};
+    }
+    function renderInline(str) {
+      return str.split(/(\*\*[^*]+\*\*)/g).map(function(p,i){
+        if(p.startsWith('**')&&p.endsWith('**')) return e('strong',{key:i,style:{fontWeight:800,color:TEXT}},p.slice(2,-2));
         return p;
       });
-      var isNumbered = /^\d+\./.test(line.trim()), isBullet = /^[-*]\s/.test(line.trim());
-      return e('div',{key:i,style:{fontSize:14,lineHeight:1.7,color:'#444',fontWeight:isNumbered?600:400,marginBottom:isNumbered||isBullet?2:0,paddingLeft:isBullet?12:0}}, ...rendered);
+    }
+    function renderBody(lines) {
+      return lines.map(function(line,i){
+        if(!line.trim()) return e('div',{key:i,style:{height:5}});
+        var isBullet=/^[-*•]\s/.test(line.trim()), isNum=/^\d+\.\s/.test(line.trim());
+        var isSub=line.match(/^#{3,4}\s/) || (/^\*\*/.test(line)&&/\*\*$/.test(line.trim())&&!isBullet&&!isNum);
+        if(isSub){
+          var clean=line.replace(/^#{3,4}\s*/,'').replace(/^\*+/,'').replace(/\*+$/,'').trim();
+          return e('div',{key:i,style:{fontSize:11,fontWeight:800,color:'#666',textTransform:'uppercase',letterSpacing:0.8,marginTop:8,marginBottom:3}},clean);
+        }
+        var stripped=line.replace(/^[-*•]\s/,'').replace(/^\d+\.\s/,'');
+        return e('div',{key:i,style:{display:'flex',gap:8,marginBottom:2,alignItems:'flex-start'}},
+          (isBullet||isNum)?e('span',{style:{flexShrink:0,fontWeight:800,color:'#999',fontSize:12,marginTop:2}},isBullet?'•':line.match(/^\d+/)[0]+'.'):null,
+          e('div',{style:{fontSize:13,lineHeight:1.75,color:'#444'}}, ...renderInline(stripped))
+        );
+      });
+    }
+    // Parse into sections
+    var lines = text.split('\n');
+    var sections=[], cur=null;
+    for(var line of lines){
+      var hm = line.match(/^#{1,3}\s+(.+)/) || line.match(/^\*?\*?(\d+\.\s+[A-Z][^\n]+)/);
+      var htitle = hm ? hm[1].replace(/\*+$/,'').replace(/^\d+\.\s*/,'').trim() : null;
+      var isSecHeader = htitle && /overall|workout|training|nutrition|action|track|focus|check|specific|on-track/i.test(htitle);
+      if(isSecHeader){
+        if(cur) sections.push(cur);
+        cur={title:htitle, lines:[]};
+      } else if(cur){
+        cur.lines.push(line);
+      }
+    }
+    if(cur) sections.push(cur);
+    if(!sections.length) {
+      return text.split('\n').map(function(line,i){return e('div',{key:i,style:{fontSize:13,color:'#444',lineHeight:1.7}},line);});
+    }
+    return sections.map(function(sec,si){
+      var cfg=getCfg(sec.title);
+      return e('div',{key:si,style:{background:cfg.bg,borderRadius:16,padding:'14px 16px',borderLeft:'4px solid '+cfg.color,marginBottom:10,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}},
+        e('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:8}},
+          e('span',{style:{fontSize:20,lineHeight:1}},cfg.icon),
+          e('div',{style:{fontSize:12,fontWeight:800,color:cfg.color,textTransform:'uppercase',letterSpacing:0.9}},sec.title)
+        ),
+        ...renderBody(sec.lines)
+      );
     });
   }
 
