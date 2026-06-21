@@ -3864,10 +3864,17 @@ function ShoppingScreen({groceries, setGroceries, inventory, setInventory, setTa
     e('div', {style:{display:'flex',gap:6,marginBottom:16,background:CARD2,borderRadius:14,padding:4}},
       ...ALL_TABS.map(function(t){
         var isSel = t.id===activeTab;
-        var badge = t.id==='inventory' && lowCount>0 ? lowCount : t.id==='returns' && pendingReturns.length>0 ? pendingReturns.length : null;
+        var listCnt = (t.id==='wife'||t.id==='mine'||t.id==='amazon')
+          ? (groceries||[]).filter(function(g){return (g.list||'wife')===t.id && !g.done;}).length
+          : 0;
+        var badge = listCnt > 0 ? listCnt
+          : t.id==='inventory' && lowCount>0 ? lowCount
+          : t.id==='returns' && pendingReturns.length>0 ? pendingReturns.length
+          : null;
+        var badgeColor = t.id==='returns' ? '#EF4444' : t.id==='inventory' ? '#F59E0B' : t.color;
         return e('button', {key:t.id, onClick:function(){setActiveTab(t.id);}, style:{flex:1,padding:'9px 4px',borderRadius:10,border:'none',background:isSel?'#fff':'transparent',color:isSel?t.color:MUTED,fontWeight:isSel?800:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:isSel?'0 1px 4px rgba(0,0,0,0.08)':'none',transition:'all 0.15s',position:'relative'}},
           t.label,
-          badge ? e('span',{style:{position:'absolute',top:4,right:6,width:16,height:16,borderRadius:'50%',background:t.id==='returns'?'#EF4444':'#F59E0B',color:'white',fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}, badge) : null
+          badge ? e('span',{style:{position:'absolute',top:4,right:6,width:16,height:16,borderRadius:'50%',background:badgeColor,color:'white',fontSize:10,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}, badge) : null
         );
       })
     ),
