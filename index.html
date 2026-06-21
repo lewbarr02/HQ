@@ -7132,8 +7132,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   const [currentProgram, setCurrentProgram] = useState(function(){ return load('currentProgram'); });
   const [programMeta, setProgramMeta] = useState(function(){ return load('programMeta'); });
   const [coachPhase, setCoachPhase] = useState(function(){ return load('coachProfile') ? 'main' : 'onboarding'; });
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [onboardingData, setOnboardingData] = useState({
+  var _onboardingDraft = load('coachOnboardingDraft');
+  const [onboardingStep, setOnboardingStep] = useState(_onboardingDraft ? (_onboardingDraft._step||0) : 0);
+  const [onboardingData, setOnboardingData] = useState(_onboardingDraft ? (function(){var d=Object.assign({},_onboardingDraft);delete d._step;return d;})() : {
     daysPerWeek: 4, sessionLength: '60 min', preferredDays: [],
     location: 'Commercial gym', equipmentNotes: '',
     hasInjuries: false, injuries: '', hasAvoidMovements: false, avoidMovements: '',
@@ -7585,8 +7586,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   function renderOnboarding() {
     var step = onboardingStep;
     var data = onboardingData;
-    function setField(k, v) { setOnboardingData(function(p){return Object.assign({},p,{[k]:v});}); }
+    function setField(k, v) { setOnboardingData(function(p){var next=Object.assign({},p,{[k]:v});save('coachOnboardingDraft',Object.assign({},next,{_step:step}));return next;}); }
     function toggleArr(k, v) { var a=data[k]||[]; setField(k, a.includes(v)?a.filter(function(x){return x!==v;}):[...a,v]); }
+    function goStep(n) { setOnboardingStep(n); save('coachOnboardingDraft',Object.assign({},data,{_step:n})); }
     var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     var JOINTS = ['Shoulders','Knees','Lower back','Hips','Elbows','Wrists'];
     var stepTitles = ['Training Availability','Equipment','Physical Limitations','Strength Baseline','Schedule Flexibility','Reference Photos','Day 1 Photo'];
@@ -7606,6 +7608,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         setCurrentProgram(result.parsed.program); save('currentProgram',result.parsed.program);
         setProgramMeta(result.parsed.programMeta); save('programMeta',result.parsed.programMeta);
         save('coachOnboardingReasoning', result.parsed.reasoning||'');
+        save('coachOnboardingDraft', null);
         setCoachPhase('main');
       } catch(err){ setOnboardingError(err.message||'Something went wrong.'); }
       setOnboardingLoading(false);
@@ -7784,6 +7787,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     }
 
     return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      load('coachOnboardingDraft')?e('div',{style:{display:'flex',justifyContent:'flex-end'}},
+        e('button',{onClick:function(){save('coachOnboardingDraft',null);setOnboardingStep(0);setOnboardingData({daysPerWeek:4,sessionLength:'60 min',preferredDays:[],location:'Commercial gym',equipmentNotes:'',hasInjuries:false,injuries:'',hasAvoidMovements:false,avoidMovements:'',jointIssues:[],scheduleFlexibility:'Fixed',offLimitDays:'',strengthLifts:{'Barbell Bench Press':{weight:'',reps:''},'Incline Press (Bar or DB)':{weight:'',reps:'',note:''},'Overhead Press (Bar or DB)':{weight:'',reps:'',note:''},'Squat or Leg Press':{weight:'',reps:'',note:''},'Romanian or Conv. Deadlift':{weight:'',reps:'',note:''},'Lat Pulldown or Weighted Pull-up':{weight:'',reps:'',note:''}}});},style:{fontSize:11,color:MUTED,background:'none',border:'1px solid '+BORDER,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:'inherit'}},'🔖 Clear bookmark')
+      ):null,
       e('div',{style:{display:'flex',gap:4}},
         ...stepTitles.map(function(t,i){return e('div',{key:i,style:{flex:1,height:4,borderRadius:4,background:i<=step?ACCENT:'#E8E8F0',transition:'background 0.3s'}});})
       ),
@@ -7794,8 +7800,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
       ),
       onboardingError?e('div',{style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}},'⚠️ '+onboardingError):null,
       e('div',{style:{display:'flex',gap:10}},
-        step>0?e('button',{onClick:function(){setOnboardingStep(step-1);setOnboardingError(null);},style:{padding:'14px 20px',borderRadius:14,border:'1px solid '+BORDER,background:'#F8FAFC',color:TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'← Back'):null,
-        step<6?e('button',{onClick:function(){if(canNext[step])setOnboardingStep(step+1);},disabled:!canNext[step],style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:canNext[step]?'linear-gradient(135deg,'+ACCENT+','+PURPLE+')':'#E8E8F0',color:canNext[step]?'white':'#B0B0C0',fontSize:14,fontWeight:800,cursor:canNext[step]?'pointer':'default',fontFamily:'inherit'}},'Continue →'):
+        step>0?e('button',{onClick:function(){goStep(step-1);setOnboardingError(null);},style:{padding:'14px 20px',borderRadius:14,border:'1px solid '+BORDER,background:'#F8FAFC',color:TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'← Back'):null,
+        step<6?e('button',{onClick:function(){if(canNext[step])goStep(step+1);},disabled:!canNext[step],style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:canNext[step]?'linear-gradient(135deg,'+ACCENT+','+PURPLE+')':'#E8E8F0',color:canNext[step]?'white':'#B0B0C0',fontSize:14,fontWeight:800,cursor:canNext[step]?'pointer':'default',fontFamily:'inherit'}},'Continue →'):
         e('button',{onClick:submitOnboarding,disabled:onboardingLoading,style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:onboardingLoading?'#E8E8F0':'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:onboardingLoading?'#B0B0C0':'white',fontSize:14,fontWeight:800,cursor:onboardingLoading?'default':'pointer',fontFamily:'inherit',boxShadow:onboardingLoading?'none':'0 8px 24px rgba(123,47,255,0.3)'}},onboardingLoading?'🤖 Building your program...':'🚀 Build My Program')
       )
     );
