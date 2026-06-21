@@ -1,5 +1,12 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
+function imgMediaType(b64: string): 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' {
+  if (b64.startsWith('iVBOR')) return 'image/png'
+  if (b64.startsWith('R0lGO')) return 'image/gif'
+  if (b64.startsWith('UklGR')) return 'image/webp'
+  return 'image/jpeg'
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -216,11 +223,11 @@ serve(async (req) => {
 
       // Reference photos first so Claude sees the target before reading intake
       for (const refB64 of refPhotos) {
-        onboardingContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: refB64 } })
+        onboardingContent.push({ type: 'image', source: { type: 'base64', media_type: imgMediaType(refB64), data: refB64 } })
       }
       // Then Day 1 photo
       if (photo) {
-        onboardingContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: photo } })
+        onboardingContent.push({ type: 'image', source: { type: 'base64', media_type: imgMediaType(photo), data: photo } })
       }
       onboardingContent.push({ type: 'text', text: userPrompt })
 
@@ -259,7 +266,7 @@ serve(async (req) => {
       if (photo) {
         contentBlocks.push({
           type: 'image',
-          source: { type: 'base64', media_type: 'image/jpeg', data: photo },
+          source: { type: 'base64', media_type: imgMediaType(photo), data: photo },
         })
       }
       contentBlocks.push({ type: 'text', text: userPrompt })
