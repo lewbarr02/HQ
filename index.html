@@ -1880,14 +1880,37 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
         if (nowMin >= endMin && nowMin < endMin + 2 && !fired.includes(p.id)) {
           fired.push(p.id);
           localStorage.setItem(firedKey, JSON.stringify(fired));
-          if ('Notification' in window && Notification.permission === 'granted') {
-            var n = new Notification('⏱ Block complete — ' + p.name, {
-              body: "Time's up. What did you get done? Tap to log it.",
-              icon: '/icon-192.png',
-              tag: 'hs-' + p.id,
-            });
-            n.onclick = function() { window.focus(); };
-          }
+          // Try true push first (works even when tab is backgrounded)
+          navigator.serviceWorker && navigator.serviceWorker.ready.then(function(reg) {
+            return reg.pushManager.getSubscription();
+          }).then(function(sub) {
+            if (sub) {
+              fetch(SUPABASE_FN + '/send-push', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON},
+                body: JSON.stringify({
+                  type: 'hardstop',
+                  subscription: sub.toJSON(),
+                  custom: {
+                    title: '⏱ Block complete — ' + p.name,
+                    body: "Time's up. What did you get done? Tap to log it.",
+                    tag: 'hs-' + p.id,
+                  }
+                })
+              }).catch(function(){});
+            } else if ('Notification' in window && Notification.permission === 'granted') {
+              var n = new Notification('⏱ Block complete — ' + p.name, {
+                body: "Time's up. What did you get done? Tap to log it.",
+                icon: '/icon-192.png',
+                tag: 'hs-' + p.id,
+              });
+              n.onclick = function() { window.focus(); };
+            }
+          }).catch(function() {
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('⏱ Block complete — ' + p.name, {body:"Time's up. What did you get done?",icon:'/icon-192.png',tag:'hs-'+p.id});
+            }
+          });
           setHardStopModal(p);
           setHardStopText('');
           setHardStopProjectId(p.projectId || '');

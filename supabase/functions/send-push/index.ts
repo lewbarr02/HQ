@@ -66,14 +66,25 @@ serve(async (req) => {
     webpush.setVapidDetails('mailto:lewbarrapps@gmail.com', vapidPublicKey, vapidPrivateKey)
 
     const body = await req.json().catch(() => ({}))
-    const { type = 'test', subscription } = body
-    const notif = NOTIFICATION_SCHEDULES[type as keyof typeof NOTIFICATION_SCHEDULES] || NOTIFICATION_SCHEDULES.test
+    const { type = 'test', subscription, custom } = body
+
+    let notifData: { title: string; body: string; tag: string; requireInteraction: boolean }
+    if (type === 'hardstop' && custom?.title) {
+      notifData = {
+        title: custom.title,
+        body: custom.body || "Time's up. What did you get done?",
+        tag: custom.tag || 'hq-hardstop',
+        requireInteraction: true,
+      }
+    } else {
+      notifData = NOTIFICATION_SCHEDULES[type as keyof typeof NOTIFICATION_SCHEDULES] || NOTIFICATION_SCHEDULES.test
+    }
 
     const payload = JSON.stringify({
-      title: notif.title,
-      body: notif.body,
-      tag: notif.tag,
-      requireInteraction: notif.requireInteraction,
+      title: notifData.title,
+      body: notifData.body,
+      tag: notifData.tag,
+      requireInteraction: notifData.requireInteraction,
       url: '/',
     })
 
