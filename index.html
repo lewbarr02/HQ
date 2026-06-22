@@ -7376,7 +7376,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
                   style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
                   placeholder:targetW?String(targetW):'lbs',
                   value:draft.weight||'',
-                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{weight:v})});},
+                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{weight:v})});});},
                   onClick:function(ev){ev.stopPropagation();}
                 })
               ),
@@ -7387,7 +7387,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
                   style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
                   placeholder:String(ex.reps).split('-').pop()||String(ex.reps),
                   value:draft.reps||'',
-                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{reps:v})});},
+                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{reps:v})});});},
                   onClick:function(ev){ev.stopPropagation();}
                 })
               ),
