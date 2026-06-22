@@ -7120,6 +7120,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   const [historyFilter, setHistoryFilter] = useState('all');
   const [expandedDay, setExpandedDay] = useState(null);
   // Coach state
+  const [watchLog, setWatchLog] = useState(function(){ return load('watchLog') || []; });
+  const [watchUploading, setWatchUploading] = useState(false);
+  const [watchError, setWatchError] = useState(null);
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
   const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
@@ -7869,7 +7872,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         var streak=0,rl=load('routineLog')||{},td=today();
         for(var si=0;si<60;si++){var dt=new Date(td+'T12:00:00');dt.setDate(dt.getDate()-si);var dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');if(rl[dk+'_test'])continue;if(rl[dk+'_done'])streak++;else break;}
         var wtEntries=Object.entries(bodyWeightLog).sort(function(a,b){return a[0]<b[0]?-1:1;}).slice(-4).map(function(en){return en[0]+': '+en[1]+'lbs';}).join(', ');
-        var checkinData={sessionsCompleted:form.sessionsCompleted||0,programmedDays:programmedDays,energy:form.energy,soreness:form.hasSoreness?(Array.isArray(form.soreness)?form.soreness.join(', '):form.soreness):null,pain:form.hasPain?form.pain:null,weight:form.weight,sleepQuality:form.sleepQuality,cpapCompliance:form.cpapCompliance,openNotes:form.openNotes,hasPhoto:!!form.photoBase64,workoutSummary:getWorkoutSummary(),macroSummary:getMacroSummary(),currentProgram:currentProgram,morningStreak:streak,weightTrend:wtEntries||null,aestheticTarget:(coachProfile&&coachProfile.aestheticTarget)||null};
+        var cutoffW=new Date();cutoffW.setDate(cutoffW.getDate()-7);
+        var watchWeek=(watchLog||[]).filter(function(w){return w.date&&new Date(w.date+'T12:00:00')>=cutoffW;});
+        var watchSummary=watchWeek.length?watchWeek.map(function(w){return w.date+': '+w.workoutType+(w.duration?' '+w.duration+'min':'')+' — '+(w.activeCalories?w.activeCalories+' active cal':'?')+' burned'+(w.avgHeartRate?', avg HR '+w.avgHeartRate:'');}).join('\n'):'No watch workouts uploaded this week';
+        var checkinData={sessionsCompleted:form.sessionsCompleted||0,programmedDays:programmedDays,energy:form.energy,soreness:form.hasSoreness?(Array.isArray(form.soreness)?form.soreness.join(', '):form.soreness):null,pain:form.hasPain?form.pain:null,weight:form.weight,sleepQuality:form.sleepQuality,cpapCompliance:form.cpapCompliance,openNotes:form.openNotes,hasPhoto:!!form.photoBase64,workoutSummary:getWorkoutSummary(),watchSummary:watchSummary,macroSummary:getMacroSummary(),currentProgram:currentProgram,morningStreak:streak,weightTrend:wtEntries||null,aestheticTarget:(coachProfile&&coachProfile.aestheticTarget)||null};
         var resp=await fetch(COACH_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'weekly-checkin',checkinData:checkinData,photo:form.photoBase64||null})});
         if(!resp.ok){var errt=await resp.text();throw new Error(errt);}
         var result=await resp.json();
@@ -8010,6 +8016,153 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     );
   }
 
+  function renderWatch() {
+    var ACCENT_WATCH = '#30D158'; // Apple green
+    var sorted = watchLog.slice().sort(function(a,b){return a.date<b.date?1:-1;});
+
+    // Trend data — last 8 weeks by week
+    function weekKey(dateStr) {
+      var d = new Date(dateStr+'T12:00:00');
+      var day = d.getDay(); // 0=Sun
+      var monday = new Date(d); monday.setDate(d.getDate() - ((day+6)%7));
+      return monday.toISOString().slice(0,10);
+    }
+    var byWeek = {};
+    watchLog.forEach(function(w){
+      if(!w.date) return;
+      var wk = weekKey(w.date);
+      if(!byWeek[wk]) byWeek[wk] = {activeCal:0,sessions:0,minutes:0};
+      byWeek[wk].activeCal += (w.activeCalories||0);
+      byWeek[wk].sessions  += 1;
+      byWeek[wk].minutes   += (w.duration||0);
+    });
+    var weekKeys = Object.keys(byWeek).sort().slice(-8);
+    var maxCal = Math.max(1, ...weekKeys.map(function(k){return byWeek[k].activeCal;}));
+
+    // 30-day totals
+    var cutoff = new Date(); cutoff.setDate(cutoff.getDate()-30);
+    var last30 = watchLog.filter(function(w){return w.date && new Date(w.date+'T12:00:00')>=cutoff;});
+    var total30Cal  = last30.reduce(function(s,w){return s+(w.activeCalories||0);},0);
+    var total30Sess = last30.length;
+    var avg30Min    = total30Sess ? Math.round(last30.reduce(function(s,w){return s+(w.duration||0);},0)/total30Sess) : 0;
+
+    function resizeAndUpload(file) {
+      setWatchUploading(true); setWatchError(null);
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var img = new Image();
+        img.onload = async function() {
+          var MAX=1200, w=img.width, h=img.height;
+          if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+          var canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+          canvas.getContext('2d').drawImage(img,0,0,w,h);
+          var b64 = canvas.toDataURL('image/jpeg',0.82).split(',')[1];
+          try {
+            var resp = await fetch(COACH_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'extract-watch-screenshot',photo:b64})});
+            if(!resp.ok){var t=await resp.text();throw new Error(t);}
+            var result = await resp.json();
+            if(!result.parsed) throw new Error('Could not read workout data from screenshot.');
+            var entry = Object.assign({id:'ww'+Date.now(), uploadedAt:new Date().toISOString()}, result.parsed);
+            if(!entry.date) entry.date = today();
+            var newLog = [entry, ...watchLog];
+            setWatchLog(newLog); save('watchLog', newLog);
+          } catch(err){ setWatchError(err.message||'Upload failed.'); }
+          setWatchUploading(false);
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function deleteEntry(id) {
+      var newLog = watchLog.filter(function(w){return w.id!==id;});
+      setWatchLog(newLog); save('watchLog',newLog);
+    }
+
+    return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+
+      // Upload card
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'20px',border:'1px solid '+BORDER,textAlign:'center'}},
+        watchUploading
+          ? e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:10}},
+              e('div',{style:{fontSize:28}},'⌚'),
+              e('div',{style:{fontSize:14,fontWeight:700,color:TEXT}},'Reading your workout...'),
+              e('div',{style:{fontSize:12,color:MUTED}},'Claude is extracting the data'))
+          : e('div',{},
+              e('div',{style:{fontSize:32,marginBottom:8}},'📸'),
+              e('div',{style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:4}},'Upload Watch Screenshot'),
+              e('div',{style:{fontSize:12,color:MUTED,marginBottom:14}},'Finish a workout → screenshot → upload here'),
+              e('label',{style:{display:'inline-block',padding:'12px 28px',borderRadius:12,background:'linear-gradient(135deg,'+ACCENT_WATCH+',#00C6FF)',color:'white',fontSize:14,fontWeight:800,cursor:'pointer'}},
+                '+ Add Screenshot',
+                e('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(ev){if(ev.target.files[0])resizeAndUpload(ev.target.files[0]);}})
+              )
+            ),
+        watchError?e('div',{style:{marginTop:12,background:'#FEF2F2',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#DC2626',textAlign:'left'}},'⚠️ '+watchError):null
+      ),
+
+      // 30-day summary pills
+      last30.length>0?e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}},
+        e('div',{style:{background:'#F0FDF4',borderRadius:14,padding:'14px 12px',textAlign:'center',border:'1px solid #86EFAC'}},
+          e('div',{style:{fontSize:20,fontWeight:800,color:ACCENT_WATCH}},total30Cal.toLocaleString()),
+          e('div',{style:{fontSize:10,fontWeight:700,color:'#166534',textTransform:'uppercase',letterSpacing:0.6}},'Active Cal'),
+          e('div',{style:{fontSize:10,color:'#4ADE80'}},'30 days')
+        ),
+        e('div',{style:{background:'#EFF6FF',borderRadius:14,padding:'14px 12px',textAlign:'center',border:'1px solid #93C5FD'}},
+          e('div',{style:{fontSize:20,fontWeight:800,color:'#3B82F6'}},total30Sess),
+          e('div',{style:{fontSize:10,fontWeight:700,color:'#1E40AF',textTransform:'uppercase',letterSpacing:0.6}},'Sessions'),
+          e('div',{style:{fontSize:10,color:'#93C5FD'}},'30 days')
+        ),
+        e('div',{style:{background:'#FFF7ED',borderRadius:14,padding:'14px 12px',textAlign:'center',border:'1px solid #FCD34D'}},
+          e('div',{style:{fontSize:20,fontWeight:800,color:'#F59E0B'}},avg30Min+'m'),
+          e('div',{style:{fontSize:10,fontWeight:700,color:'#92400E',textTransform:'uppercase',letterSpacing:0.6}},'Avg Time'),
+          e('div',{style:{fontSize:10,color:'#FCD34D'}},'per session')
+        )
+      ):null,
+
+      // Weekly calorie bar chart
+      weekKeys.length>0?e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:14}},'🔥 Active Calories — Weekly'),
+        e('div',{style:{display:'flex',alignItems:'flex-end',gap:6,height:80}},
+          ...weekKeys.map(function(wk){
+            var wkData=byWeek[wk];
+            var pct=Math.max(4,Math.round((wkData.activeCal/maxCal)*100));
+            var label=new Date(wk+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+            return e('div',{key:wk,style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}},
+              e('div',{style:{fontSize:9,color:MUTED,fontWeight:700}},wkData.activeCal>0?wkData.activeCal:''),
+              e('div',{style:{width:'100%',height:pct+'%',borderRadius:'4px 4px 0 0',background:wkData.activeCal>0?'linear-gradient(180deg,'+ACCENT_WATCH+',#00C6FF)':'#F0F0F0',minHeight:4}}),
+              e('div',{style:{fontSize:8,color:MUTED,textAlign:'center',lineHeight:1.2}},label)
+            );
+          })
+        )
+      ):null,
+
+      // Session history
+      sorted.length>0?e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:12}},'📋 Session History'),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          ...sorted.map(function(w){
+            return e('div',{key:w.id,style:{background:'#F8FAFC',borderRadius:12,padding:'12px',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+              e('div',{},
+                e('div',{style:{fontSize:13,fontWeight:800,color:TEXT}},w.workoutType||'Workout'),
+                e('div',{style:{fontSize:11,color:MUTED,marginBottom:6}},w.date||''),
+                e('div',{style:{display:'flex',gap:10,flexWrap:'wrap'}},
+                  w.activeCalories?e('span',{style:{fontSize:11,fontWeight:700,color:ACCENT_WATCH}},w.activeCalories+' active cal'):null,
+                  w.duration?e('span',{style:{fontSize:11,color:MUTED}},w.duration+' min'):null,
+                  w.avgHeartRate?e('span',{style:{fontSize:11,color:'#EF4444'}},w.avgHeartRate+' bpm avg'):null
+                )
+              ),
+              e('button',{onClick:function(){deleteEntry(w.id);},style:{background:'none',border:'none',fontSize:16,color:MUTED,cursor:'pointer',padding:'0 4px',lineHeight:1}},'×')
+            );
+          })
+        )
+      ):e('div',{style:{background:'#F8FAFC',borderRadius:16,padding:'24px',border:'1px dashed '+BORDER,textAlign:'center'}},
+        e('div',{style:{fontSize:32,marginBottom:8}},'⌚'),
+        e('div',{style:{fontSize:14,fontWeight:600,color:TEXT,marginBottom:4}},'No workouts yet'),
+        e('div',{style:{fontSize:12,color:MUTED}},'Upload your first Apple Watch screenshot above')
+      )
+    );
+  }
+
   function renderCoach() {
     if(coachPhase==='onboarding') return renderOnboarding();
     if(coachPhase==='checkin') return renderCheckinForm();
@@ -8022,7 +8175,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['log','+ Log Workout'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
+        ...[ ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
             flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
@@ -8036,6 +8189,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     // Body
     e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch'}},
       view==='log'     ? renderLog()     :
+      view==='watch'   ? renderWatch()   :
       view==='history' ? renderHistory() :
       renderCoach()
     )

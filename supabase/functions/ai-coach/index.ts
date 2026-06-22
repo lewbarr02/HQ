@@ -147,6 +147,9 @@ BODY:
 WORKOUT LOG (last 7 days):
 ${data.workoutSummary || 'No sessions logged'}
 
+APPLE WATCH DATA (last 7 days):
+${data.watchSummary || 'No watch data uploaded'}
+
 CURRENT PROGRAM:
 ${JSON.stringify(data.currentProgram || {}, null, 2)}
 
@@ -297,6 +300,53 @@ serve(async (req) => {
       return new Response(JSON.stringify({ content: rawText, parsed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // ── type: extract-watch-screenshot ────────────────────────────────────
+    if (type === 'extract-watch-screenshot') {
+      if (!photo) return new Response(JSON.stringify({ error: 'No photo provided' }), { status: 400, headers: corsHeaders })
+
+      const extractPrompt = `This is a screenshot from an Apple Watch workout summary. Extract all visible workout data and return it as JSON.
+
+Return ONLY this JSON object (no other text):
+\`\`\`json
+{
+  "workoutType": "e.g. Strength Training, HIIT, Outdoor Run, etc.",
+  "date": "YYYY-MM-DD if visible, otherwise null",
+  "duration": "total workout duration in minutes as a number, or null",
+  "activeCalories": "active/move calories burned as a number, or null",
+  "totalCalories": "total calories burned as a number, or null",
+  "avgHeartRate": "average heart rate in BPM as a number, or null",
+  "maxHeartRate": "max heart rate in BPM as a number, or null",
+  "distance": "distance in miles as a number if shown, or null",
+  "confidence": "high | medium | low — how clearly you could read the data"
+}
+\`\`\`
+If a value is not visible in the screenshot, use null. Numbers only (no units in the values).`
+
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 512,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: imgMediaType(photo), data: photo } },
+              { type: 'text', text: extractPrompt },
+            ]
+          }],
+        }),
+      })
+      if (!resp.ok) {
+        const err = await resp.text()
+        return new Response(JSON.stringify({ error: err }), { status: resp.status, headers: corsHeaders })
+      }
+      const data = await resp.json()
+      const rawText = data.content?.[0]?.text || ''
+      const parsed = extractJSON(rawText)
+      return new Response(JSON.stringify({ parsed }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     return new Response(JSON.stringify({ error: 'Unknown type: ' + type }), { status: 400, headers: corsHeaders })
