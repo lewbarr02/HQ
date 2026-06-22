@@ -7310,34 +7310,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
         })
       ),
       e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
-        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}}, '💪 Muscle Groups Worked'),
-        e('div', {style:{fontSize:11,color:MUTED,marginBottom:12}}, selDay ? 'Auto-selected from program — adjust if needed' : 'Select every group you trained today'),
-        ...categories.map(function(cat){
-          var groups = MUSCLE_GROUPS.filter(function(g){return g.category===cat;});
-          var col = CATEGORY_COLORS[cat];
-          return e('div', {key:cat, style:{marginBottom:14}},
-            e('div', {style:{fontSize:11,fontWeight:700,color:col.text,letterSpacing:0.8,textTransform:'uppercase',marginBottom:6}}, cat),
-            e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
-              ...groups.map(function(g){
-                var sel = selectedGroups.includes(g.id);
-                return e('button', {key:g.id,
-                  onClick:function(){toggleGroup(g.id);},
-                  style:{
-                    display:'flex',alignItems:'center',gap:5,
-                    padding:'7px 13px',borderRadius:20,
-                    background:sel?col.grad:'#F8FAFC',
-                    border:'1.5px solid '+(sel?col.border:BORDER),
-                    color:sel?'white':TEXT,
-                    fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
-                    transition:'all 0.15s',
-                  }
-                }, e('span',{},g.emoji), g.name);
-              })
-            )
-          );
-        })
-      ),
-      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:10}}, '📊 Session Details (optional)'),
         e('div', {style:{display:'flex',gap:10,marginBottom:10}},
           e('div', {style:{flex:1}},
@@ -7355,7 +7327,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
       ),
       e('button', {
         onClick:function(){
-          if(selectedGroups.length === 0) return;
+          if(!selectedProgramDay && !sessionNote.trim() && !Object.keys(programExerciseLogs).length) return;
           var exData = selDay ? Object.keys(programExerciseLogs).filter(function(k){return programExerciseLogs[k].weight||programExerciseLogs[k].reps;}).map(function(k){return {name:k, weight:programExerciseLogs[k].weight, reps:programExerciseLogs[k].reps};}) : [];
           var entry = { id:'w'+Date.now(), groups:selectedGroups, sets:sessionSets?parseInt(sessionSets):null, note:sessionNote.trim(), programDay:selectedProgramDay||null, exercises:exData };
           var day = safeLog[logDate] || [];
@@ -7384,16 +7356,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
           setSelectedProgramDay(null); setProgramExerciseLogs({});
           setView('log');
         },
-        disabled:selectedGroups.length===0,
         style:{
           padding:'17px',borderRadius:16,
-          background:selectedGroups.length>0?'linear-gradient(135deg,#3B82F6,#8B5CF6)':'#E8E8F0',
-          border:'none',color:selectedGroups.length>0?'white':'#B0B0C0',
-          fontSize:16,fontWeight:800,cursor:selectedGroups.length>0?'pointer':'default',
-          fontFamily:'inherit',boxShadow:selectedGroups.length>0?'0 8px 24px rgba(59,130,246,0.3)':'none',
+          background:'linear-gradient(135deg,#3B82F6,#8B5CF6)',
+          border:'none',color:'white',
+          fontSize:16,fontWeight:800,cursor:'pointer',
+          fontFamily:'inherit',boxShadow:'0 8px 24px rgba(59,130,246,0.3)',
           transition:'all 0.2s',
         }
-      }, selectedGroups.length>0?('💾 Save Workout ('+selectedGroups.length+' groups)'):'Select muscle groups first')
+      }, '💾 Save Workout')
     );
   }
 
