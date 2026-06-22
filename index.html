@@ -7130,6 +7130,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   const [coachAnalysis, setCoachAnalysis] = useState(function(){ return load('coachAnalysis') || null; });
   const [coachAnalysisDate, setCoachAnalysisDate] = useState(function(){ return load('coachAnalysisDate') || null; });
   const [coachError, setCoachError] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState(null);
   // ── Program / Onboarding / Check-in state ────────────────────────────────
   const [coachProfile, setCoachProfile] = useState(function(){ return load('coachProfile'); });
   const [currentProgram, setCurrentProgram] = useState(function(){ return load('currentProgram'); });
@@ -7738,6 +7741,45 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     );
   }
 
+  function renderImportModal() {
+    if(!showImportModal) return null;
+    function handleImport() {
+      setImportError(null);
+      var raw = importText.trim();
+      if(!raw) { setImportError('Paste the JSON from Claude first.'); return; }
+      var parsed;
+      try { parsed = JSON.parse(raw); } catch(e) { setImportError('Invalid JSON — copy the full block Claude outputs.'); return; }
+      // Accept either the full bundle {program, programMeta} or just the program object
+      var prog = parsed.program || parsed;
+      var meta = parsed.programMeta || null;
+      if(!prog.days || !Array.isArray(prog.days)) { setImportError('Missing "days" array — make sure Claude used the correct format.'); return; }
+      setCurrentProgram(prog); save('currentProgram', prog);
+      if(meta) { setProgramMeta(meta); save('programMeta', meta); }
+      if(parsed.reasoning) { save('coachOnboardingReasoning', parsed.reasoning); }
+      setImportText('');
+      setShowImportModal(false);
+    }
+    return e('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:999,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
+      e('div',{style:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 20px',width:'100%',maxWidth:600,maxHeight:'80vh',display:'flex',flexDirection:'column',gap:14}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          e('div',{style:{fontSize:16,fontWeight:800,color:TEXT}},'📥 Import Plan from Claude'),
+          e('button',{onClick:function(){setShowImportModal(false);setImportError(null);setImportText('');},style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',lineHeight:1}},'×')
+        ),
+        e('div',{style:{background:'#F0F7FF',borderRadius:12,padding:'12px 14px',fontSize:12,color:'#1D4ED8',lineHeight:1.6}},
+          '1. Finish your consultation in Claude\n2. Type "lock this in" to get the JSON\n3. Copy the full JSON block and paste it below'
+        ),
+        e('textarea',{
+          style:{flex:1,minHeight:180,borderRadius:12,border:'1.5px solid '+BORDER,padding:'12px',fontSize:12,fontFamily:'monospace',resize:'vertical',outline:'none'},
+          placeholder:'Paste Claude JSON here...',
+          value:importText,
+          onInput:function(ev){setImportText(ev.target.value);setImportError(null);}
+        }),
+        importError?e('div',{style:{background:'#FEF2F2',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#DC2626',border:'1px solid #FECACA'}},'⚠️ '+importError):null,
+        e('button',{onClick:handleImport,style:{padding:'15px',borderRadius:14,background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}},'Import Plan')
+      )
+    );
+  }
+
   function renderProgramCard() {
     var prog = currentProgram;
     if(!prog) return null;
@@ -7802,6 +7844,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     }
 
     return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      renderImportModal(),
+      e('button',{onClick:function(){setShowImportModal(true);},style:{padding:'12px 16px',borderRadius:14,background:'#F0F7FF',border:'1.5px solid #BFDBFE',color:'#1D4ED8',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}},'📥 Import Plan from Claude →'),
       renderProgramCard(),
       coachProfile?e('div',{style:{background:canCheckin?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':'#F0F2F8',borderRadius:16,padding:'16px',boxShadow:canCheckin?'0 8px 24px rgba(123,47,255,0.25)':'none'}},
         e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
