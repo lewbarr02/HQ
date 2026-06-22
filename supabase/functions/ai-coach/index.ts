@@ -81,6 +81,10 @@ Design a program that:
 4. Respects all injury/movement constraints
 5. Progressive overload structure with clear progression logic
 
+WEIGHT RULE — CRITICAL: Every exercise MUST have a specific numeric targetWeight. Never leave targetWeight as null.
+- For exercises with an estimated 1RM: use ~70-75% of that 1RM
+- For isolation exercises without 1RM data (lateral raises, cable flyes, curls, pushdowns, etc.): estimate a realistic starting weight for an intermediate-to-advanced 43-year-old male lifter with 20+ years of experience. Use real-world typical working weights (e.g. lateral raises 20-30lbs, cable flyes 30-40lbs per side, pushdowns 50-70lbs, curls 35-50lbs). Conservative but not insulting.
+
 Return ONLY a JSON object (no markdown outside the code block):
 \`\`\`json
 {
