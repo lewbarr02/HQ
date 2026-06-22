@@ -7112,7 +7112,7 @@ function CalendarScreen({ calendarConnected, setCalendarConnected, setTab }) {
 }
 
 function FitnessScreen({ workoutLog, setWorkoutLog }) {
-  const [view, setView] = useState('balance'); // balance | log | history | coach
+  const [view, setView] = useState('log'); // log | history | coach
   const [logDate, setLogDate] = useState(today());
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [sessionNote, setSessionNote] = useState('');
@@ -7164,97 +7164,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   const [bodyWeightLog, setBodyWeightLog] = useState(function(){ return load('bodyWeightLog') || {}; });
   const safeLog = workoutLog || {};
 
-  // ── Balance view ──────────────────────────────────────────────────────────
-  function renderBalance() {
-    var categories = ['Push','Pull','Legs','Core'];
-
-    // Push/Pull balance score
-    var pushGroups = MUSCLE_GROUPS.filter(function(g){return g.category==='Push';});
-    var pullGroups = MUSCLE_GROUPS.filter(function(g){return g.category==='Pull';});
-    var pushAvg = pushGroups.reduce(function(s,g){var d=daysSince(safeLog,g.id);return s+(d===null?99:d);},0)/pushGroups.length;
-    var pullAvg = pullGroups.reduce(function(s,g){var d=daysSince(safeLog,g.id);return s+(d===null?99:d);},0)/pullGroups.length;
-    var ppDiff = Math.abs(pushAvg - pullAvg);
-    var ppLabel = ppDiff < 1 ? 'Balanced ✓' : (pushAvg < pullAvg ? 'More Pull needed' : 'More Push needed');
-    var ppColor = ppDiff < 1 ? '#10B981' : (ppDiff < 3 ? '#EAB308' : '#EF4444');
-
-    // Neglected groups (5+ days or never)
-    var neglected = MUSCLE_GROUPS.filter(function(g){ var d=daysSince(safeLog,g.id); return d===null||d>=5; });
-
-    return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
-
-      // Push/Pull Balance card
-      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER,boxShadow:'0 2px 8px rgba(0,0,0,0.05)'}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Push / Pull Balance'),
-        e('div', {style:{display:'flex',alignItems:'center',gap:12,marginBottom:10}},
-          e('div', {style:{flex:1}},
-            e('div', {style:{fontSize:11,fontWeight:700,color:'#3B82F6',marginBottom:4}}, 'PUSH'),
-            e('div', {style:{height:10,borderRadius:5,background:'#EEF2FF',overflow:'hidden'}},
-              e('div', {style:{height:'100%',width:Math.min(100,Math.max(0,(1-pushAvg/14)*100))+'%',background:CATEGORY_COLORS.Push.grad,borderRadius:5,transition:'width 0.5s'}})
-            ),
-            e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, pushAvg<99?Math.round(pushAvg)+'d avg':'no data')
-          ),
-          e('div', {style:{fontSize:12,fontWeight:800,color:ppColor,textAlign:'center',minWidth:70}}, ppLabel),
-          e('div', {style:{flex:1}},
-            e('div', {style:{fontSize:11,fontWeight:700,color:'#10B981',marginBottom:4,textAlign:'right'}}, 'PULL'),
-            e('div', {style:{height:10,borderRadius:5,background:'#ECFDF5',overflow:'hidden',direction:'rtl'}},
-              e('div', {style:{height:'100%',width:Math.min(100,Math.max(0,(1-pullAvg/14)*100))+'%',background:CATEGORY_COLORS.Pull.grad,borderRadius:5,transition:'width 0.5s'}})
-            ),
-            e('div', {style:{fontSize:10,color:MUTED,marginTop:3,textAlign:'right'}}, pullAvg<99?Math.round(pullAvg)+'d avg':'no data')
-          )
-        ),
-        neglected.length > 0 ? e('div', {style:{background:'#FEF2F2',borderRadius:10,padding:'10px 12px',border:'1px solid #FECACA'}},
-          e('div', {style:{fontSize:11,fontWeight:700,color:'#DC2626',marginBottom:6}}, '⚠️ Neglected (5+ days or never)'),
-          e('div', {style:{display:'flex',flexWrap:'wrap',gap:5}},
-            ...neglected.map(function(g){
-              return e('span',{key:g.id,style:{fontSize:11,padding:'3px 8px',borderRadius:20,background:'#FEE2E2',color:'#991B1B',fontWeight:600}}, g.emoji+' '+g.name);
-            })
-          )
-        ) : e('div', {style:{background:'#D1FAE5',borderRadius:10,padding:'10px 12px'}},
-          e('div', {style:{fontSize:12,fontWeight:700,color:'#065F46'}}, '🎉 All muscle groups recently worked!')
-        )
-      ),
-
-      // Category grids
-      ...categories.map(function(cat){
-        var groups = MUSCLE_GROUPS.filter(function(g){return g.category===cat;});
-        var col = CATEGORY_COLORS[cat];
-        return e('div', {key:cat, style:{background:'#fff',borderRadius:16,padding:'14px',border:'1px solid '+BORDER}},
-          e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
-            e('div', {style:{fontSize:12,fontWeight:800,color:col.text,display:'flex',alignItems:'center',gap:6}},
-              e('div', {style:{width:8,height:8,borderRadius:'50%',background:col.border}}),
-              cat.toUpperCase()
-            ),
-            e('div', {style:{fontSize:10,color:MUTED}},
-              groups.filter(function(g){var d=daysSince(safeLog,g.id);return d!==null&&d<=3;}).length + '/' + groups.length + ' fresh'
-            )
-          ),
-          e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
-            ...groups.map(function(g){
-              var days = daysSince(safeLog, g.id);
-              var fc = freshnessColor(days);
-              return e('div', {key:g.id, style:{
-                background:fc.bg, border:'1.5px solid '+fc.border,
-                borderRadius:12, padding:'10px 12px',
-                display:'flex', alignItems:'center', justifyContent:'space-between',
-              }},
-                e('div', {style:{display:'flex',alignItems:'center',gap:8}},
-                  e('span', {style:{fontSize:18}}, g.emoji),
-                  e('div', {},
-                    e('div', {style:{fontSize:12,fontWeight:700,color:fc.text,lineHeight:1.2}}, g.name),
-                    e('div', {style:{fontSize:10,color:fc.text,opacity:0.75}}, fc.label)
-                  )
-                ),
-                days !== null && days <= 1 ? e('span',{style:{fontSize:14}},'✅') :
-                days !== null && days <= 3 ? e('span',{style:{fontSize:14}},'🟡') :
-                e('span',{style:{fontSize:14}},'🔴')
-              );
-            })
-          )
-        );
-      })
-    );
-  }
-
   // ── Log workout ───────────────────────────────────────────────────────────
   function toggleGroup(id) {
     setSelectedGroups(function(prev){
@@ -7270,7 +7179,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     setWorkoutLog(newLog);
     save('workoutLog', newLog);
     setSelectedGroups([]); setSessionNote(''); setSessionSets('');
-    setView('balance');
+    setView('log');
   }
 
   function renderLog() {
@@ -7473,7 +7382,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
           }
           setSelectedGroups([]); setSessionNote(''); setSessionSets('');
           setSelectedProgramDay(null); setProgramExerciseLogs({});
-          setView('balance');
+          setView('log');
         },
         disabled:selectedGroups.length===0,
         style:{
@@ -8142,7 +8051,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['balance','⚖️ Balance'], ['log','+ Log Workout'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
+        ...[ ['log','+ Log Workout'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
             flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
@@ -8155,7 +8064,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     ),
     // Body
     e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch'}},
-      view==='balance' ? renderBalance() :
       view==='log'     ? renderLog()     :
       view==='history' ? renderHistory() :
       renderCoach()
