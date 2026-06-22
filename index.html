@@ -7721,6 +7721,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     }
 
     return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      renderImportModal(),
+      e('div',{style:{textAlign:'center'}},
+        e('button',{onClick:function(){setShowImportModal(true);},style:{background:'none',border:'none',fontSize:12,color:ACCENT,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textDecoration:'underline'}},'Already have a plan from Claude? Import it instead')
+      ),
       load('coachOnboardingDraft')?e('div',{style:{display:'flex',justifyContent:'flex-end'}},
         e('button',{onClick:function(){save('coachOnboardingDraft',null);setOnboardingStep(0);setOnboardingData({daysPerWeek:4,sessionLength:'60 min',preferredDays:[],location:'Commercial gym',equipmentNotes:'',hasInjuries:false,injuries:'',hasAvoidMovements:false,avoidMovements:'',jointIssues:[],scheduleFlexibility:'Fixed',offLimitDays:'',strengthLifts:{'Barbell Bench Press':{weight:'',reps:''},'Incline Press (Bar or DB)':{weight:'',reps:'',note:''},'Overhead Press (Bar or DB)':{weight:'',reps:'',note:''},'Squat or Leg Press':{weight:'',reps:'',note:''},'Romanian or Conv. Deadlift':{weight:'',reps:'',note:''},'Lat Pulldown or Weighted Pull-up':{weight:'',reps:'',note:''}}});},style:{fontSize:11,color:MUTED,background:'none',border:'1px solid '+BORDER,borderRadius:8,padding:'4px 10px',cursor:'pointer',fontFamily:'inherit'}},'🔖 Clear bookmark')
       ):null,
@@ -7756,6 +7760,11 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
       setCurrentProgram(prog); save('currentProgram', prog);
       if(meta) { setProgramMeta(meta); save('programMeta', meta); }
       if(parsed.reasoning) { save('coachOnboardingReasoning', parsed.reasoning); }
+      if(!coachProfile) {
+        var minProfile = { importedFromClaude: true, createdAt: new Date().toISOString() };
+        setCoachProfile(minProfile); save('coachProfile', minProfile);
+        setCoachPhase('main');
+      }
       setImportText('');
       setShowImportModal(false);
     }
