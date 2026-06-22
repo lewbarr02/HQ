@@ -27,6 +27,59 @@ COACHING STYLE:
 - Numbers inform the program; the photo reveals the reality.
 - Lewis has ADHD — be structured, clear, and concrete in your output.`
 
+const CHECKIN_SYSTEM_PROMPT = `You are Lewis's personal AI fitness consultant. You have deep context about him that never changes:
+
+LEWIS'S PROFILE:
+- 43 years old, severe ADHD
+- 5'9", current: 205 lbs / 18% BF, goal: 190 lbs / 12% BF
+- 20+ years training, college football background
+- Trains Mon/Tue/Thu/Fri at a commercial gym (LA Fitness)
+- Left rotator cuff tear — never had surgery. No pain but left shoulder is weaker than right
+- All pressing movements use DUMBBELLS only — no barbell pressing except OHP which is also being transitioned to dumbbell
+- Naturally bottom-heavy — retains leg mass easily, legs are maintenance only
+- Lagging body part: biceps — has never trained them strictly for an extended period
+- No heavy back squats — max 135 lbs by choice. Uses Hex Bar for RDL instead of straight bar
+
+GOAL PHYSIQUE:
+- Reference: Michael B Jordan, Omari Hardwick, Reggie Bush
+- Athletic V-taper. Wide capped shoulders, visible lats, defined upper chest, full arms
+- NOT a bodybuilder look — lean, athletic, proportional
+
+PRIORITY MUSCLE ORDER THIS BLOCK:
+1. Lateral Delts — high volume, both upper days
+2. Lats/Back Width — V-taper is currently hidden under body fat
+3. Upper Chest — incline DB work
+4. Biceps — dedicated volume, strict form, progressive overload every week
+5. Legs — maintenance only
+
+CURRENT PROGRAM:
+Upper/Lower | 4 days | Mon/Tue/Thu/Fri
+
+WEEK 1 BASELINE WEIGHTS (actual logged):
+- Incline DB Press: 55 lbs x 4x8
+- Incline DB Fly: 25 lbs x 3x10
+- Lat Pulldown: 105 lbs x 4x10
+- Single Arm DB Row: 45 lbs x 3x8
+- Barbell Curl: 40 lbs x 3x8
+- Incline DB Curl: 20 lbs x 2x10
+
+PROGRESSIVE OVERLOAD RULES:
+- Hit top of rep range on ALL sets → increase weight next week
+- Hit bottom of rep range → stay at same weight
+- Missed reps or form broke down → stay or drop 5 lbs
+- Biceps and lateral delts: increase in 2.5-5 lb increments only
+- Compound movements: 5 lb increments
+
+YOUR JOB ON WEEKLY CHECK-IN:
+1. Analyze the workout log data sent — actual weights and reps logged
+2. Apply progressive overload rules to every exercise
+3. Return an updated program JSON with new targetWeights for the coming week
+4. Write a brief coaching note (2-3 sentences) as focusCue
+5. Flag anything that looks off — missed sessions, weight drops, lagging movements
+
+Always return valid JSON in exactly this format:
+{ summary, weeklyFocus, updatedProgram: { split, weekNumber, days: [...] }, focusCue }`
+
 function epley1RM(weight: number, reps: number): number {
   return Math.round(weight * (1 + reps / 30))
 }
@@ -127,9 +180,33 @@ Return ONLY a JSON object (no markdown outside the code block):
 }
 
 function buildCheckinPrompt(data: any): string {
-  return `Weekly check-in analysis for Lewis.
+  const nextWeekNumber = ((data.currentProgram?.weekNumber) || 1) + 1
+
+  // Format raw workout log into a structured, per-exercise breakdown
+  let rawLogSection = 'No sessions logged this week'
+  if (data.workoutLogRaw && Object.keys(data.workoutLogRaw).length > 0) {
+    const lines: string[] = []
+    for (const [date, sessions] of Object.entries(data.workoutLogRaw) as [string, any[]][]) {
+      for (const session of sessions) {
+        lines.push(`\n${date}${session.programDay ? ' — ' + session.programDay : ''}:`)
+        if (session.exercises && session.exercises.length > 0) {
+          for (const ex of session.exercises) {
+            const weightStr = ex.weight ? `${ex.weight} lbs` : 'no weight logged'
+            const repsStr = ex.reps ? `x${ex.reps}` : ''
+            const setsStr = ex.sets ? `${ex.sets} sets` : ''
+            lines.push(`  • ${ex.name}: ${setsStr} @ ${weightStr} ${repsStr}`.trim())
+          }
+        } else if (session.note) {
+          lines.push(`  • ${session.note}`)
+        }
+      }
+    }
+    rawLogSection = lines.join('\n')
+  }
+
+  return `Weekly check-in for Lewis. Coming week will be Week ${nextWeekNumber}.
 ${data.aestheticTarget ? `
-TARGET PHYSIQUE (extracted from reference photos at onboarding — hold this as the north star for aesthetic feedback):
+TARGET PHYSIQUE:
 ${data.aestheticTarget}
 ` : ''}
 
@@ -144,16 +221,19 @@ BODY:
 - Sleep quality: ${data.sleepQuality}/5
 - CPAP compliance: ${data.cpapCompliance}
 
-WORKOUT LOG (last 7 days):
+WORKOUT LOG — RAW EXERCISE DATA (use this to apply progressive overload rules):
+${rawLogSection}
+
+WORKOUT SUMMARY (context/notes):
 ${data.workoutSummary || 'No sessions logged'}
 
 APPLE WATCH DATA (last 7 days):
 ${data.watchSummary || 'No watch data uploaded'}
 
-CURRENT PROGRAM:
+CURRENT PROGRAM (Week ${data.currentProgram?.weekNumber || 1}):
 ${JSON.stringify(data.currentProgram || {}, null, 2)}
 
-NUTRITION (last 7 days avg):
+NUTRITION (last 7 days):
 ${data.macroSummary || 'No nutrition data logged'}
 
 MORNING ROUTINE STREAK: ${data.morningStreak || 'Unknown'}
@@ -164,21 +244,23 @@ ${data.weightTrend || 'No prior weigh-ins'}
 OPEN NOTES:
 ${data.openNotes || 'None'}
 
-${data.hasPhoto ? 'A progress photo has been included. Assess lateral delt width, upper chest fullness, and arm development specifically. Be honest — if progress is not yet visible, say so and explain the timeline.' : 'No photo this week.'}
+${data.hasPhoto ? 'A progress photo has been included. Assess lateral delt width, upper chest fullness, and arm development specifically. Be honest.' : 'No photo this week.'}
+
+Apply your progressive overload rules to every exercise in the raw log above. The updatedProgram MUST have weekNumber set to ${nextWeekNumber}.
 
 Return ONLY a JSON object:
 \`\`\`json
 {
   "weeklySnapshot": "2-3 sentences: weight trend, sessions vs programmed, macro compliance if tracked",
-  "whatWorking": "1-2 specific observations tied to logged data or photo. Not generic praise.",
+  "whatWorking": "1-2 specific observations tied to logged data. Not generic praise.",
   "whatNeedsAttention": "1-2 specific items with reasoning and what to do about them",
   "photoAssessment": ${data.hasPhoto ? '"2-3 sentences on V-taper progress: lateral delt width, upper chest fullness, arm development. Specific and honest."' : 'null'},
-  "programAdjustments": "What changes next week and exactly why. If nothing changes, say the program holds and why.",
-  "focusCue": "One specific actionable cue — technical (e.g. slow the eccentric on incline press) or behavioral (e.g. hit lateral raises before pressing — protect what matters most)",
+  "programAdjustments": "List every exercise where weight changed and why, based on the progressive overload rules.",
+  "focusCue": "One specific actionable cue for the coming week — technical or behavioral",
   "updatedProgram": {}
 }
 \`\`\`
-For updatedProgram: copy the current program structure with any weight/rep adjustments for the coming week. Increment weekNumber. Apply +5 lbs upper body / +10 lbs lower body progression where all reps were hit at target weight.`
+For updatedProgram: copy the full current program structure, update targetWeight on every exercise per the overload rules, and set weekNumber to ${nextWeekNumber}.`
 }
 
 serve(async (req) => {
@@ -284,7 +366,7 @@ serve(async (req) => {
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 4096,
-          system: SYSTEM_PROMPT,
+          system: CHECKIN_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: contentBlocks }],
         }),
       })
