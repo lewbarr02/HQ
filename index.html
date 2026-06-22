@@ -7634,6 +7634,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
   function renderOnboarding() {
     var step = onboardingStep;
     var data = onboardingData;
+    React.useEffect(function(){ save('coachOnboardingDraft', Object.assign({}, data, {_step: step})); }, []);
     function setField(k, v) { setOnboardingData(function(p){var next=Object.assign({},p,{[k]:v});save('coachOnboardingDraft',Object.assign({},next,{_step:step}));return next;}); }
     function toggleArr(k, v) { var a=data[k]||[]; setField(k, a.includes(v)?a.filter(function(x){return x!==v;}):[...a,v]); }
     function goStep(n) { setOnboardingStep(n); save('coachOnboardingDraft',Object.assign({},data,{_step:n})); }
