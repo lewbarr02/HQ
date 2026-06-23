@@ -404,7 +404,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [splitView, setSplitView] = useState(() => load('daySplitView') !== false);
   const [savedTemplates, setSavedTemplates] = useState(() => load('dayTemplates') || []);
   const [showCustomModal, setShowCustomModal] = useState(false);
-  const [customForm, setCustomForm] = useState({label:'', color:'#10B981', durationMin:30});
+  const [customForm, setCustomForm] = useState({label:'', color:'#10B981', durationMin:30, emoji:''});
   const timelineRef = useRef(null);
 
   function doCalSync(showMsg) {
@@ -873,6 +873,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           e('input', {value:customForm.label, onInput:ev=>setCustomForm(f=>({...f,label:ev.target.value})), placeholder:'e.g. Journaling', style:{width:'100%',padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
         ),
         e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'EMOJI ' + (customForm.emoji ? '— ' + customForm.emoji : '— none')),
+          e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...['💪','🧘','🏃','🚴','🏊','⚽','🎯','📚','✍️','💼','🎨','🎵','🍽️','☕','🛒','🚗','✈️','💊','🛁','😴','📞','💬','🧹','🌿','🔥','⭐','🚀','💡','❤️','🧠'].map(function(em){
+              var active = customForm.emoji === em;
+              return e('button', {key:em, onClick:function(){ setCustomForm(function(f){ return {...f, emoji: f.emoji===em ? '' : em}; }); },
+                style:{width:38,height:38,borderRadius:10,border:'2px solid '+(active?customForm.color:'transparent'),
+                  background:active?customForm.color+'18':'#F8FAFC',fontSize:20,cursor:'pointer',
+                  display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.12s'}
+              }, em);
+            })
+          )
+        ),
+        e('div', {style:{marginBottom:14}},
           e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'DURATION'),
           e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
             ...[15,30,45,60,90,120].map(function(min){
@@ -898,17 +911,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           e('button', {onClick:()=>setShowCustomModal(false), style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
           e('button', {onClick:()=>{
             if (!customForm.label.trim()) return;
-            var newItem = {id:'custom-'+Date.now(), label:customForm.label.trim(), color:customForm.color, durationMin:customForm.durationMin||30};
+            var fullLabel = (customForm.emoji ? customForm.emoji+' ' : '') + customForm.label.trim();
+            var newItem = {id:'custom-'+Date.now(), label:fullLabel, color:customForm.color, durationMin:customForm.durationMin||30};
             // Add to scheduled immediately as a draggable-ready template saved item
             var next = savedTemplates.concat([newItem]);
             setSavedTemplates(next);
             save('dayTemplates', next);
-            setCustomForm({label:'',color:'#10B981',durationMin:30});
+            setCustomForm({label:'',color:'#10B981',durationMin:30,emoji:''});
             setShowCustomModal(false);
           }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:ACCENT,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, 'Save Template'),
           e('button', {onClick:()=>{
             if (!customForm.label.trim()) return;
-            var newItem = {id:'custom-once-'+Date.now(), label:customForm.label.trim(), color:customForm.color, durationMin:customForm.durationMin||30};
+            var fullLabel = (customForm.emoji ? customForm.emoji+' ' : '') + customForm.label.trim();
+            var newItem = {id:'custom-once-'+Date.now(), label:fullLabel, color:customForm.color, durationMin:customForm.durationMin||30};
             // Place it directly on the timeline at the next upcoming 15-min mark
             var nowMin = new Date().getHours()*60 + new Date().getMinutes();
             var startMin = Math.max(START_MIN, Math.round((nowMin+5)/15)*15);
@@ -917,7 +932,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             setScheduled(nextSched);
             save('dayScheduled', nextSched);
             var sl = load('scheduledLog')||{}; sl[today()]=nextSched; save('scheduledLog',sl);
-            setCustomForm({label:'',color:'#10B981',durationMin:30});
+            setCustomForm({label:'',color:'#10B981',durationMin:30,emoji:''});
             setShowCustomModal(false);
           }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:PURPLE,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, '+ Place Now')
         )
