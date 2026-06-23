@@ -2054,74 +2054,29 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
     ),
     e('div', {style:{marginBottom:16}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Routines'),
-      e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
-        // Row 1: Morning, Midday, Evening
-        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}},
-          (function(){
-            var amDone = !!(routineLog && routineLog[td+'_done']);
+      e('div', {className:'card'},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Routines'),
+        e('div', {style:{display:'flex',gap:12,overflowX:'auto',paddingBottom:4}},
+          ...(function(){
             var DONE_C = '#10B981', TODO_C = '#EF4444';
-            return e('div', {key:'morning', style:{display:'flex',flexDirection:'column',gap:4}},
-              e('div', {className:'stat-tile', onClick:function(){ setMorningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(amDone?DONE_C+'60':TODO_C+'50'),background:amDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
-                e('div', {style:{fontSize:20,marginBottom:4}}, '🌅'),
-                e('div', {style:{fontSize:22,fontWeight:800,color:amDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, amDone?'✓':'!'),
-                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Morning')
-              ),
-              e('button', {onClick:function(ev){ev.stopPropagation();setMorningPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
-            );
-          })(),
-          (function(){
-            var mdDone = !!(middayLog && middayLog[td]);
-            var DONE_C = '#10B981', TODO_C = '#EF4444';
-            return e('div', {key:'midday', style:{display:'flex',flexDirection:'column',gap:4}},
-              e('div', {className:'stat-tile', onClick:function(){ setMiddayPhase && setMiddayPhase('checkin'); }, style:{cursor:'pointer',border:'1.5px solid '+(mdDone?DONE_C+'60':TODO_C+'50'),background:mdDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
-                e('div', {style:{fontSize:20,marginBottom:4}}, '☀️'),
-                e('div', {style:{fontSize:22,fontWeight:800,color:mdDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, mdDone?'✓':'!'),
-                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Midday')
-              ),
-              e('div', {style:{height:18}})
-            );
-          })(),
-          (function(){
-            var evDone = !!(eveningLog && eveningLog[td+'_done']);
-            var DONE_C = '#10B981', TODO_C = '#EF4444';
-            return e('div', {key:'evening', style:{display:'flex',flexDirection:'column',gap:4}},
-              e('div', {className:'stat-tile', onClick:function(){ setEveningPhase && setEveningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(evDone?DONE_C+'60':TODO_C+'50'),background:evDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
-                e('div', {style:{fontSize:20,marginBottom:4}}, '🌙'),
-                e('div', {style:{fontSize:22,fontWeight:800,color:evDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, evDone?'✓':'!'),
-                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Evening')
-              ),
-              e('button', {onClick:function(ev){ev.stopPropagation();setEveningPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
-            );
-          })()
-        ),
-        // Row 2: Post Workout, Cleaning
-        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}},
-          (function(){
-            var safePwLog = pwLog || {};
-            var pwDone = !!(safePwLog[td+'_done']);
-            var DONE_C = '#10B981', TODO_C = '#EF4444';
-            return e('div', {key:'postworkout', style:{display:'flex',flexDirection:'column',gap:4}},
-              e('div', {className:'stat-tile', onClick:function(){ setPostWorkoutPhase && setPostWorkoutPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(pwDone?DONE_C+'60':TODO_C+'50'),background:pwDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
-                e('div', {style:{fontSize:20,marginBottom:4}}, '🏋️'),
-                e('div', {style:{fontSize:22,fontWeight:800,color:pwDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, pwDone?'✓':'!'),
-                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Post Workout')
-              ),
-              e('button', {onClick:function(ev){ev.stopPropagation();setPostWorkoutPhase && setPostWorkoutPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
-            );
-          })(),
-          (function(){
-            var safeClLog = cleaningLog || {};
-            var clDone = !!(safeClLog[td+'_done']);
-            var DONE_C = '#10B981', TODO_C = '#EF4444';
-            return e('div', {key:'cleaning', style:{display:'flex',flexDirection:'column',gap:4}},
-              e('div', {className:'stat-tile', onClick:function(){ setCleaningPhase && setCleaningPhase('greeting'); }, style:{cursor:'pointer',border:'1.5px solid '+(clDone?DONE_C+'60':TODO_C+'50'),background:clDone?DONE_C+'08':TODO_C+'06',marginBottom:0}},
-                e('div', {style:{fontSize:20,marginBottom:4}}, '🧹'),
-                e('div', {style:{fontSize:22,fontWeight:800,color:clDone?DONE_C:TODO_C,lineHeight:1,marginBottom:2}}, clDone?'✓':'!'),
-                e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:0.4}}, 'Cleaning')
-              ),
-              e('button', {onClick:function(ev){ev.stopPropagation();setCleaningPhase && setCleaningPhase('history');}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:'0 2px',textAlign:'center'}}, '📊 History')
-            );
+            var routineDefs = [
+              {key:'morning', emoji:'🌅', label:'Morning', done:!!(routineLog&&routineLog[td+'_done']), onClick:function(){setMorningPhase('greeting');}, onHistory:function(){setMorningPhase('history');}, hasHistory:true},
+              {key:'midday',  emoji:'☀️', label:'Midday',  done:!!(middayLog&&middayLog[td]),           onClick:function(){setMiddayPhase&&setMiddayPhase('checkin');}, onHistory:null, hasHistory:false},
+              {key:'evening', emoji:'🌙', label:'Evening', done:!!(eveningLog&&eveningLog[td+'_done']), onClick:function(){setEveningPhase&&setEveningPhase('greeting');}, onHistory:function(){setEveningPhase('history');}, hasHistory:true},
+              {key:'postworkout', emoji:'🏋️', label:'Post WO', done:!!(pwLog&&pwLog[td+'_done']),       onClick:function(){setPostWorkoutPhase&&setPostWorkoutPhase('greeting');}, onHistory:function(){setPostWorkoutPhase&&setPostWorkoutPhase('history');}, hasHistory:true},
+              {key:'cleaning', emoji:'🧹', label:'Cleaning', done:!!(cleaningLog&&cleaningLog[td+'_done']), onClick:function(){setCleaningPhase&&setCleaningPhase('greeting');}, onHistory:function(){setCleaningPhase&&setCleaningPhase('history');}, hasHistory:true},
+            ];
+            return routineDefs.map(function(r){
+              var c = r.done ? DONE_C : TODO_C;
+              return e('div', {key:r.key, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:60}, onClick:r.onClick},
+                e('div', {className:'habit-circle'+(r.done?' done':''), style:{borderColor:c, background:r.done?'white':'#FFF5F5'}},
+                  e('span', {style:{fontSize:24}}, r.emoji),
+                  e('div', {style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:c,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, r.done?'✓':'!')
+                ),
+                e('div', {style:{fontSize:10,fontWeight:700,color:r.done?TEXT:MUTED,textAlign:'center',lineHeight:1.2}}, r.label),
+                r.hasHistory ? e('button', {onClick:function(ev){ev.stopPropagation();r.onHistory&&r.onHistory();}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:0,marginTop:-2}}, '📊') : e('div',{style:{height:15}})
+              );
+            });
           })()
         )
       )
