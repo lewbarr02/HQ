@@ -4384,6 +4384,18 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
           })
     ),
 
+    // Cloud sync
+    e('div', {className:'card'},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '☁️ Cloud Sync'),
+      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'HQ syncs automatically across devices. Use this once on your primary device to push all existing data to the cloud.'),
+      e('button', {className:'btn-primary', onClick:function(){
+        pushAllToSupabase().then(function(){
+          setStatus('✅ All data pushed to cloud! Other devices will sync on next load.');
+          setTimeout(function(){setStatus('');},4000);
+        });
+      }}, '☁️ Push This Device to Cloud')
+    ),
+
     // Export
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '📤 Export'),
@@ -9750,10 +9762,10 @@ function App() {
         setIdeaLog(sbIdeas);
       }
     });
-    pushAllToSupabase();
+    // Sync DOWN from Supabase on load (Supabase wins if newer than local)
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights','homeItems'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);save('habits',migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);else if(k==='homeItems')setHomeItems(v);else if(k==='currentProgram'){setCurrentProgram(v);save('currentProgram',v);}else if(k==='macroLog')setMacroLog(v);else if(k==='macroTargets')setTargets(v);else if(k==='foodPipeline')setFoodPipelineData(v);else if(k==='pwItems')setPwItems(v);else if(k==='pwLog')setPwLog(v);}});
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights','homeItems','currentProgram','macroLog','macroTargets','foodPipeline','pwItems','pwLog','ideaLog','returns','backlog','flowLog','jobLog','projectItems','projectLog'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);else if(k==='homeItems')setHomeItems(v);else if(k==='currentProgram')setCurrentProgram(v);else if(k==='macroLog')setMacroLog(v);else if(k==='macroTargets')setTargets(v);else if(k==='foodPipeline')setFoodPipelineData(v);else if(k==='pwItems')setPwItems(v);else if(k==='pwLog')setPwLog(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
