@@ -522,31 +522,13 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
   // Ghost overlay for touch drag
   const [ghostPos, setGhostPos] = useState(null); // {x, y, label}
-
-  // Attach window-level touch listeners only while a drag is active,
-  // so they never block scrolling when idle.
-  React.useEffect(function() {
-    if (!dragItem) return;
-    function onMove(ev) { ev.preventDefault(); handlePointerMove(ev); }
-    function onEnd(ev) { handlePointerEnd(ev); }
-    window.addEventListener('touchmove', onMove, {passive: false});
-    window.addEventListener('touchend', onEnd, {passive: false});
-    return function() {
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onEnd);
-    };
-  }, [dragItem]);
+  const touchCleanupRef = React.useRef(null);
 
   function getClientY(ev) {
-    return ev.touches ? ev.touches[0].clientY : ev.clientY;
+    return ev.touches ? ev.touches[0].clientY : (ev.changedTouches ? ev.changedTouches[0].clientY : ev.clientY);
   }
   function getClientX(ev) {
-    return ev.touches ? ev.touches[0].clientX : ev.clientX;
-  }
-
-  function handleDragStart(item) {
-    dragItemRef.current = item;
-    setDragItem(item);
+    return ev.touches ? ev.touches[0].clientX : (ev.changedTouches ? ev.changedTouches[0].clientX : ev.clientX);
   }
 
   function handlePointerMove(ev) {
@@ -564,15 +546,17 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   }
 
   function handlePointerEnd(ev) {
+    // Remove window listeners immediately
+    if (touchCleanupRef.current) { touchCleanupRef.current(); touchCleanupRef.current = null; }
     var di = dragItemRef.current;
     if (!di) return;
-    var clientY = ev.changedTouches ? ev.changedTouches[0].clientY : ev.clientY;
+    var clientY = getClientY(ev);
+    var clientX = getClientX(ev);
     setGhostPos(null);
     setDragOverMinute(null);
     if (!timelineRef.current) { dragItemRef.current = null; setDragItem(null); return; }
     var rect = timelineRef.current.getBoundingClientRect();
     // Only drop if released over the timeline
-    var clientX = ev.changedTouches ? ev.changedTouches[0].clientX : ev.clientX;
     if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
       dragItemRef.current = null; setDragItem(null); return;
     }
@@ -587,6 +571,22 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
     dragItemRef.current = null;
     setDragItem(null);
+  }
+
+  function handleDragStart(item) {
+    dragItemRef.current = item;
+    setDragItem(item);
+    // Attach window touch listeners SYNCHRONOUSLY — before React re-renders —
+    // so the very first touchmove is captured. useEffect fires too late.
+    if (touchCleanupRef.current) touchCleanupRef.current();
+    function onMove(ev) { ev.preventDefault(); handlePointerMove(ev); }
+    function onEnd(ev) { handlePointerEnd(ev); }
+    window.addEventListener('touchmove', onMove, {passive: false});
+    window.addEventListener('touchend', onEnd);
+    touchCleanupRef.current = function() {
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
   }
 
   // Mouse drag compatibility
