@@ -528,10 +528,14 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const touchCleanupRef = React.useRef(null);
 
   function getClientY(ev) {
-    return ev.touches ? ev.touches[0].clientY : (ev.changedTouches ? ev.changedTouches[0].clientY : ev.clientY);
+    if (ev.touches && ev.touches.length > 0) return ev.touches[0].clientY;
+    if (ev.changedTouches && ev.changedTouches.length > 0) return ev.changedTouches[0].clientY;
+    return ev.clientY;
   }
   function getClientX(ev) {
-    return ev.touches ? ev.touches[0].clientX : (ev.changedTouches ? ev.changedTouches[0].clientX : ev.clientX);
+    if (ev.touches && ev.touches.length > 0) return ev.touches[0].clientX;
+    if (ev.changedTouches && ev.changedTouches.length > 0) return ev.changedTouches[0].clientX;
+    return ev.clientX;
   }
 
   function handlePointerMove(ev) {
