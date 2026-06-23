@@ -7147,7 +7147,7 @@ function CalendarScreen({ calendarConnected, setCalendarConnected, setTab }) {
   );
 }
 
-function FitnessScreen({ workoutLog, setWorkoutLog }) {
+function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLog }) {
   const [view, setView] = useState('log'); // log | history | coach
   const [logDate, setLogDate] = useState(today());
   const [selectedGroups, setSelectedGroups] = useState([]);
@@ -7238,6 +7238,18 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
     var newLog = Object.assign({}, safeLog, { [logDate]: [...day, entry] });
     setWorkoutLog(newLog);
     save('workoutLog', newLog);
+    // Auto-check any habit named "Exercise" for the workout date
+    if (habits && habitLog && setHabitLog) {
+      var exHabit = (habits||[]).find(function(h){ return h.name && h.name.toLowerCase()==='exercise'; });
+      if (exHabit) {
+        var dayLog = habitLog[logDate] || {};
+        if (!dayLog[exHabit.id]) {
+          var nextHabitLog = Object.assign({}, habitLog, { [logDate]: Object.assign({}, dayLog, { [exHabit.id]: true }) });
+          setHabitLog(nextHabitLog);
+          save('habitLog', nextHabitLog);
+        }
+      }
+    }
     setSelectedGroups([]); setSessionNote(''); setSessionSets('');
     setView('log');
   }
@@ -9893,7 +9905,7 @@ function App() {
       case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab,backlog,setBacklog});
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
-      case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog});
+      case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog,habits,habitLog,setHabitLog});
       case 'datenights': return e(DateNightsScreen, {dateNights,setDateNights,setTab});
       case 'homemaintenance': return e(HomeMaintenanceScreen, {homeItems,setHomeItems,setTab});
       case 'macros': return e(MacroScreen, {setTab});
