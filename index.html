@@ -523,6 +523,20 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   // Ghost overlay for touch drag
   const [ghostPos, setGhostPos] = useState(null); // {x, y, label}
 
+  // Attach window-level touch listeners only while a drag is active,
+  // so they never block scrolling when idle.
+  React.useEffect(function() {
+    if (!dragItem) return;
+    function onMove(ev) { ev.preventDefault(); handlePointerMove(ev); }
+    function onEnd(ev) { handlePointerEnd(ev); }
+    window.addEventListener('touchmove', onMove, {passive: false});
+    window.addEventListener('touchend', onEnd, {passive: false});
+    return function() {
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+  }, [dragItem]);
+
   function getClientY(ev) {
     return ev.touches ? ev.touches[0].clientY : ev.clientY;
   }
@@ -594,8 +608,6 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       onDragStart: (ev) => { ev.dataTransfer.effectAllowed='move'; handleDragStart(item); },
       onDragEnd: () => { dragItemRef.current = null; setDragItem(null); setGhostPos(null); },
       onTouchStart: (ev) => { ev.preventDefault(); handleDragStart(item); },
-      onTouchMove: (ev) => { ev.preventDefault(); handlePointerMove(ev); },
-      onTouchEnd: (ev) => { handlePointerEnd(ev); },
       style:{
         padding:'10px 12px',
         borderRadius:10,
@@ -701,9 +713,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           );
         })
       ) : null,
-      e('div', {ref:timelineRef, style:{position:'relative', height: totalHeight, flexShrink:0},
-        onTouchMove: handlePointerMove, onTouchEnd: handlePointerEnd,
-      },
+      e('div', {ref:timelineRef, style:{position:'relative', height: totalHeight, flexShrink:0}},
         ...hours.map((h, i) => {
           var min;
           if (i === 0) min = 300;
