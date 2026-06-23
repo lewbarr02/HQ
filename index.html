@@ -737,10 +737,11 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           return e(BlockItem, {key:'cal-'+ev.id, min:sMin, durationMin:Math.max(15, eMin-sMin), color:'#4285F4', label:'📅 '+ev.title, sublabel:fmt(s)+' – '+fmt(en)});
         }),
         ...scheduled.map(function(s) {
-          return e(BlockItem, {key:'sched-'+s.schedId, min:s.minute, durationMin:s.durationMin, color:s.color, label:s.label, sublabel:minToTimeStr(s.minute), done:false,
+          var blockColor = (s.id && s.id.startsWith('routine-')) ? ACCENT : s.color;
+          return e(BlockItem, {key:'sched-'+s.schedId, min:s.minute, durationMin:s.durationMin, color:blockColor, label:s.label, sublabel:minToTimeStr(s.minute), done:false,
             onRemove:()=>removeScheduled(s.schedId),
             onDragStart:()=>{
-              var item = {id:s.id, label:s.label, color:s.color, durationMin:s.durationMin};
+              var item = {id:s.id, label:s.label, color:blockColor, durationMin:s.durationMin};
               dragItemRef.current = item;
               setDragItem(item);
               removeScheduled(s.schedId);
