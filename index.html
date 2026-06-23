@@ -187,6 +187,7 @@ async function unsubscribeFromPush() {
 
 function save(k,v){
   try{localStorage.setItem("hq_"+k,JSON.stringify(v));}catch{}
+  if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return;
   _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);});
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
