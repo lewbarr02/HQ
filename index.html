@@ -873,8 +873,18 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           e('input', {value:customForm.label, onInput:ev=>setCustomForm(f=>({...f,label:ev.target.value})), placeholder:'e.g. Journaling', style:{width:'100%',padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
         ),
         e('div', {style:{marginBottom:14}},
-          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:5}}, 'DURATION (minutes)'),
-          e('input', {type:'number', min:5, max:480, value:customForm.durationMin, onInput:ev=>setCustomForm(f=>({...f,durationMin:parseInt(ev.target.value)||30})), style:{width:'100%',padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
+          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'DURATION'),
+          e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
+            ...[15,30,45,60,90,120].map(function(min){
+              var active = customForm.durationMin === min;
+              var label = min < 60 ? min+'m' : (min===60?'1h': min===90?'1.5h':'2h');
+              return e('button', {key:min, onClick:function(){setCustomForm(function(f){return {...f,durationMin:min};});},
+                style:{padding:'10px 14px',borderRadius:20,border:'1.5px solid '+(active?customForm.color:BORDER),
+                  background:active?customForm.color:'#F8FAFC',color:active?'white':TEXT,
+                  fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flex:'1 0 auto',minWidth:52,transition:'all 0.15s'}
+              }, label);
+            })
+          )
         ),
         e('div', {style:{marginBottom:22}},
           e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'COLOR'),
