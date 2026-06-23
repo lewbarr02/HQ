@@ -564,7 +564,8 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
   }
 
-  function DraggableChip({item}) {
+  function DraggableChip({item, forceAccent}) {
+    var chipColor = forceAccent ? ACCENT : (item.color || ACCENT);
     return e('div', {
       draggable: true,
       onDragStart: () => handleDragStart(item),
@@ -572,8 +573,8 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       style:{
         padding:'10px 12px',
         borderRadius:10,
-        background: ACCENT+'12',
-        border: '1.5px solid '+ACCENT+'35',
+        background: chipColor+'12',
+        border: '1.5px solid '+chipColor+'35',
         marginBottom: 8,
         cursor: 'grab',
         userSelect: 'none',
@@ -581,7 +582,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         transition: 'opacity 0.15s',
       }
     },
-      e('div', {style:{fontSize:13,fontWeight:600,color:TEXT,lineHeight:1.3}}, item.label),
+      e('div', {style:{fontSize:13,fontWeight:600,color: forceAccent ? TEXT : chipColor,lineHeight:1.3}}, item.label),
       e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, item.durationMin + ' min')
     );
   }
@@ -795,7 +796,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
           // Routines — top of list
           SectionHeader('Routines', 'rh', 0),
-          ...availableRoutines.map(function(item){ return DraggableChip({key:item.id, item:item}); }),
+          ...availableRoutines.map(function(item){ return DraggableChip({key:item.id, item:item, forceAccent:true}); }),
 
           // Presets
           SectionHeader('Presets', 'ph', 16),
