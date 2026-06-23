@@ -587,7 +587,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
   }
 
-  function DraggableChip({item, forceAccent}) {
+  function DraggableChip({item, forceAccent, noMargin}) {
     var chipColor = forceAccent ? ACCENT : (item.color || ACCENT);
     return e('div', {
       draggable: true,
@@ -601,10 +601,11 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         borderRadius:10,
         background: chipColor+'12',
         border: '1.5px solid '+chipColor+'35',
-        marginBottom: 8,
+        marginBottom: noMargin ? 0 : 8,
         cursor: 'grab',
         userSelect: 'none',
         touchAction: 'none',
+        WebkitUserSelect: 'none',
         opacity: dragItem && dragItem.id === item.id ? 0.4 : 1,
         transition: 'opacity 0.15s',
       }
@@ -821,11 +822,13 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           return e('div', {
             style:{position:'relative', marginBottom:8}
           },
-            DraggableChip({key:item.id, item:item}),
+            DraggableChip({key:item.id, item:item, noMargin:true}),
             e('button', {
-              onClick: () => deleteTemplate(item.id),
-              title: 'Remove template',
-              style:{position:'absolute',top:4,right:4,background:'none',border:'none',cursor:'pointer',color:MUTED,fontSize:13,lineHeight:1,padding:'2px 4px'}
+              onClick: (ev) => { ev.stopPropagation(); deleteTemplate(item.id); },
+              onMouseDown: (ev) => ev.stopPropagation(),
+              onTouchStart: (ev) => { ev.stopPropagation(); },
+              title: 'Remove',
+              style:{position:'absolute',top:5,right:5,width:18,height:18,borderRadius:'50%',background:'rgba(255,255,255,0.95)',border:'1px solid '+BORDER,cursor:'pointer',color:MUTED,fontSize:10,lineHeight:'16px',textAlign:'center',padding:0,zIndex:10,fontFamily:'inherit',touchAction:'auto'}
             }, '×')
           );
         }
