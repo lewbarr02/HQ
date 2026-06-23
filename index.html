@@ -475,11 +475,12 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   var hours = [];
   for (var h = 5; h <= 24; h++) hours.push(h === 24 ? 0 : h);
 
-  function BlockItem({min, durationMin, color, label, sublabel, done, onClick, onRemove, onDragStart}) {
+  function BlockItem({min, durationMin, color, label, sublabel, done, onClick, onRemove, onDragStart, onMoveUp, onMoveDown}) {
     var clamped = Math.max(START_MIN, Math.min(END_MIN - 15, min));
     var dur = Math.max(20, durationMin || 45);
     var y = minToY(clamped);
     var ht = dur * PX_PER_MIN;
+    var btnStyle = {background:'none',border:'none',cursor:'pointer',padding:'0 2px',fontSize:11,lineHeight:1,flexShrink:0,touchAction:'manipulation',fontFamily:'inherit'};
     return e('div', {
       onClick: onClick,
       draggable: !!onDragStart,
@@ -493,7 +494,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         background: done ? color + '30' : color + '22',
         borderLeft: '3px solid ' + color,
         borderRadius: '0 8px 8px 0',
-        padding: '5px 10px',
+        padding: '3px 6px 3px 8px',
         cursor: onDragStart ? 'grab' : (onClick ? 'pointer' : 'default'),
         boxSizing: 'border-box',
         overflow: 'hidden',
@@ -502,11 +503,13 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         justifyContent: 'center',
       }
     },
-      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('div', {style:{display:'flex',alignItems:'center',gap:2}},
         e('div', {style: {fontSize: 12, fontWeight: 700, color: done ? MUTED : color, lineHeight: 1.2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1}}, label),
-        onRemove ? e('button', {onClick:(ev)=>{ev.stopPropagation();onRemove();}, style:{background:'none',border:'none',cursor:'pointer',color:MUTED,fontSize:14,lineHeight:1,padding:'0 0 0 4px',flexShrink:0}}, '×') : null
+        onMoveUp ? e('button', {onClick:(ev)=>{ev.stopPropagation();onMoveUp();}, style:{...btnStyle,color:color}}, '▲') : null,
+        onMoveDown ? e('button', {onClick:(ev)=>{ev.stopPropagation();onMoveDown();}, style:{...btnStyle,color:color}}, '▼') : null,
+        onRemove ? e('button', {onClick:(ev)=>{ev.stopPropagation();onRemove();}, style:{...btnStyle,color:MUTED,fontSize:14}}, '×') : null
       ),
-      sublabel ? e('div', {style: {fontSize: 10, color: MUTED, marginTop: 2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}, sublabel) : null
+      sublabel && ht > 30 ? e('div', {style: {fontSize: 10, color: MUTED, marginTop: 1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}, sublabel) : null
     );
   }
 
@@ -749,8 +752,17 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         }),
         ...scheduled.map(function(s) {
           var blockColor = (s.id && s.id.startsWith('routine-')) ? ACCENT : s.color;
+          function nudge(delta) {
+            var newMin = Math.max(START_MIN, Math.min(END_MIN - s.durationMin, s.minute + delta));
+            var next = scheduled.map(function(b){ return b.schedId === s.schedId ? Object.assign({}, b, {minute: newMin}) : b; });
+            setScheduled(next);
+            save('dayScheduled', next);
+            var sl = load('scheduledLog')||{}; sl[today()] = next; save('scheduledLog', sl);
+          }
           return e(BlockItem, {key:'sched-'+s.schedId, min:s.minute, durationMin:s.durationMin, color:blockColor, label:s.label, sublabel:minToTimeStr(s.minute), done:false,
             onRemove:()=>removeScheduled(s.schedId),
+            onMoveUp:()=>nudge(-15),
+            onMoveDown:()=>nudge(15),
             onDragStart:()=>{
               var item = {id:s.id, label:s.label, color:blockColor, durationMin:s.durationMin};
               dragItemRef.current = item;
