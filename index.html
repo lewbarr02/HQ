@@ -7486,25 +7486,35 @@ function FitnessScreen({ workoutLog, setWorkoutLog }) {
           e('div',{style:{fontSize:11,color:MUTED}},todayProgramDay.dayLabel+' complete')
         )
       ) : null,
-      // Program Day Selector (only if program exists)
-      prog ? e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
-        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}}, '📋 Log a Different Day'),
-        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, 'Select to pre-fill exercises from your program'),
+      // No program — prompt to import
+      !prog ? e('div', {style:{background:'linear-gradient(135deg,'+PURPLE+'10,'+ACCENT+'08)',borderRadius:16,padding:'16px',border:'1px solid '+PURPLE+'30',display:'flex',alignItems:'center',gap:12}},
+        e('div', {style:{fontSize:28}}, '🏋️'),
+        e('div', {style:{flex:1}},
+          e('div', {style:{fontSize:13,fontWeight:800,color:TEXT,marginBottom:2}}, 'No program loaded on this device'),
+          e('div', {style:{fontSize:11,color:MUTED}}, 'Import your plan in the Coach tab to unlock structured workouts')
+        ),
+        e('button', {onClick:function(){setFitnessTab('coach');}, style:{padding:'8px 14px',borderRadius:20,border:'none',background:PURPLE,color:'white',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Go to Coach')
+      ) : null,
+      // Program Day Selector (always shown)
+      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}}, '📋 '+(prog ? 'Log a Different Day' : 'Quick Log')),
+        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, prog ? 'Select to pre-fill exercises from your program' : 'Log a free-form workout session'),
         e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
-          ...prog.days.map(function(d){
+          ...(prog ? prog.days.map(function(d){
             var active = selectedProgramDay === d.dayLabel;
             return e('button', {key:d.dayLabel, onClick:function(){selectProgramDay(d.dayLabel);}, style:{
               padding:'8px 14px',borderRadius:20,border:'1.5px solid '+(active?ACCENT:BORDER),
               background:active?ACCENT+'18':'#F8FAFC',color:active?ACCENT:TEXT,
               fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s',
             }}, d.dayLabel + (d.scheduledDay?' · '+d.scheduledDay:''))
-          }),
+          }) : []),
           e('button', {onClick:function(){setSelectedProgramDay(null);setProgramExerciseLogs({});setSelectedGroups([]);}, style:{
-            padding:'8px 14px',borderRadius:20,border:'1.5px solid '+BORDER,
-            background:'none',color:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+            padding:'8px 14px',borderRadius:20,border:'1.5px solid '+((!selectedProgramDay)?ACCENT:BORDER),
+            background:(!selectedProgramDay)?ACCENT+'18':'none',color:(!selectedProgramDay)?ACCENT:MUTED,
+            fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
           }}, 'Free Log')
         )
-      ) : null,
+      ),
 
       // Program exercises with weight/reps logger
       selDay ? e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
