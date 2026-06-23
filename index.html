@@ -518,33 +518,49 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     return {id:'habit-'+h.id, label: h.name, color: h.color || ACCENT, durationMin: 15};
   });
 
+  // Ghost overlay for touch drag
+  const [ghostPos, setGhostPos] = useState(null); // {x, y, label}
+
+  function getClientY(ev) {
+    return ev.touches ? ev.touches[0].clientY : ev.clientY;
+  }
+  function getClientX(ev) {
+    return ev.touches ? ev.touches[0].clientX : ev.clientX;
+  }
+
   function handleDragStart(item) {
     dragItemRef.current = item;
     setDragItem(item);
   }
 
-  function handleDragOver(ev) {
-    ev.preventDefault();
+  function handlePointerMove(ev) {
     var di = dragItemRef.current;
-    if (!timelineRef.current || !di) return;
+    if (!di) return;
+    var clientY = getClientY(ev);
+    var clientX = getClientX(ev);
+    setGhostPos({x: clientX, y: clientY, label: di.label, color: di.color});
+    if (!timelineRef.current) return;
     var rect = timelineRef.current.getBoundingClientRect();
-    var y = ev.clientY - rect.top;
+    var y = clientY - rect.top;
     var rawMin = START_MIN + y / PX_PER_MIN;
     var snapped = Math.round(rawMin / 15) * 15;
     setDragOverMinute(Math.max(START_MIN, Math.min(END_MIN - (di.durationMin||30), snapped)));
   }
 
-  function handleDragLeave() {
-    setDragOverMinute(null);
-  }
-
-  function handleDrop(ev) {
-    ev.preventDefault();
-    setDragOverMinute(null);
+  function handlePointerEnd(ev) {
     var di = dragItemRef.current;
-    if (!di || !timelineRef.current) return;
+    if (!di) return;
+    var clientY = ev.changedTouches ? ev.changedTouches[0].clientY : ev.clientY;
+    setGhostPos(null);
+    setDragOverMinute(null);
+    if (!timelineRef.current) { dragItemRef.current = null; setDragItem(null); return; }
     var rect = timelineRef.current.getBoundingClientRect();
-    var y = ev.clientY - rect.top;
+    // Only drop if released over the timeline
+    var clientX = ev.changedTouches ? ev.changedTouches[0].clientX : ev.clientX;
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+      dragItemRef.current = null; setDragItem(null); return;
+    }
+    var y = clientY - rect.top;
     var rawMin = START_MIN + y / PX_PER_MIN;
     var snapped = Math.round(rawMin / 15) * 15;
     var minute = Math.max(START_MIN, Math.min(END_MIN - di.durationMin, snapped));
@@ -557,6 +573,11 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     setDragItem(null);
   }
 
+  // Mouse drag compatibility
+  function handleDragOver(ev) { ev.preventDefault(); handlePointerMove(ev); }
+  function handleDragLeave() { setDragOverMinute(null); }
+  function handleDrop(ev) { ev.preventDefault(); handlePointerEnd(ev); }
+
   function removeScheduled(schedId) {
     var next = scheduled.filter(function(s){ return s.schedId !== schedId; });
     setScheduled(next);
@@ -568,8 +589,11 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var chipColor = forceAccent ? ACCENT : (item.color || ACCENT);
     return e('div', {
       draggable: true,
-      onDragStart: () => handleDragStart(item),
-      onDragEnd: () => { dragItemRef.current = null; setDragItem(null); },
+      onDragStart: (ev) => { ev.dataTransfer.effectAllowed='move'; handleDragStart(item); },
+      onDragEnd: () => { dragItemRef.current = null; setDragItem(null); setGhostPos(null); },
+      onTouchStart: (ev) => { ev.preventDefault(); handleDragStart(item); },
+      onTouchMove: (ev) => { ev.preventDefault(); handlePointerMove(ev); },
+      onTouchEnd: (ev) => { handlePointerEnd(ev); },
       style:{
         padding:'10px 12px',
         borderRadius:10,
@@ -578,6 +602,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         marginBottom: 8,
         cursor: 'grab',
         userSelect: 'none',
+        touchAction: 'none',
         opacity: dragItem && dragItem.id === item.id ? 0.4 : 1,
         transition: 'opacity 0.15s',
       }
@@ -673,7 +698,9 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           );
         })
       ) : null,
-      e('div', {ref:timelineRef, style:{position:'relative', height: totalHeight, flexShrink:0}},
+      e('div', {ref:timelineRef, style:{position:'relative', height: totalHeight, flexShrink:0},
+        onTouchMove: handlePointerMove, onTouchEnd: handlePointerEnd,
+      },
         ...hours.map((h, i) => {
           var min;
           if (i === 0) min = 300;
@@ -738,11 +765,24 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     );
   }
 
+  // Floating ghost that follows finger during touch drag
+  var GhostOverlay = ghostPos ? e('div', {style:{
+    position:'fixed', left: ghostPos.x - 80, top: ghostPos.y - 20,
+    width:160, padding:'8px 12px', borderRadius:10, pointerEvents:'none', zIndex:9999,
+    background:(ghostPos.color||ACCENT)+'EE', boxShadow:'0 4px 16px rgba(0,0,0,0.25)',
+  }},
+    e('div', {style:{fontSize:13,fontWeight:700,color:'white'}}, ghostPos.label)
+  ) : null;
+
   if (!splitView) {
-    return TimelinePanel({fullWidth: true});
+    return e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}},
+      GhostOverlay,
+      TimelinePanel({fullWidth: true})
+    );
   }
 
-  return e('div', {style:{flex:1, display:'flex', overflow:'hidden'}},
+  return e('div', {style:{flex:1, display:'flex', overflow:'hidden', position:'relative'}},
+    GhostOverlay,
 
     // LEFT PANEL — draggable items
     e('div', {style:{width:210, flexShrink:0, borderRight:'1px solid '+BORDER, overflowY:'auto', padding:'16px 12px', background:'#FAFAFE'}},
