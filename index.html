@@ -404,6 +404,8 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [splitView, setSplitView] = useState(() => load('daySplitView') !== false);
   const [savedTemplates, setSavedTemplates] = useState(() => load('dayTemplates') || []);
   const [showCustomModal, setShowCustomModal] = useState(false);
+  function openCustomModal() { dragItemRef.current = null; setDragItem(null); setGhostPos(null); setShowCustomModal(true); }
+  function closeCustomModal() { dragItemRef.current = null; setDragItem(null); setGhostPos(null); setShowCustomModal(false); }
   const [customForm, setCustomForm] = useState({label:'', color:'#10B981', durationMin:30, emoji:''});
   const timelineRef = useRef(null);
 
@@ -666,7 +668,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
   // Single-column timeline panel (shared by both views)
   function TimelinePanel({fullWidth}) {
-    return e('div', {style:{flex:1, overflowY:'auto', padding:'16px 12px'},
+    return e('div', {style:{flex:1, overflowY:'auto', padding:'16px 12px', WebkitOverflowScrolling:'touch'},
       onDragOver: handleDragOver,
       onDragLeave: handleDragLeave,
       onDrop: handleDrop,
@@ -829,7 +831,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
         return [
           // Custom block creator
-          e('button', {key:'add-custom', onClick:()=>setShowCustomModal(true), style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'9px 12px',borderRadius:10,border:'1.5px dashed '+ACCENT+'60',background:ACCENT+'08',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:700,color:ACCENT,marginBottom:16}},
+          e('button', {key:'add-custom', onClick:()=>openCustomModal(), style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'9px 12px',borderRadius:10,border:'1.5px dashed '+ACCENT+'60',background:ACCENT+'08',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:700,color:ACCENT,marginBottom:16}},
             e('span', {style:{fontSize:15}}, '+'),
             'Custom Block'
           ),
@@ -865,7 +867,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     ),
 
     // Custom block modal
-    showCustomModal ? e('div', {onClick:()=>setShowCustomModal(false), style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}},
+    showCustomModal ? e('div', {onClick:()=>closeCustomModal(), style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}},
       e('div', {onClick:ev=>ev.stopPropagation(), style:{background:'#fff',borderRadius:20,padding:28,width:300,boxShadow:'0 8px 40px rgba(0,0,0,0.18)'}},
         e('div', {style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:20}}, 'Create Block'),
         e('div', {style:{marginBottom:14}},
@@ -908,7 +910,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           )
         ),
         e('div', {style:{display:'flex',gap:10}},
-          e('button', {onClick:()=>setShowCustomModal(false), style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
+          e('button', {onClick:()=>closeCustomModal(), style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
           e('button', {onClick:()=>{
             if (!customForm.label.trim()) return;
             var fullLabel = (customForm.emoji ? customForm.emoji+' ' : '') + customForm.label.trim();
@@ -918,7 +920,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             setSavedTemplates(next);
             save('dayTemplates', next);
             setCustomForm({label:'',color:'#10B981',durationMin:30,emoji:''});
-            setShowCustomModal(false);
+            closeCustomModal();
           }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:ACCENT,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, 'Save Template'),
           e('button', {onClick:()=>{
             if (!customForm.label.trim()) return;
@@ -933,7 +935,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             save('dayScheduled', nextSched);
             var sl = load('scheduledLog')||{}; sl[today()]=nextSched; save('scheduledLog',sl);
             setCustomForm({label:'',color:'#10B981',durationMin:30,emoji:''});
-            setShowCustomModal(false);
+            closeCustomModal();
           }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:PURPLE,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, '+ Place Now')
         )
       )
