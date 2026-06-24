@@ -224,7 +224,7 @@ async function syncFromSupabase(){
 }
 
 async function pushAllToSupabase(){
-  var keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','ideaLog','dateNights','homeItems','returns','backlog','flowLog','jobLog','projectItems','projectLog','currentProgram','macroLog','macroTargets','foodPipeline','photoIndex','pwItems','pwLog'];
+  var keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','ideaLog','dateNights','homeItems','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog','currentProgram','macroLog','macroTargets','foodPipeline','photoIndex','pwItems','pwLog'];
   var rows=keys.map(k=>{var v=load(k);return v!==null?{user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()}:null;}).filter(Boolean);
   if(rows.length===0)return;
   var {error}=await _SB.from('hq_data').upsert(rows,{onConflict:'user_id,key'});
@@ -534,7 +534,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var coveredCount = priorities.filter(isPriorityCovered).length;
     return e('div', {style:{marginBottom:16, paddingBottom:14, borderBottom:'1px solid '+BORDER}},
       e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',color:MUTED}}, 'Priorities'),
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',color:MUTED}}, 'Action Items'),
         e('div', {style:{fontSize:11,fontWeight:700,color: coveredCount === priorities.length ? '#10B981' : MUTED}},
           coveredCount + '/' + priorities.length + ' covered'
         )
@@ -1386,7 +1386,75 @@ function QuickShoppingCard({groceries, setGroceries, returns, setReturns, setTab
   );
 }
 
-function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog}) {
+function HQBacklogScreen({hqBacklog, setHqBacklog, setTab}) {
+  var [newItem, setNewItem] = React.useState('');
+  var [filter, setFilter] = React.useState('open'); // 'open' | 'done' | 'all'
+  var items = (hqBacklog || []).slice().reverse();
+  var filtered = items.filter(function(i){ return filter==='all' ? true : filter==='done' ? i.done : !i.done; });
+
+  function addItem() {
+    var text = newItem.trim();
+    if (!text) return;
+    var next = [{id:'hqb'+Date.now(), text:text, added:today(), done:false}, ...(hqBacklog||[])];
+    setHqBacklog(next); save('hqBacklog', next);
+    setNewItem('');
+  }
+
+  function toggleDone(id) {
+    var next = (hqBacklog||[]).map(function(i){ return i.id===id ? {...i, done:!i.done} : i; });
+    setHqBacklog(next); save('hqBacklog', next);
+  }
+
+  function deleteItem(id) {
+    var next = (hqBacklog||[]).filter(function(i){ return i.id!==id; });
+    setHqBacklog(next); save('hqBacklog', next);
+  }
+
+  var openCount = (hqBacklog||[]).filter(function(i){return !i.done;}).length;
+  var doneCount = (hqBacklog||[]).filter(function(i){return i.done;}).length;
+
+  return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,marginBottom:20}},
+      e('button', {onClick:function(){setTab('more');}, style:{background:'none',border:'none',fontSize:20,cursor:'pointer',padding:0,lineHeight:1}}, '←'),
+      e('div', {style:{fontSize:20,fontWeight:800}}, '🛠️ HQ Backlog'),
+      e('div', {style:{fontSize:12,fontWeight:700,color:ACCENT,background:ACCENT+'18',borderRadius:8,padding:'2px 8px'}}, openCount + ' open')
+    ),
+    e('div', {className:'card'},
+      e('div', {style:{display:'flex',gap:8}},
+        e('input', {
+          value: newItem,
+          onChange: function(ev){ setNewItem(ev.target.value); },
+          onKeyDown: function(ev){ if(ev.key==='Enter') addItem(); },
+          placeholder: 'Add a feature idea…',
+          style:{flex:1,padding:'10px 14px',borderRadius:12,border:'1.5px solid '+(newItem?ACCENT+'60':BORDER),background:CARD2,fontSize:14,fontFamily:'inherit',outline:'none'}
+        }),
+        e('button', {onClick:addItem, style:{padding:'10px 16px',borderRadius:12,background:newItem.trim()?'linear-gradient(135deg,'+ACCENT+','+PURPLE+')':'#E8E8F0',border:'none',color:newItem.trim()?'white':MUTED,fontSize:16,cursor:newItem.trim()?'pointer':'default',fontFamily:'inherit'}}, '+')
+      )
+    ),
+    e('div', {style:{display:'flex',gap:6,marginBottom:12}},
+      ['open','done','all'].map(function(f){
+        var labels = {open:'Open ('+openCount+')', done:'Done ('+doneCount+')', all:'All'};
+        return e('button', {key:f, onClick:function(){setFilter(f);}, style:{flex:1,padding:'7px 0',borderRadius:10,border:'none',background:filter===f?ACCENT:'#E8E8F0',color:filter===f?'white':MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, labels[f]);
+      })
+    ),
+    filtered.length === 0
+      ? e('div', {style:{textAlign:'center',color:MUTED,padding:'32px 0',fontSize:14}}, filter==='open' ? 'No open ideas — nice!' : 'Nothing here yet.')
+      : e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+          ...filtered.map(function(item){
+            return e('div', {key:item.id, style:{display:'flex',alignItems:'flex-start',gap:10,padding:'12px 14px',background:'#fff',borderRadius:14,border:'1px solid '+BORDER,opacity:item.done?0.55:1}},
+              e('button', {onClick:function(){toggleDone(item.id);}, style:{marginTop:1,flexShrink:0,width:20,height:20,borderRadius:6,border:'2px solid '+(item.done?ACCENT:BORDER),background:item.done?ACCENT:'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:'white'}}, item.done?'✓':''),
+              e('div', {style:{flex:1}},
+                e('div', {style:{fontSize:13,fontWeight:600,color:TEXT,textDecoration:item.done?'line-through':'none',lineHeight:1.5}}, item.text),
+                e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, item.added || '')
+              ),
+              e('button', {onClick:function(){deleteItem(item.id);}, style:{background:'none',border:'none',fontSize:14,color:MUTED,cursor:'pointer',padding:'0 2px',lineHeight:1}}, '×')
+            );
+          })
+        )
+  );
+}
+
+function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog, hqBacklog, setHqBacklog}) {
   var td = today();
   var [input, setInput] = React.useState('');
   var [expanded, setExpanded] = React.useState(false);
@@ -1446,6 +1514,9 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
     } else if(dest === 'later') {
       var next = [...(backlog||[]), {id: Date.now().toString(), text: text, added: td}];
       setBacklog(next); save('backlog', next);
+    } else if(dest === 'hqbacklog') {
+      var next = [{id:'hqb'+Date.now(), text: text, added: td, done: false}, ...(hqBacklog||[])];
+      setHqBacklog(next); save('hqBacklog', next);
     } else if(dest === 'note') {
       var next = [...(notes||[]), {id: Date.now().toString(), text: text, color: 0, created: td}];
       setNotes(next); save('notes', next);
@@ -1455,7 +1526,7 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
       });
       setProjects(next); save('projects', next);
     }
-    var destLabels = {'todo':"Today's To-Do",'later':'Do It Later','grocery-wife':'Wife List','grocery-mine':'My List','grocery-amazon':'Amazon','note':'Notes','project':'Project'};
+    var destLabels = {'todo':"Today's To-Do",'later':'Do It Later','grocery-wife':'Wife List','grocery-mine':'My List','grocery-amazon':'Amazon','note':'Notes','project':'Project','hqbacklog':'HQ Backlog'};
     setSentFlash({text: text, dest: destLabels[dest] || dest});
     setTimeout(function(){ setSentFlash(null); }, 2200);
     deleteIdea(idea.id);
@@ -1465,11 +1536,12 @@ function QuickIdeasCard({ideaLog, setIdeaLog, groceries, setGroceries, notes, se
   }
 
   var SORT_DESTS = [
-    {id:'todo',    icon:'✅', label:"Today's To-Do"},
-    {id:'later',   icon:'⏳', label:'Do It Later'},
-    {id:'project', icon:'📁', label:'Project Task →'},
-    {id:'grocery', icon:'🛒', label:'Shopping →'},
-    {id:'note',    icon:'📝', label:'Notes'},
+    {id:'todo',       icon:'✅', label:"Today's To-Do"},
+    {id:'later',      icon:'⏳', label:'Do It Later'},
+    {id:'hqbacklog',  icon:'🛠️', label:'HQ Backlog'},
+    {id:'project',    icon:'📁', label:'Project Task →'},
+    {id:'grocery',    icon:'🛒', label:'Shopping →'},
+    {id:'note',       icon:'📝', label:'Notes'},
   ];
 
   return e('div', {style:{background:'#fff',border:'1px solid '+IDEA_ACCENT+'40',borderRadius:18,padding:14,marginBottom:12,position:'relative'}},
@@ -1946,7 +2018,7 @@ function DateNightsScreen({dateNights, setDateNights, setTab}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -2176,7 +2248,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       )
     ),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
-    e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog}),
+    e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog, hqBacklog, setHqBacklog}),
     e(QuickShoppingCard, {groceries, setGroceries, returns, setReturns, setTab}),
     e(DateNightCard, {dateNights, setDateNights, setTab}),
     e('div', {style:{marginBottom:12}},
@@ -9889,6 +9961,7 @@ function App() {
   const [cleaningItems, setCleaningItems] = useState(() => load('cleaningItems') || DEFAULT_CLEANING_HABITS);
   const [ideaLog, setIdeaLog] = useState(() => load('ideaLog') || []);
   const [backlog, setBacklog] = useState(() => load('backlog') || []);
+  const [hqBacklog, setHqBacklog] = useState(() => load('hqBacklog') || []);
   const [dateNights, setDateNights] = useState(() => load('dateNights') || []);
   const [homeItems, setHomeItems] = useState(() => load('homeItems') || []);
   const [returns, setReturns] = useState(() => load('returns') || []);
@@ -9938,7 +10011,7 @@ function App() {
     });
     // Sync DOWN from Supabase on load (Supabase wins if newer than local)
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights','homeItems','currentProgram','macroLog','macroTargets','foodPipeline','pwItems','pwLog','ideaLog','returns','backlog','flowLog','jobLog','projectItems','projectLog'];
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights','homeItems','currentProgram','macroLog','macroTargets','foodPipeline','pwItems','pwLog','ideaLog','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog'];
       keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);else if(k==='homeItems')setHomeItems(v);else if(k==='currentProgram')setCurrentProgram(v);else if(k==='macroLog')setMacroLog(v);else if(k==='macroTargets')setTargets(v);else if(k==='foodPipeline')setFoodPipelineData(v);else if(k==='pwItems')setPwItems(v);else if(k==='pwLog')setPwLog(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
@@ -10015,6 +10088,7 @@ function App() {
     {id:'more',    icon:'more',  label:'More'},
   ];
   const MORE_ITEMS = [
+    {id:'hqbacklog',icon:'🛠️',label:'HQ Backlog'},
     {id:'areas',icon:'⊞',label:'Areas'},
     {id:'calendar',icon:'📅',label:'Google Calendar'},
     {id:'fitness',icon:'💪',label:'Fitness'},
@@ -10033,7 +10107,8 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns});
+      case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
