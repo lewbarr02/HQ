@@ -523,6 +523,64 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     return {id:'habit-'+h.id, label: h.name, color: h.color || ACCENT, durationMin: 15};
   });
 
+  // Priority bar — computed at DayScreen level so TimelinePanel closure can access it
+  var priorityBarEl = (function() {
+    if (!priorities || priorities.length === 0) return null;
+    var scheduledBlockIds = scheduled.map(function(s){ return s.id; });
+    function isPriorityCovered(p) {
+      if (p.time) return true;
+      return scheduledBlockIds.includes('priority-' + p.id);
+    }
+    var coveredCount = priorities.filter(isPriorityCovered).length;
+    return e('div', {style:{marginBottom:16, paddingBottom:14, borderBottom:'1px solid '+BORDER}},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',color:MUTED}}, 'Priorities'),
+        e('div', {style:{fontSize:11,fontWeight:700,color: coveredCount === priorities.length ? '#10B981' : MUTED}},
+          coveredCount + '/' + priorities.length + ' covered'
+        )
+      ),
+      e('div', {style:{display:'flex',gap:12,overflowX:'auto',paddingBottom:4,WebkitOverflowScrolling:'touch'}},
+        ...priorities.map(function(p) {
+          var covered = isPriorityCovered(p);
+          var color = p.color || ACCENT;
+          var emojiMatch = p.name.match(/^[\u{1F300}-\u{1FFFF}\u{2600}-\u{27BF}]/u);
+          var emoji = emojiMatch ? emojiMatch[0] : null;
+          var displayName = emoji ? p.name.replace(emoji, '').trim() : p.name;
+          var initials = displayName.slice(0,2).toUpperCase();
+          return e('div', {key:'pbar-'+p.id, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:5,flexShrink:0,width:58}},
+            e('div', {style:{
+              position:'relative',
+              width:48, height:48,
+              borderRadius:'50%',
+              background: covered ? color+'18' : '#F0F2F8',
+              border: '2.5px solid ' + (covered ? color : 'rgba(100,80,220,0.15)'),
+              display:'flex', alignItems:'center', justifyContent:'center',
+              transition:'all 0.2s', flexShrink:0,
+            }},
+              e('span', {style:{fontSize: emoji ? 22 : 13, fontWeight:700, color: covered ? color : MUTED, lineHeight:1}},
+                emoji || initials
+              ),
+              covered ? e('div', {style:{
+                position:'absolute', bottom:-2, right:-2,
+                width:16, height:16, borderRadius:'50%',
+                background:'#10B981', border:'2px solid white',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:9, color:'white', fontWeight:800, lineHeight:1,
+              }}, '✓') : null
+            ),
+            e('div', {style:{
+              fontSize:9, fontWeight:600,
+              color: covered ? color : MUTED,
+              textAlign:'center', lineHeight:1.3,
+              maxWidth:58, overflow:'hidden',
+              wordBreak:'break-word',
+            }}, displayName || p.name)
+          );
+        })
+      )
+    );
+  })();
+
   // Ghost overlay for touch drag
   const [ghostPos, setGhostPos] = useState(null); // {x, y, label}
   const touchCleanupRef = React.useRef(null);
@@ -688,29 +746,35 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
   // Single-column timeline panel (shared by both views)
   function TimelinePanel({fullWidth}) {
-    return e('div', {style:{flex:1, overflowY:'auto', padding:'16px 12px', WebkitOverflowScrolling:'touch'},
-      onDragOver: handleDragOver,
-      onDragLeave: handleDragLeave,
-      onDrop: handleDrop,
-    },
-      e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
-        e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, "Today's Schedule"),
-        e('div', {style:{fontSize:12,color:MUTED,marginLeft:'auto',marginRight:8}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-        e('div', {style:{display:'flex',flexDirection:'column',alignItems:'flex-end',flexShrink:0,marginRight:4}},
+    return e('div', {style:{flex:1, display:'flex', flexDirection:'column', overflow:'hidden'}},
+      // ── Anchored header: title row + priority bar ──
+      e('div', {style:{flexShrink:0, padding:'16px 12px 0', background:'#fff', borderBottom: priorityBarEl ? '1px solid '+BORDER : 'none'}},
+        e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+          e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, "Today's Schedule"),
+          e('div', {style:{fontSize:12,color:MUTED,marginLeft:'auto',marginRight:8}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+          e('div', {style:{display:'flex',flexDirection:'column',alignItems:'flex-end',flexShrink:0,marginRight:4}},
+            e('button', {
+              onClick: function(){ setCalSyncMsg('syncing…'); doCalSync(true); },
+              title: 'Refresh calendar',
+              style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#4285F4'}
+            }, '🔄 Sync'),
+            calSyncMsg ? e('div', {style:{fontSize:10,color:calSyncMsg.startsWith('⚠️')?'#EF4444':'#10B981',marginTop:2,whiteSpace:'nowrap'}}, calSyncMsg) : null
+          ),
           e('button', {
-            onClick: function(){ setCalSyncMsg('syncing…'); doCalSync(true); },
-            title: 'Refresh calendar',
-            style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#4285F4'}
-          }, '🔄 Sync'),
-          calSyncMsg ? e('div', {style:{fontSize:10,color:calSyncMsg.startsWith('⚠️')?'#EF4444':'#10B981',marginTop:2,whiteSpace:'nowrap'}}, calSyncMsg) : null
+            onClick: exportICS,
+            title: 'Export to calendar file',
+            style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:MUTED,flexShrink:0,marginRight:4}
+          }, '📤 Export'),
+          ViewToggle({})
         ),
-        e('button', {
-          onClick: exportICS,
-          title: 'Export to calendar file',
-          style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:MUTED,flexShrink:0,marginRight:4}
-        }, '📤 Export'),
-        ViewToggle({})
+        priorityBarEl
       ),
+      // ── Scrollable timeline body ──
+      e('div', {style:{flex:1, overflowY:'auto', padding:'16px 12px', WebkitOverflowScrolling:'touch'},
+        onDragOver: handleDragOver,
+        onDragLeave: handleDragLeave,
+        onDrop: handleDrop,
+      },
       calEvents.filter(function(ev){ return ev.allDay; }).length > 0 ? e('div', {style:{marginBottom:12}},
         e('div', {style:{fontSize:11,fontWeight:700,color:'#4285F4',letterSpacing:'0.05em',marginBottom:6}}, '📅 ALL DAY'),
         ...calEvents.filter(function(ev){ return ev.allDay; }).map(function(ev) {
@@ -792,6 +856,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         ) : null
       ),
       e('div', {style:{height:40}})
+      ) // end scrollable body
     );
   }
 
