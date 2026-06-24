@@ -10346,7 +10346,22 @@ function App() {
             wakeLog && wakeLog[now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')] ?
               e('div', {style:{fontSize:11,fontWeight:700,color:ACCENT,background:ACCENT+'15',padding:'3px 10px',borderRadius:10}}, 'Wake: '+wakeLog[now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')]) : null,
             calcMorningStreak(routineLog||{}) > 0 ?
-              e('div', {style:{fontSize:11,fontWeight:700,color:'#FFB347',background:'#FFB34715',padding:'3px 10px',borderRadius:10}}, '🔥 '+calcMorningStreak(routineLog||{})+'-day streak') : null
+              e('div', {style:{fontSize:11,fontWeight:700,color:'#FFB347',background:'#FFB34715',padding:'3px 10px',borderRadius:10}}, '🔥 '+calcMorningStreak(routineLog||{})+'-day streak') : null,
+            e('button', {
+              title: 'Update app to latest version',
+              onClick: async function() {
+                if ('serviceWorker' in navigator) {
+                  var regs = await navigator.serviceWorker.getRegistrations();
+                  for (var r of regs) await r.unregister();
+                }
+                if ('caches' in window) {
+                  var keys = await caches.keys();
+                  for (var k of keys) await caches.delete(k);
+                }
+                location.reload();
+              },
+              style:{background:'none',border:'none',cursor:'pointer',fontSize:16,padding:'2px 4px',color:MUTED,lineHeight:1,flexShrink:0}
+            }, '↺')
           )
         ),
         e('div', {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',position:'relative'}},
