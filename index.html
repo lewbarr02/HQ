@@ -7620,6 +7620,26 @@ function CalendarScreen({ calendarConnected, setCalendarConnected, setTab }) {
 
 function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLog }) {
   const [view, setView] = useState('log'); // log | history | coach
+
+  function autoCheckExercise(date, currentHabitLog) {
+    var exHabit = (habits||[]).find(function(h){ return h.name && h.name.toLowerCase()==='exercise'; });
+    if (!exHabit) return currentHabitLog;
+    var dayLog = (currentHabitLog||{})[date] || {};
+    if (dayLog[exHabit.id]) return currentHabitLog; // already checked
+    var next = Object.assign({}, currentHabitLog, { [date]: Object.assign({}, dayLog, { [exHabit.id]: true }) });
+    setHabitLog(next);
+    save('habitLog', next);
+    return next;
+  }
+
+  // On mount: if a workout exists for today, make sure Exercise habit is checked
+  useEffect(function() {
+    var td = today();
+    var safeWL = workoutLog || {};
+    if (safeWL[td] && safeWL[td].length > 0) {
+      autoCheckExercise(td, habitLog);
+    }
+  }, []);
   const [logDate, setLogDate] = useState(today());
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [sessionNote, setSessionNote] = useState('');
@@ -7709,18 +7729,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var newLog = Object.assign({}, safeLog, { [logDate]: [...day, entry] });
     setWorkoutLog(newLog);
     save('workoutLog', newLog);
-    // Auto-check any habit named "Exercise" for the workout date
-    if (habits && habitLog && setHabitLog) {
-      var exHabit = (habits||[]).find(function(h){ return h.name && h.name.toLowerCase()==='exercise'; });
-      if (exHabit) {
-        var dayLog = habitLog[logDate] || {};
-        if (!dayLog[exHabit.id]) {
-          var nextHabitLog = Object.assign({}, habitLog, { [logDate]: Object.assign({}, dayLog, { [exHabit.id]: true }) });
-          setHabitLog(nextHabitLog);
-          save('habitLog', nextHabitLog);
-        }
-      }
-    }
+    autoCheckExercise(logDate, habitLog);
     setSelectedGroups([]); setSessionNote(''); setSessionSets('');
     setView('log');
   }
@@ -7793,6 +7802,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var day = safeLog[td]||[];
     var newLog = Object.assign({},safeLog,{[td]:[...day,entry]});
     setWorkoutLog(newLog); save('workoutLog',newLog);
+    autoCheckExercise(td, habitLog);
 
     // Update lastWeight/lastReps on the program
     if(currentProgram && exercises.length>0){
@@ -8114,6 +8124,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           var newLog = Object.assign({}, safeLog, {[logDate]: [...day, entry]});
           setWorkoutLog(newLog);
           save('workoutLog', newLog);
+          autoCheckExercise(logDate, habitLog);
           // Update program lastWeight/lastReps
           if (selDay && currentProgram && exData.length > 0) {
             var updatedProg = JSON.parse(JSON.stringify(currentProgram));
