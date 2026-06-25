@@ -2219,6 +2219,78 @@ function DateNightsScreen({dateNights, setDateNights, setTab}) {
   );
 }
 
+function TimeBlockBanner({priorities}) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    var t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  function parseMin(str) {
+    if (!str) return null;
+    var m = str.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!m) return null;
+    var h = parseInt(m[1]), mn = parseInt(m[2]), ap = m[3].toUpperCase();
+    if (ap === 'PM' && h !== 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    return h * 60 + mn;
+  }
+
+  var nowMin = now.getHours() * 60 + now.getMinutes();
+  var timed = (priorities || [])
+    .filter(p => p.time && parseMin(p.time) !== null)
+    .map(p => ({name: p.name, color: p.color || ACCENT, startMin: parseMin(p.time), dur: p.duration || 60}))
+    .sort((a, b) => a.startMin - b.startMin);
+
+  // Build blocks: end of each block = start of next (or start + dur if last)
+  var blocks = timed.map((p, i) => ({
+    name: p.name,
+    color: p.color,
+    startMin: p.startMin,
+    endMin: timed[i + 1] ? timed[i + 1].startMin : p.startMin + p.dur
+  }));
+
+  var current = null, next = null;
+  for (var i = 0; i < blocks.length; i++) {
+    if (nowMin >= blocks[i].startMin && nowMin < blocks[i].endMin) { current = blocks[i]; next = blocks[i + 1] || null; break; }
+    if (nowMin < blocks[i].startMin) { next = blocks[i]; break; }
+  }
+
+  function fmtCountdown(mins) {
+    if (mins <= 0) return '0m';
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+  }
+
+  if (!current && !next) return null;
+
+  if (!current) {
+    // Nothing active yet — show "up next" only
+    var minsUntil = next.startMin - nowMin;
+    return e('div', {style:{marginBottom:16, borderRadius:16, background:'linear-gradient(135deg,rgba(0,198,255,0.08),rgba(123,47,255,0.08))', border:'1.5px solid '+BORDER, padding:'14px 16px'}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:6}}, 'Up Next'),
+      e('div', {style:{display:'flex',alignItems:'center',gap:10}},
+        e('div', {style:{width:10,height:10,borderRadius:'50%',background:next.color,flexShrink:0}}),
+        e('div', {style:{fontWeight:700,fontSize:16,color:TEXT,flex:1}}, next.name),
+        e('div', {style:{fontSize:13,fontWeight:700,color:next.color}}, 'in ' + fmtCountdown(minsUntil))
+      )
+    );
+  }
+
+  var minsLeft = current.endMin - nowMin;
+  return e('div', {style:{marginBottom:16, borderRadius:16, background:'linear-gradient(135deg,'+current.color+'18,'+current.color+'08)', border:'1.5px solid '+current.color+'40', padding:'14px 16px'}},
+    e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:current.color,marginBottom:6}}, 'Now'),
+    e('div', {style:{display:'flex',alignItems:'center',gap:10,marginBottom:next?8:0}},
+      e('div', {style:{width:10,height:10,borderRadius:'50%',background:current.color,flexShrink:0,boxShadow:'0 0 6px '+current.color}}),
+      e('div', {style:{fontWeight:800,fontSize:18,color:TEXT,flex:1}}, current.name),
+      e('div', {style:{fontWeight:800,fontSize:20,color:current.color}}, fmtCountdown(minsLeft))
+    ),
+    next ? e('div', {style:{fontSize:12,color:MUTED,paddingLeft:20}},
+      'Up next: ', e('span', {style:{color:TEXT,fontWeight:600}}, next.name), ' — starting in ', e('span', {style:{fontWeight:700}}, fmtCountdown(next.startMin - nowMin))
+    ) : null
+  );
+}
+
 function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns}) {
   const td = today();
   const done = habitLog[td] || {};
@@ -2420,6 +2492,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
       e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
     ),
+    e(TimeBlockBanner, {priorities: priorities}),
     e('div', {style:{marginBottom:16}},
       e('div', {className:'card'},
         e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Routines'),
