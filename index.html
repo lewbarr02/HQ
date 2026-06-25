@@ -191,6 +191,43 @@ function save(k,v){
   _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);});
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
+function useDragSort(items, onReorder) {
+  var [dragIdx, setDragIdx] = React.useState(null);
+  var [overIdx, setOverIdx] = React.useState(null);
+  var rowRefs = React.useRef([]);
+  function startDrag(idx) {
+    return function(ev) {
+      ev.preventDefault();
+      setDragIdx(idx);
+      setOverIdx(idx);
+    };
+  }
+  function onMove(ev) {
+    if(dragIdx === null) return;
+    ev.preventDefault();
+    var y = ev.touches[0].clientY;
+    var best = overIdx;
+    rowRefs.current.forEach(function(el, i) {
+      if(!el) return;
+      var r = el.getBoundingClientRect();
+      if(y >= r.top && y < r.bottom) best = i;
+    });
+    if(best !== overIdx) setOverIdx(best);
+  }
+  function onEnd() {
+    if(dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
+      var next = items.slice();
+      var moved = next.splice(dragIdx, 1)[0];
+      next.splice(overIdx, 0, moved);
+      onReorder(next);
+    }
+    setDragIdx(null);
+    setOverIdx(null);
+  }
+  function rowRef(idx) { return function(el) { rowRefs.current[idx] = el; }; }
+  return { dragIdx, overIdx, startDrag, onMove, onEnd, rowRef };
+}
+
 function addPassiveWin(text, date) {
   var d = date || today();
   var existing = [];
@@ -3688,6 +3725,7 @@ function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, se
   const [newTask, setNewTask] = React.useState('');
 
   function savePriorities(next) { setPriorities(next); save('priorities', next); }
+  var ds = useDragSort(priorities, savePriorities);
   function toggleTask(pid, tid) {
     var proj = (projects||[]).find(function(p){return p.id===pid;});
     var task = proj ? (proj.tasks||[]).find(function(t){return t.id===tid;}) : null;
@@ -3758,18 +3796,15 @@ function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, se
             e('div', {style:{fontSize:15,fontWeight:600,marginBottom:4}}, 'Nothing on the list'),
             e('div', {style:{fontSize:13}}, 'Add a task or move something from Later.')
           )
-        : e('div', {className:'card'},
-            ...priorities.map(function(p, idx) { return e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
+        : e('div', {className:'card', onTouchMove:ds.onMove, onTouchEnd:ds.onEnd},
+            ...priorities.map(function(p, idx) { return e('div', {key:p.id, ref:ds.rowRef(idx), style:{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)',opacity:ds.dragIdx===idx?0.4:1,borderTop:ds.overIdx===idx&&ds.dragIdx!==null&&ds.dragIdx!==idx?'2px solid '+ACCENT:''}},
               e('div', {style:{width:3,height:36,borderRadius:2,background:p.color||MUTED,flexShrink:0}}),
               e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>{if(!p.done)addPassiveWin('Priority done: '+p.name);savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x));}}, p.done?'✓':''),
               e('div', {style:{flex:1}},
                 e('div', {style:{fontSize:14,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none'}}, p.name),
                 e('div', {style:{fontSize:11,color:MUTED,marginTop:1}}, p.cat+(p.time?' · '+p.time:''))
               ),
-              e('div', {style:{display:'flex',flexDirection:'column',gap:2,flexShrink:0}},
-                e('button', {onClick:()=>moveUp(idx), disabled:idx===0, style:{background:'none',border:'none',color:idx===0?'#D0D0E0':MUTED,cursor:idx===0?'default':'pointer',fontSize:12,padding:'2px 4px',lineHeight:1}}, '▲'),
-                e('button', {onClick:()=>moveDown(idx), disabled:idx===priorities.length-1, style:{background:'none',border:'none',color:idx===priorities.length-1?'#D0D0E0':MUTED,cursor:idx===priorities.length-1?'default':'pointer',fontSize:12,padding:'2px 4px',lineHeight:1}}, '▼')
-              ),
+              e('div', {onTouchStart:ds.startDrag(idx), style:{touchAction:'none',cursor:'grab',padding:'4px 8px',color:MUTED,fontSize:20,lineHeight:1,flexShrink:0,userSelect:'none'}}, '⠿'),
               e('button', {onClick:()=>moveTodayToLater(p), title:'Move to Later', style:{background:'none',border:'1px solid '+BORDER,borderRadius:8,color:MUTED,cursor:'pointer',fontSize:11,fontWeight:700,padding:'4px 7px',lineHeight:1,flexShrink:0}}, '→ Later'),
               e('button', {onClick:()=>savePriorities(priorities.filter(x=>x.id!==p.id)), style:{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:16,padding:4}}, '✕')
             );}),
@@ -5692,6 +5727,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
     var tmp = arr[idx]; arr[idx] = arr[to]; arr[to] = tmp;
     setMorningItems(arr); save('morningItems', arr);
   }
+  var mds = useDragSort(safeItems, function(next){ setMorningItems(next); save('morningItems', next); });
   function startEditItem(h) {
     setEditingItem(h.id); setEditName(h.name); setEditEmoji(h.emoji);
   }
@@ -5801,6 +5837,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
         ) : null
       ) : null,
 
+      e('div', {onTouchMove:mds.onMove, onTouchEnd:mds.onEnd},
       ...safeItems.map(function(h, idx) {
         var isDone = !!done[h.id];
         var isEditingThis = editing && editingItem === h.id;
@@ -5821,11 +5858,8 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
             )
           );
         }
-        return e('div', {key:h.id, style:{display:'flex',alignItems:'center',gap:6,marginBottom:10}},
-          editing ? e('div', {style:{display:'flex',flexDirection:'column',gap:3,flexShrink:0}},
-            e('button', {onClick:function(){moveItem(h.id,-1);}, disabled:idx===0, style:{width:26,height:26,borderRadius:8,border:'1.5px solid '+BORDER,background:idx===0?CARD2:'#fff',color:idx===0?'#ccc':TEXT,fontSize:13,cursor:idx===0?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',padding:0}}, '▲'),
-            e('button', {onClick:function(){moveItem(h.id,1);}, disabled:idx===safeItems.length-1, style:{width:26,height:26,borderRadius:8,border:'1.5px solid '+BORDER,background:idx===safeItems.length-1?CARD2:'#fff',color:idx===safeItems.length-1?'#ccc':TEXT,fontSize:13,cursor:idx===safeItems.length-1?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',padding:0}}, '▼')
-          ) : null,
+        return e('div', {key:h.id, ref:mds.rowRef(idx), style:{display:'flex',alignItems:'center',gap:6,marginBottom:10,opacity:mds.dragIdx===idx?0.4:1,borderTop:mds.overIdx===idx&&mds.dragIdx!==null&&mds.dragIdx!==idx?'2px solid '+ACCENT:''}},
+          editing ? e('div', {onTouchStart:mds.startDrag(idx), style:{touchAction:'none',cursor:'grab',padding:'4px 8px',color:MUTED,fontSize:22,lineHeight:1,flexShrink:0,userSelect:'none'}}, '⠿') : null,
           e('button', {
             onClick:function(){ if(editing){ startEditItem(h); } else { toggle(h.id); } },
             style:{
@@ -5847,7 +5881,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
             style:{flexShrink:0,width:28,height:28,borderRadius:'50%',background:'#FF6B9D',border:'none',color:'white',fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',lineHeight:1}
           }, '×') : null
         );
-      }),
+      })),
 
       // Warning + move on anyway
       !editing && attempted && !allDone ? e('div', {style:{
@@ -6613,6 +6647,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
     var tmp = arr[idx]; arr[idx] = arr[to]; arr[to] = tmp;
     setEveningItems(arr); save('eveningItems', arr);
   }
+  var eds = useDragSort(safeItems, function(next){ setEveningItems(next); save('eveningItems', next); });
   function startEditItem(h) {
     setEditingItem(h.id); setEditName(h.name); setEditEmoji(h.emoji);
   }
@@ -6675,6 +6710,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
           })
         )
       ) : null,
+      e('div', {onTouchMove:eds.onMove, onTouchEnd:eds.onEnd},
       ...safeItems.map(function(h, idx) {
         var isDone = !!done[h.id];
         var isEditingThis = editing && editingItem === h.id;
@@ -6695,11 +6731,8 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
             )
           );
         }
-        return e('div', {key:h.id, style:{display:'flex',alignItems:'center',gap:6,marginBottom:10}},
-          editing ? e('div', {style:{display:'flex',flexDirection:'column',gap:3,flexShrink:0}},
-            e('button', {onClick:function(){moveItem(h.id,-1);}, disabled:idx===0, style:{width:26,height:26,borderRadius:8,border:'1.5px solid '+BORDER,background:idx===0?CARD2:'#fff',color:idx===0?'#ccc':TEXT,fontSize:13,cursor:idx===0?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',padding:0}}, '▲'),
-            e('button', {onClick:function(){moveItem(h.id,1);}, disabled:idx===safeItems.length-1, style:{width:26,height:26,borderRadius:8,border:'1.5px solid '+BORDER,background:idx===safeItems.length-1?CARD2:'#fff',color:idx===safeItems.length-1?'#ccc':TEXT,fontSize:13,cursor:idx===safeItems.length-1?'default':'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',padding:0}}, '▼')
-          ) : null,
+        return e('div', {key:h.id, ref:eds.rowRef(idx), style:{display:'flex',alignItems:'center',gap:6,marginBottom:10,opacity:eds.dragIdx===idx?0.4:1,borderTop:eds.overIdx===idx&&eds.dragIdx!==null&&eds.dragIdx!==idx?'2px solid '+NIGHT:''}},
+          editing ? e('div', {onTouchStart:eds.startDrag(idx), style:{touchAction:'none',cursor:'grab',padding:'4px 8px',color:MUTED,fontSize:22,lineHeight:1,flexShrink:0,userSelect:'none'}}, '⠿') : null,
           e('button', {
             onClick:function(){ if(editing){ startEditItem(h); } else { toggle(h.id); } },
             style:{display:'flex',alignItems:'center',gap:16,flex:1,padding:'16px',marginBottom:0,borderRadius:16,border:'none',cursor:'pointer',background:isDone?('linear-gradient(135deg,'+NIGHT+'12,'+NIGHT2+'08)'):'#fff',boxShadow:isDone?('0 0 0 2px '+NIGHT+'30'):'0 2px 8px rgba(100,80,220,0.06)',fontFamily:'inherit',textAlign:'left',transition:'all 0.2s'}
@@ -6711,7 +6744,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
           ),
           editing ? e('button', {onClick:function(){removeItem(h.id);}, style:{flexShrink:0,width:28,height:28,borderRadius:'50%',background:'#FF6B9D',border:'none',color:'white',fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'inherit',lineHeight:1}}, '×') : null
         );
-      }),
+      })),
       !editing && attempted && !allDone ? e('div', {style:{margin:'8px 0 16px',padding:'14px 16px',background:'rgba(255,100,100,0.08)',border:'1.5px solid rgba(255,100,100,0.25)',borderRadius:14}},
         e('div', {style:{fontSize:14,fontWeight:700,color:'#FF6B6B',marginBottom:4}}, '⚠️ '+incomplete.length+' item'+(incomplete.length>1?'s':'')+' remaining'),
         e('div', {style:{fontSize:13,color:MUTED,lineHeight:1.5,marginBottom:10}}, "Almost there! If something's in the way, that's okay too."),
