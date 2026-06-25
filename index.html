@@ -6076,31 +6076,6 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
         )
       ),
 
-      // Supplements
-      e('div', {style:{marginBottom:24}},
-        e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:10,textAlign:'left'}}, '💊 Supplements taken?'),
-        e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
-          ...SUPPLEMENTS.map(function(s){
-            var checked = !!supps[s.id];
-            return e('button', {key:s.id, onClick:function(){setSupps(function(prev){var n=Object.assign({},prev);n[s.id]=!n[s.id];return n;});}, style:{
-              display:'flex', alignItems:'center', gap:8,
-              padding:'10px 12px', borderRadius:12,
-              border:'1.5px solid '+(checked?MIDDAY:'#E8E8F0'),
-              background: checked ? MIDDAY+'15' : '#fff',
-              cursor:'pointer', fontFamily:'inherit', textAlign:'left',
-            }},
-              e('div', {style:{
-                width:20, height:20, borderRadius:6, flexShrink:0,
-                background: checked ? MIDDAY : 'transparent',
-                border:'2px solid '+(checked?MIDDAY:'#D0D0E0'),
-                display:'flex', alignItems:'center', justifyContent:'center',
-              }}, checked ? e('span', {style:{color:'#fff',fontSize:11,fontWeight:700}}, '✓') : null),
-              e('span', {style:{fontSize:12,fontWeight:700,color:checked?MIDDAY2:TEXT,lineHeight:1.3}}, s.emoji+' '+s.label)
-            );
-          })
-        )
-      ),
-
       // Morning wins — quick checkbox of today's priorities
       todayPriorities.length > 0 ? e('div', {style:{marginBottom:24}},
         e('div', {style:{fontSize:14,fontWeight:700,color:TEXT,marginBottom:10,textAlign:'left'}}, 'Morning wins — what got done?'),
