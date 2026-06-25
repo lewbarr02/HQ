@@ -191,6 +191,13 @@ function save(k,v){
   _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);});
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
+function addPassiveWin(text, date) {
+  var d = date || today();
+  var existing = [];
+  try { existing = JSON.parse(localStorage.getItem('hq_wins_'+d)||'[]'); } catch(ex){}
+  existing.push({id:'pw'+Date.now(), text:text, passive:true});
+  localStorage.setItem('hq_wins_'+d, JSON.stringify(existing));
+}
 
 function takeAutoBackup() {
   var today = new Date().toISOString().slice(0,10);
@@ -1513,8 +1520,10 @@ function QuickShoppingCard({groceries, setGroceries, returns, setReturns, setTab
   }
 
   function markReturnDone(id) {
+    var ret = (returns||[]).find(function(r){return r.id===id;});
     var next = (returns||[]).map(function(r){return r.id===id?Object.assign({},r,{done:true}):r;});
     setReturns(next); save('returns', next);
+    if(ret) addPassiveWin('Returned: '+ret.item+(ret.store?' to '+ret.store:''));
   }
 
   function daysLeft(dl) {
@@ -1602,8 +1611,10 @@ function HQBacklogScreen({hqBacklog, setHqBacklog, setTab}) {
   }
 
   function toggleDone(id) {
+    var item = (hqBacklog||[]).find(function(i){ return i.id===id; });
     var next = (hqBacklog||[]).map(function(i){ return i.id===id ? {...i, done:!i.done} : i; });
     setHqBacklog(next); save('hqBacklog', next);
+    if(item && !item.done) addPassiveWin('HQ update shipped: '+item.text);
   }
 
   function deleteItem(id) {
@@ -2276,7 +2287,10 @@ function TimeBlockBanner({priorities}) {
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:6}}, 'Open Block'),
       e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
         e('div', {style:{fontSize:15,color:TEXT}}, 'Next activity starts in'),
-        e('div', {style:{fontWeight:800,fontSize:20,color:ACCENT}}, fmtCountdown(minsUntil))
+        e('div', {style:{display:'flex',flexDirection:'column',alignItems:'flex-end'}},
+          e('div', {style:{fontWeight:800,fontSize:20,color:ACCENT}}, fmtCountdown(minsUntil)),
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:0.5}}, 'left')
+        )
       ),
       e('div', {style:{fontSize:12,color:MUTED,marginTop:4}},
         e('span', {style:{color:TEXT,fontWeight:600}}, next.name)
@@ -2443,7 +2457,11 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
   }, [td]);
 
   function savePriorities(next){setPriorities(next);save('priorities',next);}
-  function toggleHabit(id){const next={...habitLog,[td]:{...done,[id]:!done[id]}};setHabitLog(next);save('habitLog',next);}
+  function toggleHabit(id){
+    var wasOn = !!(done[id]);
+    const next={...habitLog,[td]:{...done,[id]:!done[id]}};setHabitLog(next);save('habitLog',next);
+    if(!wasOn){var h=habits.find(function(x){return x.id===id;});if(h)addPassiveWin('Habit done: '+h.name);}
+  }
   function shiftQl(d){
     const dt=new Date(qlDate+'T12:00:00');dt.setDate(dt.getDate()+d);
     const dk=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
@@ -3669,8 +3687,11 @@ function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, se
 
   function savePriorities(next) { setPriorities(next); save('priorities', next); }
   function toggleTask(pid, tid) {
+    var proj = (projects||[]).find(function(p){return p.id===pid;});
+    var task = proj ? (proj.tasks||[]).find(function(t){return t.id===tid;}) : null;
     var next = (projects||[]).map(p => p.id===pid ? {...p, tasks: p.tasks.map(t => t.id===tid ? {...t, done:!t.done} : t)} : p);
     setProjects(next); save('projects', next);
+    if(task && !task.done) addPassiveWin('Project task done: '+task.text);
   }
   function addTask(pid) {
     if(!newTask.trim()) return;
@@ -3837,7 +3858,7 @@ function GoalsScreen({goals, setGoals, projects, setProjects, setTab, backlog, s
   function deleteGoal(id){const next=goals.filter(g=>g.id!==id);setGoals(next);save('goals',next);}
   function addProject(){if(!pTitle.trim())return;const p={id:Date.now().toString(),title:pTitle,desc:pDesc,color:pColor,tasks:[],done:false};const next=[...projects,p];setProjects(next);save('projects',next);setPTitle('');setPDesc('');setAddingP(false);}
   function addTask(pid){if(!newTask.trim())return;const next=projects.map(p=>p.id===pid?{...p,tasks:[...p.tasks,{id:Date.now().toString(),text:newTask,done:false}]}:p);setProjects(next);save('projects',next);setNewTask('');setAddingTaskFor(null);}
-  function toggleTask(pid,tid){const next=projects.map(p=>p.id===pid?{...p,tasks:p.tasks.map(t=>t.id===tid?{...t,done:!t.done}:t)}:p);setProjects(next);save('projects',next);}
+  function toggleTask(pid,tid){var proj=projects.find(function(p){return p.id===pid;});var task=proj?(proj.tasks||[]).find(function(t){return t.id===tid;}):null;const next=projects.map(p=>p.id===pid?{...p,tasks:p.tasks.map(t=>t.id===tid?{...t,done:!t.done}:t)}:p);setProjects(next);save('projects',next);if(task&&!task.done)addPassiveWin('Project task done: '+task.text);}
   function markProjDone(id){const next=projects.map(p=>p.id===id?{...p,done:true}:p);setProjects(next);save('projects',next);}
   function deleteProject(id){const next=projects.filter(p=>p.id!==id);setProjects(next);save('projects',next);}
 
@@ -4131,8 +4152,10 @@ function ShoppingScreen({groceries, setGroceries, inventory, setInventory, setTa
     setGroceries(next); save('groceries', next); setNewItem('');
   }
   function toggleItem(id) {
+    var item = (groceries||[]).find(function(g){return g.id===id;});
     var next = (groceries||[]).map(function(g){return g.id===id?{...g,done:!g.done}:g;});
     setGroceries(next); save('groceries', next);
+    if(item && !item.done) addPassiveWin('Purchased: '+item.name);
   }
   function deleteItem(id) {
     var next = (groceries||[]).filter(function(g){return g.id!==id;});
@@ -5673,6 +5696,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
     var newLog = {...routineLog, [td+'_done']: finishTime, [td+'_partial']: true, [td+'_blockers']: blockers};
     setRoutineLog(newLog);
     save('routineLog', newLog);
+    addPassiveWin('Completed morning routine');
     onComplete();
   }
 
@@ -5682,6 +5706,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
     var newLog = {...routineLog, [td+'_done']: finishTime};
     setRoutineLog(newLog);
     save('routineLog', newLog);
+    addPassiveWin('Completed morning routine');
     onComplete();
   }
 
@@ -6035,6 +6060,7 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
       var merged = existing.concat(freeWins);
       localStorage.setItem('hq_wins_'+td, JSON.stringify(merged));
     }
+    addPassiveWin('Completed midday check-in');
     onDone();
   }
 
@@ -6583,6 +6609,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
     var newLog = {...eveningLog, [td+'_done']: finishTime, [td+'_partial']: true, [td+'_blockers']: blockers};
     setEveningLog(newLog);
     save('eveningLog', newLog);
+    addPassiveWin('Completed evening routine');
     onComplete();
   }
   function handleComplete() {
@@ -6591,6 +6618,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
     var newLog = {...eveningLog, [td+'_done']: finishTime};
     setEveningLog(newLog);
     save('eveningLog', newLog);
+    addPassiveWin('Completed evening routine');
     onComplete();
   }
   var incomplete = safeItems.filter(function(h){return !done[h.id];});
@@ -6868,6 +6896,7 @@ function PostWorkoutChecklist({ onComplete, onSkipToDashboard, pwLog, setPwLog, 
     var newLog = {...pwLog, [td+'_done']: finishTime, [td+'_partial']: true, [td+'_blockers']: blockers};
     setPwLog(newLog);
     save('postWorkoutLog', newLog);
+    addPassiveWin('Completed post-workout routine');
     onComplete();
   }
   function handleComplete() {
@@ -6876,6 +6905,7 @@ function PostWorkoutChecklist({ onComplete, onSkipToDashboard, pwLog, setPwLog, 
     var newLog = {...pwLog, [td+'_done']: finishTime};
     setPwLog(newLog);
     save('postWorkoutLog', newLog);
+    addPassiveWin('Completed post-workout routine');
     onComplete();
   }
   var incomplete = safeItems.filter(function(h){return !done[h.id];});
@@ -7191,6 +7221,7 @@ function CleaningChecklist({onComplete, onSkipToDashboard, clLog, setClLog, clIt
     var newLog = {...clLog, [td+'_done']: doneTime};
     if(partial) newLog[td+'_partial'] = true;
     setClLog(newLog); save('cleaningLog', newLog);
+    addPassiveWin('Completed cleaning routine');
     onComplete();
   }
 
@@ -7708,6 +7739,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setWorkoutLog(newLog);
     save('workoutLog', newLog);
     autoCheckExercise(logDate, habitLog);
+    addPassiveWin('Logged a workout: '+selectedGroups.join(', '), logDate);
     setSelectedGroups([]); setSessionNote(''); setSessionSets('');
     setView('log');
   }
@@ -7781,6 +7813,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var newLog = Object.assign({},safeLog,{[td]:[...day,entry]});
     setWorkoutLog(newLog); save('workoutLog',newLog);
     autoCheckExercise(td, habitLog);
+    addPassiveWin('Logged a workout: '+(executeDay.dayLabel||groups.join(', ')));
 
     // Update lastWeight/lastReps on the program
     if(currentProgram && exercises.length>0){
@@ -8103,6 +8136,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           setWorkoutLog(newLog);
           save('workoutLog', newLog);
           autoCheckExercise(logDate, habitLog);
+          addPassiveWin('Logged a workout'+(selectedProgramDay?': '+selectedProgramDay:selectedGroups.length?': '+selectedGroups.join(', '):''), logDate);
           // Update program lastWeight/lastReps
           if (selDay && currentProgram && exData.length > 0) {
             var updatedProg = JSON.parse(JSON.stringify(currentProgram));
@@ -9930,8 +9964,10 @@ function AreaDetail({ area, data, onSave, onBack }) {
     saveTasks(next); setNewTask('');
   }
   function toggleTask(id) {
+    var task = tasks.find(function(t){return t.id===id;});
     var next = tasks.map(function(t){return t.id===id?{...t,done:!t.done}:t;});
     saveTasks(next);
+    if(task && !task.done) addPassiveWin('Task done: '+task.text);
   }
   function deleteTask(id) {
     saveTasks(tasks.filter(function(t){return t.id!==id;}));
