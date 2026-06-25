@@ -395,9 +395,20 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const now = new Date();
   const currentMinute = now.getHours() * 60 + now.getMinutes();
   const priorities = load('priorities') || [];
-  const [actionItems, setActionItems] = useState(() => load('dayActionItems') || []);
+  const [actionItems, setActionItems] = useState(() => {
+    var items = load('dayActionItems') || [];
+    return items.map(function(a) {
+      return {
+        id: a.id, name: a.name, emoji: a.emoji || '',
+        tier: a.tier || 'primary',
+        timeOfDay: a.timeOfDay || 'am',
+        state: a.state || (a.done ? 'done' : 'unplanned'),
+        coveredBy: a.coveredBy || [],
+      };
+    });
+  });
   const [showActionModal, setShowActionModal] = useState(false);
-  const [actionForm, setActionForm] = useState({name:'', emoji:'', color: ACCENT});
+  const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
   const [calEvents, setCalEvents] = useState([]);
   const [calSyncMsg, setCalSyncMsg] = useState('');
   const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
@@ -526,57 +537,134 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     return {id:'habit-'+h.id, label: h.name, color: h.color || ACCENT, durationMin: 15};
   });
 
-  function toggleActionItem(id) {
-    var next = actionItems.map(function(a){ return a.id === id ? Object.assign({}, a, {done: !a.done}) : a; });
-    setActionItems(next); save('dayActionItems', next);
+  function tapActionItem(id) {
+    setActionItems(function(cur) {
+      var next = cur.map(function(a) {
+        if (a.id !== id) return a;
+        // cycle: unplanned → done → unplanned (scheduled stays, just adds done on top)
+        var newState = a.state === 'done' ? 'unplanned' : 'done';
+        return Object.assign({}, a, {state: newState});
+      });
+      save('dayActionItems', next);
+      return next;
+    });
   }
   function removeActionItem(id) {
-    var next = actionItems.filter(function(a){ return a.id !== id; });
-    setActionItems(next); save('dayActionItems', next);
+    setActionItems(function(cur) {
+      var next = cur.filter(function(a){ return a.id !== id; });
+      save('dayActionItems', next);
+      return next;
+    });
+  }
+  function resetActionItems() {
+    setActionItems(function(cur) {
+      var next = cur.map(function(a){ return Object.assign({}, a, {state:'unplanned'}); });
+      save('dayActionItems', next);
+      return next;
+    });
   }
 
-  // Action Items bar — anchored above the scrolling timeline
-  var doneCount = actionItems.filter(function(a){ return a.done; }).length;
-  var priorityBarEl = e('div', {style:{paddingBottom:12, borderBottom:'1px solid '+BORDER}},
-    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:'0.08em',textTransform:'uppercase',color:MUTED,flex:1}}, 'Action Items'),
-      actionItems.length > 0 ? e('div', {style:{fontSize:11,fontWeight:700,color: doneCount === actionItems.length ? '#10B981' : MUTED, marginRight:8}},
-        doneCount + '/' + actionItems.length + ' done'
-      ) : null,
-      e('button', {
-        onClick: function(){ setActionForm({name:'',emoji:'',color:ACCENT}); setShowActionModal(true); },
-        style:{display:'flex',alignItems:'center',gap:4,padding:'4px 10px',borderRadius:20,border:'1.5px solid '+ACCENT+'60',background:ACCENT+'10',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:ACCENT,flexShrink:0}
-      }, '+ Add')
+  // ── Action Items bar ──────────────────────────────────────────
+  var aiPrimary = actionItems.filter(function(a){ return a.tier === 'primary'; });
+  var aiSecondary = actionItems.filter(function(a){ return a.tier === 'secondary'; });
+  var aiPrimaryAM = aiPrimary.filter(function(a){ return a.timeOfDay === 'am'; });
+  var aiPrimaryPM = aiPrimary.filter(function(a){ return a.timeOfDay === 'pm'; });
+  var amDone = aiPrimaryAM.filter(function(a){ return a.state === 'done'; }).length;
+  var amPct = aiPrimaryAM.length > 0 ? amDone / aiPrimaryAM.length : 1;
+  var secondaryDimmed = amPct < 0.5 && aiPrimaryAM.length > 0;
+
+  function circleSize(count) {
+    if (count <= 4) return {sz:46, fnt:22, lbl:9, gap:10, w:54};
+    if (count <= 6) return {sz:40, fnt:19, lbl:8, gap:8,  w:48};
+    if (count <= 9) return {sz:34, fnt:16, lbl:7, gap:6,  w:40};
+    return              {sz:28, fnt:13, lbl:0, gap:5,  w:32};
+  }
+
+  var STATE_COLORS = {unplanned:'#EF4444', scheduled:'#F59E0B', done:'#10B981'};
+
+  function ActionCircle(a, cs) {
+    var stateColor = STATE_COLORS[a.state] || '#EF4444';
+    var emoji = a.emoji || null;
+    var initials = a.name.slice(0,2).toUpperCase();
+    return e('div', {key:'ai-'+a.id, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:3,flexShrink:0,width:cs.w}},
+      e('div', {
+        onClick: function(){ tapActionItem(a.id); },
+        onContextMenu: function(ev){ ev.preventDefault(); removeActionItem(a.id); },
+        style:{
+          position:'relative', width:cs.sz, height:cs.sz, borderRadius:'50%',
+          background: stateColor+'18',
+          border: '2.5px solid ' + stateColor,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          cursor:'pointer', transition:'all 0.25s', flexShrink:0,
+          WebkitTapHighlightColor:'transparent',
+        }},
+        e('span', {style:{fontSize:emoji?cs.fnt:cs.fnt*0.6, fontWeight:700, color:stateColor, lineHeight:1, userSelect:'none'}}, emoji || initials),
+        a.state === 'done' ? e('div', {style:{
+          position:'absolute', bottom:-2, right:-2, width:14, height:14, borderRadius:'50%',
+          background:'#10B981', border:'2px solid white',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize:8, color:'white', fontWeight:800, lineHeight:1,
+        }}, '✓') : null,
+        a.state === 'scheduled' ? e('div', {style:{
+          position:'absolute', bottom:-2, right:-2, width:14, height:14, borderRadius:'50%',
+          background:'#F59E0B', border:'2px solid white',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          fontSize:8, color:'white', fontWeight:800, lineHeight:1,
+        }}, '📅') : null
+      ),
+      cs.lbl > 0 ? e('div', {style:{
+        fontSize:cs.lbl, fontWeight:600, color:stateColor,
+        textAlign:'center', lineHeight:1.2, maxWidth:cs.w,
+        overflow:'hidden', wordBreak:'break-word',
+        display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',
+      }}, a.name) : null
+    );
+  }
+
+  function TierRow(items, label, sublabel, addTier, addTOD, dimmed) {
+    var cs = circleSize(items.length);
+    var doneCt = items.filter(function(a){ return a.state==='done'; }).length;
+    var schedCt = items.filter(function(a){ return a.state==='scheduled'; }).length;
+    var stat = items.length > 0 ? (doneCt+'/'+items.length+' done'+(schedCt>0?' · '+schedCt+' planned':'')) : '';
+    return e('div', {style:{opacity: dimmed ? 0.45 : 1, transition:'opacity 0.3s', marginBottom:10}},
+      e('div', {style:{display:'flex',alignItems:'center',gap:6,marginBottom:6}},
+        e('div', {style:{fontSize:10,fontWeight:800,letterSpacing:'0.07em',textTransform:'uppercase',color: doneCt===items.length&&items.length>0?'#10B981':MUTED, flex:1}},
+          label + (sublabel ? ' · ' + sublabel : '')
+        ),
+        stat ? e('div', {style:{fontSize:10,fontWeight:700,color:doneCt===items.length&&items.length>0?'#10B981':MUTED}}, stat) : null,
+        e('button', {
+          onClick: function(){ setActionForm({name:'',emoji:'',tier:addTier,timeOfDay:addTOD,coveredBy:[]}); setShowActionModal(true); },
+          style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid '+ACCENT+'50',background:ACCENT+'0D',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color:ACCENT,flexShrink:0}
+        }, '+ Add')
+      ),
+      items.length === 0
+        ? e('div', {style:{fontSize:11,color:MUTED,fontStyle:'italic',paddingBottom:2}}, dimmed ? 'Complete AM musts to unlock.' : 'Nothing added yet.')
+        : e('div', {style:{display:'flex',gap:cs.gap,overflowX:'auto',paddingBottom:4,WebkitOverflowScrolling:'touch'}},
+            ...items.map(function(a){ return ActionCircle(a, cs); })
+          )
+    );
+  }
+
+  var priorityBarEl = e('div', {style:{paddingBottom:10, borderBottom:'1px solid '+BORDER}},
+    // Header row
+    e('div', {style:{display:'flex',alignItems:'center',marginBottom:8}},
+      e('div', {style:{fontSize:11,fontWeight:800,letterSpacing:'0.08em',textTransform:'uppercase',color:TEXT,flex:1}}, 'Action Items'),
+      actionItems.length > 0 ? e('button', {
+        onClick: resetActionItems,
+        title:'Reset all to unplanned (use when building tomorrow\'s day)',
+        style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid #EF444450',background:'#EF44440D',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color:'#EF4444',flexShrink:0}
+      }, '↺ Reset') : null
     ),
-    actionItems.length === 0
-      ? e('div', {style:{fontSize:12,color:MUTED,paddingBottom:4}}, 'Tap + Add to build out your day.')
-      : e('div', {style:{display:'flex',gap:12,overflowX:'auto',paddingBottom:4,WebkitOverflowScrolling:'touch'}},
-          ...actionItems.map(function(a) {
-            var color = a.color || ACCENT;
-            var emoji = a.emoji || null;
-            var initials = a.name.slice(0,2).toUpperCase();
-            return e('div', {key:'ai-'+a.id, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:5,flexShrink:0,width:58}},
-              e('div', {
-                onClick: function(){ toggleActionItem(a.id); },
-                style:{
-                  position:'relative', width:48, height:48, borderRadius:'50%',
-                  background: a.done ? color+'22' : '#F0F2F8',
-                  border: '2.5px solid ' + (a.done ? color : 'rgba(100,80,220,0.15)'),
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  cursor:'pointer', transition:'all 0.2s', flexShrink:0,
-                }},
-                e('span', {style:{fontSize: emoji ? 22 : 13, fontWeight:700, color: a.done ? color : MUTED, lineHeight:1}}, emoji || initials),
-                a.done ? e('div', {style:{
-                  position:'absolute', bottom:-2, right:-2, width:16, height:16, borderRadius:'50%',
-                  background:'#10B981', border:'2px solid white',
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  fontSize:9, color:'white', fontWeight:800, lineHeight:1,
-                }}, '✓') : null
-              ),
-              e('div', {style:{fontSize:9,fontWeight:600,color:a.done?color:MUTED,textAlign:'center',lineHeight:1.3,maxWidth:58,wordBreak:'break-word'}}, a.name)
-            );
-          })
-        )
+    // Primary AM
+    TierRow(aiPrimaryAM, 'Must Happen', 'AM', 'primary', 'am', false),
+    // Primary PM
+    aiPrimaryPM.length > 0 || true
+      ? TierRow(aiPrimaryPM, 'Must Happen', 'PM', 'primary', 'pm', false)
+      : null,
+    // Divider
+    e('div', {style:{height:1,background:BORDER,margin:'6px 0 8px'}}),
+    // Secondary
+    TierRow(aiSecondary, 'Like to Happen', '', 'secondary', 'am', secondaryDimmed)
   );
 
   // Ghost overlay for touch drag
@@ -632,6 +720,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     setScheduled(next);
     save('dayScheduled', next);
     var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
+    // Auto-schedule action items that list this block in their coveredBy
+    setActionItems(function(cur) {
+      var changed = false;
+      var updated = cur.map(function(a) {
+        if (a.coveredBy && a.coveredBy.includes(di.id) && a.state === 'unplanned') {
+          changed = true;
+          return Object.assign({}, a, {state: 'scheduled'});
+        }
+        return a;
+      });
+      if (changed) save('dayActionItems', updated);
+      return changed ? updated : cur;
+    });
     dragItemRef.current = null;
     setDragItem(null);
   }
@@ -960,42 +1061,103 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     ),
 
     // Action Item modal
-    showActionModal ? e('div', {onClick:()=>setShowActionModal(false), style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}},
-      e('div', {onClick:ev=>ev.stopPropagation(), style:{background:'#fff',borderRadius:20,padding:28,width:300,boxShadow:'0 8px 40px rgba(0,0,0,0.18)'}},
+    showActionModal ? e('div', {onClick:()=>setShowActionModal(false), style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
+      e('div', {onClick:ev=>ev.stopPropagation(), style:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 24px 36px',width:'100%',maxWidth:480,boxShadow:'0 -8px 40px rgba(0,0,0,0.18)',maxHeight:'90vh',overflowY:'auto'}},
         e('div', {style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:20}}, 'Add Action Item'),
+
+        // Name
         e('div', {style:{marginBottom:14}},
-          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:5}}, 'NAME'),
-          e('input', {value:actionForm.name, onInput:ev=>setActionForm(f=>({...f,name:ev.target.value})), placeholder:'e.g. Send follow-up email', autoFocus:true, style:{width:'100%',padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:6}}, 'NAME'),
+          e('input', {value:actionForm.name, onInput:ev=>setActionForm(f=>({...f,name:ev.target.value})), placeholder:'e.g. Exercise, Shower, Read...', autoFocus:true,
+            style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
         ),
+
+        // Tier
         e('div', {style:{marginBottom:14}},
-          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'EMOJI ' + (actionForm.emoji ? '— ' + actionForm.emoji : '— none')),
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:8}}, 'TYPE'),
+          e('div', {style:{display:'flex',gap:8}},
+            ...(['primary','secondary']).map(function(t) {
+              var active = actionForm.tier === t;
+              var label = t === 'primary' ? '🔴 Must Happen' : '🟡 Like to Happen';
+              return e('button', {key:t, onClick:function(){ setActionForm(function(f){ return {...f,tier:t}; }); },
+                style:{flex:1,padding:'10px',borderRadius:10,border:'2px solid '+(active?'#EF4444':BORDER),
+                  background:active?'#EF444410':'#F8FAFC',fontFamily:'inherit',fontSize:13,fontWeight:700,
+                  color:active?'#EF4444':MUTED,cursor:'pointer'}
+              }, label);
+            })
+          )
+        ),
+
+        // Time of day (primary only)
+        actionForm.tier === 'primary' ? e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:8}}, 'WHEN'),
+          e('div', {style:{display:'flex',gap:8}},
+            ...(['am','pm']).map(function(t) {
+              var active = actionForm.timeOfDay === t;
+              return e('button', {key:t, onClick:function(){ setActionForm(function(f){ return {...f,timeOfDay:t}; }); },
+                style:{flex:1,padding:'10px',borderRadius:10,border:'2px solid '+(active?ACCENT:BORDER),
+                  background:active?ACCENT+'15':'#F8FAFC',fontFamily:'inherit',fontSize:13,fontWeight:700,
+                  color:active?ACCENT:MUTED,cursor:'pointer'}
+              }, t === 'am' ? '🌅 Morning' : '🌙 Evening');
+            })
+          )
+        ) : null,
+
+        // Emoji
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:8}}, 'ICON ' + (actionForm.emoji ? '— ' + actionForm.emoji : '')),
           e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
-            ...['🎯','📋','✉️','📞','💼','🚀','💪','🧠','⭐','🔥','📝','🏃','💡','⚡','🛠️','📅','🤝','💰','🎨','✅'].map(function(em){
+            ...['🚿','🏋️','🦷','💊','😴','🧘','🏃','🚗','📚','✍️','🎯','💼','🚀','🍽️','👨‍👧','💡','🎮','📺','⛳','🛠️','🧹','💤'].map(function(em){
               var active = actionForm.emoji === em;
-              return e('button', {key:em, onClick:function(){ setActionForm(function(f){ return {...f, emoji: f.emoji===em?'':em}; }); },
-                style:{width:38,height:38,borderRadius:10,border:'2px solid '+(active?actionForm.color:'transparent'),background:active?actionForm.color+'18':'#F8FAFC',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}
+              return e('button', {key:em, onClick:function(){ setActionForm(function(f){ return {...f,emoji:f.emoji===em?'':em}; }); },
+                style:{width:40,height:40,borderRadius:10,border:'2px solid '+(active?'#EF4444':'transparent'),
+                  background:active?'#EF444412':'#F8FAFC',fontSize:20,cursor:'pointer',
+                  display:'flex',alignItems:'center',justifyContent:'center'}
               }, em);
             })
           )
         ),
+
+        // Covered by
         e('div', {style:{marginBottom:22}},
-          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'COLOR'),
-          e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
-            ...['#00C6FF','#7B2FFF','#10B981','#F59E0B','#3B82F6','#EC4899','#EF4444','#8B5CF6','#F97316','#6366F1'].map(function(c){
-              return e('div', {key:c, onClick:()=>setActionForm(f=>({...f,color:c})), style:{width:26,height:26,borderRadius:'50%',background:c,cursor:'pointer',border:actionForm.color===c?'3px solid '+TEXT:'3px solid transparent',boxSizing:'border-box'}});
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:4}}, 'AUTO-SCHEDULE WHEN I DROP'),
+          e('div', {style:{fontSize:11,color:MUTED,marginBottom:8}}, 'Which calendar block covers this item?'),
+          e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...[
+              {id:'routine-morning',label:'☀️ Morning Routine'},
+              {id:'routine-midday', label:'🌤️ Midday Routine'},
+              {id:'routine-evening',label:'🌙 Evening Routine'},
+              {id:'preset-workout', label:'💪 Workout'},
+              {id:'preset-meal',    label:'🍽️ Meal'},
+              {id:'preset-work',    label:'💼 Work Session'},
+              {id:'preset-focus',   label:'🎯 Focus Block'},
+              {id:'preset-moonshot',label:'🚀 Moonshot Work'},
+              {id:'preset-break',   label:'☕ Break'},
+            ].map(function(opt) {
+              var active = actionForm.coveredBy.includes(opt.id);
+              return e('button', {key:opt.id, onClick:function(){
+                setActionForm(function(f){
+                  var next = active ? f.coveredBy.filter(function(x){return x!==opt.id;}) : f.coveredBy.concat([opt.id]);
+                  return {...f, coveredBy: next};
+                });
+              }, style:{padding:'6px 10px',borderRadius:20,border:'1.5px solid '+(active?ACCENT:BORDER),
+                background:active?ACCENT+'15':'#F8FAFC',fontFamily:'inherit',fontSize:11,fontWeight:600,
+                color:active?ACCENT:MUTED,cursor:'pointer'}
+              }, opt.label);
             })
           )
         ),
+
         e('div', {style:{display:'flex',gap:10}},
-          e('button', {onClick:()=>setShowActionModal(false), style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
+          e('button', {onClick:()=>setShowActionModal(false), style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
           e('button', {onClick:()=>{
             if (!actionForm.name.trim()) return;
-            var newItem = {id: Date.now().toString(), name: actionForm.name.trim(), emoji: actionForm.emoji, color: actionForm.color, done: false};
-            var next = actionItems.concat([newItem]);
-            setActionItems(next); save('dayActionItems', next);
-            setActionForm({name:'',emoji:'',color:ACCENT});
+            var newItem = {id:Date.now().toString(), name:actionForm.name.trim(), emoji:actionForm.emoji,
+              tier:actionForm.tier, timeOfDay:actionForm.timeOfDay, state:'unplanned', coveredBy:actionForm.coveredBy};
+            setActionItems(function(cur){ var next=cur.concat([newItem]); save('dayActionItems',next); return next; });
+            setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]});
             setShowActionModal(false);
-          }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:ACCENT,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, 'Add')
+          }, style:{flex:1,padding:'12px',borderRadius:10,border:'none',background:'#EF4444',fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, 'Add')
         )
       )
     ) : null,
