@@ -2244,12 +2244,12 @@ function TimeBlockBanner({priorities}) {
     return {name: s.label, color: s.color || ACCENT, startMin: s.minute, dur: s.durationMin || 60};
   }).sort(function(a, b) { return a.startMin - b.startMin; });
 
-  // Build blocks: end of each block = start of next (or start + dur if last)
-  var blocks = timed.map(function(p, i) { return {
+  // Build blocks using actual duration — don't stretch to next block start
+  var blocks = timed.map(function(p) { return {
     name: p.name,
     color: p.color,
     startMin: p.startMin,
-    endMin: timed[i + 1] ? timed[i + 1].startMin : p.startMin + p.dur
+    endMin: p.startMin + p.dur
   }; });
 
   var current = null, next = null;
