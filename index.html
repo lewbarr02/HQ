@@ -2237,18 +2237,33 @@ function TimeBlockBanner({priorities}) {
   }
 
   var nowMin = now.getHours() * 60 + now.getMinutes();
-  var timed = (priorities || [])
-    .filter(p => p.time && parseMin(p.time) !== null)
-    .map(p => ({name: p.name, color: p.color || ACCENT, startMin: parseMin(p.time), dur: p.duration || 60}))
-    .sort((a, b) => a.startMin - b.startMin);
+
+  // Pull from Day view's scheduled blocks (primary source)
+  var dayScheduled = load('dayScheduled') || [];
+  var fromDay = dayScheduled.map(function(s) {
+    return {name: s.label, color: s.color || ACCENT, startMin: s.minute, dur: s.durationMin || 60};
+  });
+
+  // Also pull timed home priorities as fallback additions
+  var fromPriorities = (priorities || [])
+    .filter(function(p) { return p.time && parseMin(p.time) !== null; })
+    .map(function(p) { return {name: p.name, color: p.color || ACCENT, startMin: parseMin(p.time), dur: p.duration || 60}; });
+
+  // Merge, dedupe by startMin, sort
+  var seen = {};
+  var timed = fromDay.concat(fromPriorities).filter(function(b) {
+    if (seen[b.startMin]) return false;
+    seen[b.startMin] = true;
+    return true;
+  }).sort(function(a, b) { return a.startMin - b.startMin; });
 
   // Build blocks: end of each block = start of next (or start + dur if last)
-  var blocks = timed.map((p, i) => ({
+  var blocks = timed.map(function(p, i) { return {
     name: p.name,
     color: p.color,
     startMin: p.startMin,
     endMin: timed[i + 1] ? timed[i + 1].startMin : p.startMin + p.dur
-  }));
+  }; });
 
   var current = null, next = null;
   for (var i = 0; i < blocks.length; i++) {
