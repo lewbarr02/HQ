@@ -2682,25 +2682,6 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       )
     ),
     e('div', {className:'card'},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'App Hub'),
-      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}},
-        ...[
-          {name:'Strong',emoji:'🏋️',url:'strong://',color:'#FF6B35',fb:'https://apps.apple.com/app/id464254577'},
-          {name:'Carb Manager',emoji:'🥗',url:'carbmanager://',color:'#00C864',fb:'https://apps.apple.com/app/id671925503'},
-          {name:'Gmail',emoji:'📧',url:'googlegmail://',color:'#EA4335',fb:'https://mail.google.com'},
-          {name:'Calendar',emoji:'📅',url:'googlecalendar://',color:'#4285F4',fb:'https://calendar.google.com'},
-          {name:'Claude',emoji:'🤖',url:'claude://',color:PURPLE,fb:'https://claude.ai'},
-          {name:'ChatGPT',emoji:'💬',url:'chatgpt://',color:'#10A37F',fb:'https://chat.openai.com'},
-        ].map(app => e('button', {key:app.name, onClick:()=>{
-          const a=document.createElement('a');a.href=app.url;a.style.display='none';document.body.appendChild(a);a.click();document.body.removeChild(a);
-          setTimeout(()=>{if(!document.hidden)window.open(app.fb,'_blank');},1200);
-        }, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'14px 8px',borderRadius:16,background:app.color+'10',border:'1.5px solid '+app.color+'25',cursor:'pointer',fontFamily:'inherit'}},
-          e('div',{style:{fontSize:28,lineHeight:1}},app.emoji),
-          e('div',{style:{fontSize:11,fontWeight:700,color:app.color,textAlign:'center',lineHeight:1.2}},app.name)
-        ))
-      )
-    ),
-    e('div', {className:'card'},
       e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
         e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Daily Log'),
         e('div', {style:{display:'flex',alignItems:'center',gap:8}},
