@@ -2580,7 +2580,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, "Today's Priorities"),
       ...priorities.map(p => e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
         e('div', {style:{width:3,height:36,borderRadius:2,background:p.color,flexShrink:0}}),
-        e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x))}, p.done?'✓':''),
+        e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>{if(!p.done)addPassiveWin('Priority done: '+p.name);savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x));}}, p.done?'✓':''),
         e('div', {style:{flex:1}},
           e('div', {style:{fontSize:14,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none'}}, p.name),
           e('div', {style:{fontSize:11,color:MUTED,marginTop:1}}, p.cat)
@@ -3742,7 +3742,7 @@ function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, se
         : e('div', {className:'card'},
             ...priorities.map(p => e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
               e('div', {style:{width:3,height:36,borderRadius:2,background:p.color||MUTED,flexShrink:0}}),
-              e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x))}, p.done?'✓':''),
+              e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>{if(!p.done)addPassiveWin('Priority done: '+p.name);savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x));}}, p.done?'✓':''),
               e('div', {style:{flex:1}},
                 e('div', {style:{fontSize:14,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none'}}, p.name),
                 e('div', {style:{fontSize:11,color:MUTED,marginTop:1}}, p.cat+(p.time?' · '+p.time:''))
