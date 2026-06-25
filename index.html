@@ -2262,7 +2262,10 @@ function TimeBlockBanner({priorities}) {
     return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
   }
 
-  if (!current && !next) return null;
+  if (!current && !next) return e('div', {style:{marginBottom:16, borderRadius:16, background:'rgba(142,142,170,0.07)', border:'1.5px solid '+BORDER, padding:'14px 16px'}},
+    e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:4}}, 'Time Block'),
+    e('div', {style:{fontSize:14,color:MUTED}}, 'Nothing scheduled for today')
+  );
 
   if (!current) {
     // Nothing active yet — show "up next" only
