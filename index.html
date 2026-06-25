@@ -2579,7 +2579,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       )
     ),
     e('div', {className:'card'},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, "Today's Priorities"),
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, "To-Do"),
       ...priorities.map(p => e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
         e('div', {style:{width:3,height:36,borderRadius:2,background:p.color,flexShrink:0}}),
         e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>{if(!p.done)addPassiveWin('Priority done: '+p.name);savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x));}}, p.done?'✓':''),
@@ -2624,7 +2624,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
           }}, 'Add')
         )
       ) : e('button', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:10,fontSize:13,fontWeight:700,color:ACCENT,cursor:'pointer',border:'none',background:'none',width:'100%',fontFamily:'inherit'},onClick:()=>setAddingP(true)},
-        e('span',{},'+ Add priority')
+        e('span',{},'+ Add task')
       )
     ),
     e('div', {className:'card'},
@@ -3705,6 +3705,23 @@ function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, se
     var next = (backlog||[]).filter(b => b.id !== item.id);
     setBacklog(next); save('backlog', next);
   }
+  function moveTodayToLater(p) {
+    var next = (backlog||[]).concat([{id: Date.now().toString(), text: p.name, added: td}]);
+    setBacklog(next); save('backlog', next);
+    savePriorities(priorities.filter(x => x.id !== p.id));
+  }
+  function moveUp(idx) {
+    if(idx === 0) return;
+    var next = priorities.slice();
+    var tmp = next[idx-1]; next[idx-1] = next[idx]; next[idx] = tmp;
+    savePriorities(next);
+  }
+  function moveDown(idx) {
+    if(idx === priorities.length-1) return;
+    var next = priorities.slice();
+    var tmp = next[idx+1]; next[idx+1] = next[idx]; next[idx] = tmp;
+    savePriorities(next);
+  }
   function deleteBacklog(id) {
     var next = (backlog||[]).filter(b => b.id !== id);
     setBacklog(next); save('backlog', next);
@@ -3739,18 +3756,23 @@ function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, se
         ? e('div', {style:{textAlign:'center',padding:'40px 16px',color:MUTED}},
             e('div', {style:{fontSize:36,marginBottom:10}}, '✅'),
             e('div', {style:{fontSize:15,fontWeight:600,marginBottom:4}}, 'Nothing on the list'),
-            e('div', {style:{fontSize:13}}, 'Add a priority or move something from Later.')
+            e('div', {style:{fontSize:13}}, 'Add a task or move something from Later.')
           )
         : e('div', {className:'card'},
-            ...priorities.map(p => e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
+            ...priorities.map(function(p, idx) { return e('div', {key:p.id, style:{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
               e('div', {style:{width:3,height:36,borderRadius:2,background:p.color||MUTED,flexShrink:0}}),
               e('button', {className:'priority-check'+(p.done?' done':''), onClick:()=>{if(!p.done)addPassiveWin('Priority done: '+p.name);savePriorities(priorities.map(x=>x.id===p.id?{...x,done:!x.done}:x));}}, p.done?'✓':''),
               e('div', {style:{flex:1}},
                 e('div', {style:{fontSize:14,fontWeight:600,color:p.done?MUTED:TEXT,textDecoration:p.done?'line-through':'none'}}, p.name),
                 e('div', {style:{fontSize:11,color:MUTED,marginTop:1}}, p.cat+(p.time?' · '+p.time:''))
               ),
+              e('div', {style:{display:'flex',flexDirection:'column',gap:2,flexShrink:0}},
+                e('button', {onClick:()=>moveUp(idx), disabled:idx===0, style:{background:'none',border:'none',color:idx===0?'#D0D0E0':MUTED,cursor:idx===0?'default':'pointer',fontSize:12,padding:'2px 4px',lineHeight:1}}, '▲'),
+                e('button', {onClick:()=>moveDown(idx), disabled:idx===priorities.length-1, style:{background:'none',border:'none',color:idx===priorities.length-1?'#D0D0E0':MUTED,cursor:idx===priorities.length-1?'default':'pointer',fontSize:12,padding:'2px 4px',lineHeight:1}}, '▼')
+              ),
+              e('button', {onClick:()=>moveTodayToLater(p), title:'Move to Later', style:{background:'none',border:'1px solid '+BORDER,borderRadius:8,color:MUTED,cursor:'pointer',fontSize:11,fontWeight:700,padding:'4px 7px',lineHeight:1,flexShrink:0}}, '→ Later'),
               e('button', {onClick:()=>savePriorities(priorities.filter(x=>x.id!==p.id)), style:{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:16,padding:4}}, '✕')
-            )),
+            );}),
             addingP ? e('div', {style:{marginTop:12}},
               e('input', {className:'input', placeholder:'Task name...', value:newPN, onInput:ev=>setNewPN(ev.target.value)}),
               e('div', {style:{display:'flex',gap:8,marginBottom:10}},
@@ -3769,7 +3791,7 @@ function TodoScreen({goals, setGoals, projects, setProjects, setTab, backlog, se
               )
             ) : null
           ),
-      e('button', {style:{width:'100%',padding:14,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:ACCENT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:10}, onClick:()=>setAddingP(true)}, '+ Add Task'),
+      e('button', {style:{width:'100%',padding:14,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:ACCENT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',marginTop:10}, onClick:()=>setAddingP(true)}, '+ Add to To-Do'),
       priorities.filter(p=>p.done).length > 0 ? e('button', {onClick:()=>savePriorities(priorities.filter(p=>!p.done)), style:{width:'100%',marginTop:8,padding:10,borderRadius:12,border:'none',background:'transparent',color:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Clear completed (' + priorities.filter(p=>p.done).length + ')') : null
     )
 
