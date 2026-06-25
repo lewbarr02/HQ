@@ -10587,7 +10587,7 @@ function App() {
   if(isWide) {
     return e('div', {id:'app-inner', style:{height:'100dvh',display:'flex',flexDirection:'row',width:'100%',background:'#F7F8FC',overflow:'hidden',position:'relative'}},
       splash ? e(Splash) : null,
-      e(Sidebar, {tab, setTab, moreOpen, setMoreOpen, NAV, dateStr, groceries, priorities}),
+      e(Sidebar, {tab, setTab, moreOpen, setMoreOpen, NAV, dateStr, groceries, priorities: load('priorities')||[]}),
       e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minWidth:0}},
         e('div', {className:'header'},
           e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, 'Hi Lewis.'),
@@ -10657,7 +10657,7 @@ function App() {
         var active = tab===n.id||(n.id==='more'&&moreOpen);
         var color = active ? ACCENT : '#8E8EAA';
         var mineCount = n.id==='grocery' ? (groceries||[]).filter(function(g){return (g.list||'wife')==='mine'&&!g.done;}).length : 0;
-        var todoCount = n.id==='todo' ? (priorities||[]).filter(function(p){return !p.done;}).length : 0;
+        var todoCount = n.id==='todo' ? (load('priorities')||[]).filter(function(p){return !p.done;}).length : 0;
         var navBadge = mineCount || todoCount;
         return e('button', {key:n.id, className:'nav-btn'+(active?' active':''),
           onClick:()=>{if(n.id==='more'){setMoreOpen(o=>!o);}else{setTab(n.id);setMoreOpen(false);}}},
