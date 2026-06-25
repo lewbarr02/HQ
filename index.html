@@ -7630,7 +7630,8 @@ function CalendarScreen({ calendarConnected, setCalendarConnected, setTab }) {
 }
 
 function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLog }) {
-  const [view, setView] = useState('log'); // log | history | coach
+  var _wipCheck = (function(){ try{ return !!JSON.parse(localStorage.getItem('hq_wipWorkout')||'null'); }catch(e){ return false; } })();
+  const [view, setView] = useState(_wipCheck ? 'execute' : 'log'); // log | history | coach | execute
 
   function autoCheckExercise(date, currentHabitLog) {
     var exHabit = (habits||[]).find(function(h){ return h.name && h.name.toLowerCase()==='exercise'; });
@@ -7696,14 +7697,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [onboardingError, setOnboardingError] = useState(null);
   const [selectedProgramDay, setSelectedProgramDay] = useState(null);
   const [programExerciseLogs, setProgramExerciseLogs] = useState({}); // {exerciseName: {weight,reps}}
-  // ── Workout execution state ───────────────────────────────────────────────
-  const [executeDay, setExecuteDay] = useState(null);
-  const [executeSets, setExecuteSets] = useState({}); // { exName: [{weight,reps,done}] }
-  const [executeStartTime, setExecuteStartTime] = useState(null);
-  const [executeElapsed, setExecuteElapsed] = useState(0);
+  // ── Workout execution state (persisted so navigating away doesn't lose progress) ──
+  var _wip = (function(){ try{ return JSON.parse(localStorage.getItem('hq_wipWorkout')||'null'); }catch(e){ return null; } })();
+  const [executeDay, setExecuteDay] = useState(_wip ? _wip.day : null);
+  const [executeSets, setExecuteSets] = useState(_wip ? _wip.sets : {}); // { exName: [{weight,reps,done}] }
+  const [executeStartTime, setExecuteStartTime] = useState(_wip ? _wip.startTime : null);
+  const [executeElapsed, setExecuteElapsed] = useState(_wip ? Math.floor((Date.now()-_wip.startTime)/1000) : 0);
   const [executeRestSecs, setExecuteRestSecs] = useState(0);
-  const [executeActiveEx, setExecuteActiveEx] = useState(null);
-  const [executeDraft, setExecuteDraft] = useState({}); // { exName: {weight,reps} } current set inputs
+  const [executeActiveEx, setExecuteActiveEx] = useState(_wip ? _wip.activeEx : null);
+  const [executeDraft, setExecuteDraft] = useState(_wip ? (_wip.draft||{}) : {}); // { exName: {weight,reps} } current set inputs
   const [checkinForm, setCheckinForm] = useState({
     sessionsCompleted: '', energy: 3, hasSoreness: false, soreness: '',
     hasPain: false, pain: '', weight: '', sleepQuality: 3,
@@ -7746,6 +7748,11 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setView('log');
   }
 
+  function saveWip(day, sets, startTime, activeEx, draft) {
+    localStorage.setItem('hq_wipWorkout', JSON.stringify({day:day, sets:sets, startTime:startTime, activeEx:activeEx, draft:draft||{}}));
+  }
+  function clearWip() { localStorage.removeItem('hq_wipWorkout'); }
+
   function startExecute(day) {
     // Initialize one set slot per exercise
     var sets = {};
@@ -7754,13 +7761,16 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       for(var i=0;i<(ex.sets||3);i++) arr.push({weight:'',reps:'',done:false});
       sets[ex.name] = arr;
     });
+    var startTime = Date.now();
+    var firstEx = day.exercises&&day.exercises[0]?day.exercises[0].name:null;
     setExecuteDay(day);
     setExecuteSets(sets);
     setExecuteDraft({});
-    setExecuteActiveEx(day.exercises&&day.exercises[0]?day.exercises[0].name:null);
-    setExecuteStartTime(Date.now());
+    setExecuteActiveEx(firstEx);
+    setExecuteStartTime(startTime);
     setExecuteElapsed(0);
     setExecuteRestSecs(0);
+    saveWip(day, sets, startTime, firstEx, {});
     setView('execute');
   }
 
@@ -7837,6 +7847,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
 
     setExecuteDay(null); setExecuteSets({}); setExecuteStartTime(null);
     setExecuteElapsed(0); setExecuteRestSecs(0); setExecuteActiveEx(null);
+    clearWip();
     setView('log');
   }
 
@@ -7855,14 +7866,19 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       var idx = sets.findIndex(function(s){return !s.done;});
       if(idx===-1) return;
       sets[idx] = {weight:w, reps:r, done:true};
-      setExecuteSets(function(prev){return Object.assign({},prev,{[exName]:sets});});
-      setExecuteDraft(function(d){return Object.assign({},d,{[exName]:{weight:w,reps:''}});});
-      setExecuteRestSecs(90);
+      var newSets = Object.assign({},executeSets,{[exName]:sets});
+      var newDraft = Object.assign({},executeDraft,{[exName]:{weight:w,reps:''}});
+      var nextEx = executeActiveEx;
       var allDone = sets.every(function(s){return s.done;});
       if(allDone){
         var curIdx = exercises.findIndex(function(e){return e.name===exName;});
-        if(curIdx<exercises.length-1) setExecuteActiveEx(exercises[curIdx+1].name);
+        if(curIdx<exercises.length-1) nextEx = exercises[curIdx+1].name;
       }
+      setExecuteSets(newSets);
+      setExecuteDraft(newDraft);
+      setExecuteActiveEx(nextEx);
+      setExecuteRestSecs(90);
+      saveWip(executeDay, newSets, executeStartTime, nextEx, newDraft);
     }
 
     var totalSets = exercises.reduce(function(s,ex){return s+(ex.sets||3);},0);
@@ -7942,7 +7958,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             ):null
           );
         }),
-        e('button',{onClick:function(){if(confirm('Cancel workout? Progress will not be saved.')){setExecuteDay(null);setExecuteSets({});setExecuteStartTime(null);setExecuteElapsed(0);setExecuteRestSecs(0);setView('log');}},style:{marginTop:8,padding:'14px',borderRadius:14,border:'1px solid rgba(255,255,255,0.15)',background:'none',color:'rgba(255,255,255,0.4)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Workout')
+        e('button',{onClick:function(){if(confirm('Cancel workout? Progress will not be saved.')){clearWip();setExecuteDay(null);setExecuteSets({});setExecuteStartTime(null);setExecuteElapsed(0);setExecuteRestSecs(0);setView('log');}},style:{marginTop:8,padding:'14px',borderRadius:14,border:'1px solid rgba(255,255,255,0.15)',background:'none',color:'rgba(255,255,255,0.4)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Workout')
       )
     );
   }
