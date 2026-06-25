@@ -2290,7 +2290,10 @@ function TimeBlockBanner({priorities}) {
     e('div', {style:{display:'flex',alignItems:'center',gap:10,marginBottom:next?8:0}},
       e('div', {style:{width:10,height:10,borderRadius:'50%',background:current.color,flexShrink:0,boxShadow:'0 0 6px '+current.color}}),
       e('div', {style:{fontWeight:800,fontSize:18,color:TEXT,flex:1}}, current.name),
-      e('div', {style:{fontWeight:800,fontSize:20,color:current.color}}, fmtCountdown(minsLeft))
+      e('div', {style:{textAlign:'center'}},
+        e('div', {style:{fontWeight:800,fontSize:20,color:current.color,lineHeight:1}}, fmtCountdown(minsLeft)),
+        e('div', {style:{fontSize:10,fontWeight:600,color:current.color,opacity:0.7,letterSpacing:1,textTransform:'uppercase'}}, 'left')
+      )
     ),
     next ? e('div', {style:{fontSize:12,color:MUTED,paddingLeft:20}},
       'Up next: ', e('span', {style:{color:TEXT,fontWeight:600}}, next.name), ' — starting in ', e('span', {style:{fontWeight:700}}, fmtCountdown(next.startMin - nowMin))
