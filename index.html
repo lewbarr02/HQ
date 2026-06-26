@@ -487,6 +487,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   function openCustomModal() { dragItemRef.current = null; setDragItem(null); setGhostPos(null); setShowCustomModal(true); }
   function closeCustomModal() { dragItemRef.current = null; setDragItem(null); setGhostPos(null); setShowCustomModal(false); }
   const [customForm, setCustomForm] = useState({label:'', color:'#10B981', durationMin:30, emoji:''});
+  const DEFAULT_PRESETS = [
+    {id:'preset-workout',  label:'💪 Workout',      color:'#F59E0B', durationMin:60},
+    {id:'preset-meal',     label:'🍽️ Meal',          color:'#10B981', durationMin:30},
+    {id:'preset-work',     label:'💼 Work Session',  color:'#3B82F6', durationMin:90},
+    {id:'preset-focus',    label:'🎯 Focus Block',   color:PURPLE,    durationMin:60},
+    {id:'preset-break',    label:'☕ Break',          color:'#8B5CF6', durationMin:15},
+    {id:'preset-meeting',  label:'👥 Meeting',       color:'#EC4899', durationMin:45},
+    {id:'preset-moonshot', label:'🚀 Moonshot Work', color:'#EF4444', durationMin:90},
+    {id:'preset-commute',  label:'🚗 Commute',       color:MUTED,     durationMin:30},
+  ];
+  const [presets, setPresets] = useState(function(){ return load('dayPresets') || DEFAULT_PRESETS; });
+  const [editingPreset, setEditingPreset] = useState(null);
+  const [presetForm, setPresetForm] = useState({label:'', color:'#10B981', durationMin:30});
   const timelineRef = useRef(null);
 
   function doCalSync(showMsg) {
@@ -1049,16 +1062,32 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       (function(){
         var scheduledIds = scheduled.map(function(s){ return s.id; });
 
-        var presetBlocks = [
-          {id:'preset-workout',   label:'💪 Workout',      color:'#F59E0B', durationMin:60},
-          {id:'preset-meal',      label:'🍽️ Meal',         color:'#10B981', durationMin:30},
-          {id:'preset-work',      label:'💼 Work Session',  color:'#3B82F6', durationMin:90},
-          {id:'preset-focus',     label:'🎯 Focus Block',   color:PURPLE,    durationMin:60},
-          {id:'preset-break',     label:'☕ Break',         color:'#8B5CF6', durationMin:15},
-          {id:'preset-meeting',   label:'👥 Meeting',       color:'#EC4899', durationMin:45},
-          {id:'preset-moonshot',  label:'🚀 Moonshot Work', color:'#EF4444', durationMin:90},
-          {id:'preset-commute',   label:'🚗 Commute',       color:MUTED,     durationMin:30},
-        ];
+        function openEditPreset(item) {
+          setEditingPreset(item);
+          setPresetForm({label: item.label, color: item.color, durationMin: item.durationMin});
+        }
+        function savePreset() {
+          if(!presetForm.label.trim()) return;
+          var next = presets.map(function(p){ return p.id===editingPreset.id ? Object.assign({},p,{label:presetForm.label.trim(),color:presetForm.color,durationMin:presetForm.durationMin}) : p; });
+          setPresets(next); save('dayPresets', next);
+          setEditingPreset(null);
+        }
+        function deletePreset(id) {
+          var next = presets.filter(function(p){ return p.id!==id; });
+          setPresets(next); save('dayPresets', next);
+          setEditingPreset(null);
+        }
+        function PresetChip({item}) {
+          return e('div', {style:{position:'relative',marginBottom:8}},
+            DraggableChip({item:item, noMargin:true}),
+            e('button', {
+              onClick:function(ev){ ev.stopPropagation(); openEditPreset(item); },
+              onMouseDown:function(ev){ ev.stopPropagation(); },
+              onTouchStart:function(ev){ ev.stopPropagation(); },
+              style:{position:'absolute',top:6,right:6,width:20,height:20,borderRadius:'50%',background:'rgba(255,255,255,0.95)',border:'1px solid '+BORDER,cursor:'pointer',color:MUTED,fontSize:11,lineHeight:'18px',textAlign:'center',padding:0,zIndex:10,fontFamily:'inherit',touchAction:'auto'}
+            }, '✏️')
+          );
+        }
 
         var availableRoutines = routineItems.filter(function(item){ return !scheduledIds.includes(item.id); });
         var availableHabits = (habits || []).filter(function(h){ return !scheduledIds.includes('habit-'+h.id); });
@@ -1102,7 +1131,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
           // Presets
           SectionHeader('Presets', 'ph', 16),
-          ...presetBlocks.map(function(item){ return DraggableChip({key:item.id, item:item}); }),
+          ...presets.map(function(item){ return e(PresetChip, {key:item.id, item:item}); }),
 
           // Saved templates
           savedTemplates.length > 0 ? SectionHeader('Saved Templates', 'th', 16) : null,
@@ -1224,6 +1253,42 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]});
             setShowActionModal(false);
           }, style:{flex:1,padding:'12px',borderRadius:10,border:'none',background:'#EF4444',fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, 'Add')
+        )
+      )
+    ) : null,
+
+    // Edit preset modal
+    editingPreset ? e('div', {onClick:function(){setEditingPreset(null);}, style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}},
+      e('div', {onClick:function(ev){ev.stopPropagation();}, style:{background:'#fff',borderRadius:20,padding:28,width:300,boxShadow:'0 8px 40px rgba(0,0,0,0.18)'}},
+        e('div', {style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:20}}, 'Edit Preset'),
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:5}}, 'LABEL'),
+          e('input', {value:presetForm.label, onInput:function(ev){setPresetForm(function(f){return Object.assign({},f,{label:ev.target.value});});}, placeholder:'e.g. 💪 Workout', style:{width:'100%',padding:'9px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
+        ),
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'DURATION'),
+          e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
+            ...[15,30,45,60,90,120].map(function(min){
+              var active = presetForm.durationMin === min;
+              var label = min<60 ? min+'m' : (min===60?'1h':min===90?'1.5h':'2h');
+              return e('button', {key:min, onClick:function(){setPresetForm(function(f){return Object.assign({},f,{durationMin:min});});},
+                style:{padding:'10px 14px',borderRadius:20,border:'1.5px solid '+(active?presetForm.color:BORDER),background:active?presetForm.color:'#F8FAFC',color:active?'white':TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flex:'1 0 auto',minWidth:52,transition:'all 0.15s'}
+              }, label);
+            })
+          )
+        ),
+        e('div', {style:{marginBottom:22}},
+          e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'COLOR'),
+          e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
+            ...['#00C6FF','#7B2FFF','#10B981','#F59E0B','#3B82F6','#EC4899','#EF4444','#8B5CF6','#F97316','#6366F1','#8E8EAA'].map(function(c){
+              return e('div', {key:c, onClick:function(){setPresetForm(function(f){return Object.assign({},f,{color:c});});}, style:{width:26,height:26,borderRadius:'50%',background:c,cursor:'pointer',border:presetForm.color===c?'3px solid '+TEXT:'3px solid transparent',boxSizing:'border-box'}});
+            })
+          )
+        ),
+        e('div', {style:{display:'flex',gap:8}},
+          e('button', {onClick:function(){deletePreset(editingPreset.id);}, style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid #EF444440',background:'#EF444408',fontFamily:'inherit',fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer'}}, 'Delete'),
+          e('button', {onClick:function(){setEditingPreset(null);}, style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
+          e('button', {onClick:savePreset, style:{flex:2,padding:'10px',borderRadius:10,border:'none',background:presetForm.color,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, 'Save')
         )
       )
     ) : null,
