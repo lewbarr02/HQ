@@ -5331,23 +5331,18 @@ function MorningHistory({ onBack, routineLog, wakeLog, morningItems, cpapLog }) 
   );
 }
 
-function MorningCheckin({ onDone, routineLog, setRoutineLog, setTab, onAddPriority }) {
+function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
   const td = today();
   const [energy, setEnergy] = useState(null);
-  const [focus, setFocus] = useState('');
   const [sleepHours, setSleepHours] = useState('');
   const [sleepMins, setSleepMins] = useState('');
   const [show, setShow] = useState(false);
-  const [phase, setPhase] = useState('checkin');
-  const [calEvents, setCalEvents] = useState(null);
-  const [selectedTime, setSelectedTime] = useState(null);
 
   useEffect(function(){ setTimeout(function(){setShow(true);}, 50); }, []);
 
   function saveCheckinData() {
     var newLog = Object.assign({}, routineLog);
     if(energy) newLog[td+'_energy'] = energy;
-    if(focus.trim()) newLog[td+'_focus'] = focus.trim();
     setRoutineLog(newLog);
     save('routineLog', newLog);
     var h = parseFloat(sleepHours)||0;
@@ -5357,101 +5352,7 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog, setTab, onAddPriori
 
   function handleDone() {
     saveCheckinData();
-    if(focus.trim()) {
-      setPhase('lockin');
-      gcalFetchToday().then(function(res){ setCalEvents(res.events); });
-    } else {
-      onDone();
-    }
-  }
-
-  function focusFuzzyMatch(evs) {
-    if(!evs || !evs.length || !focus.trim()) return null;
-    var words = focus.trim().toLowerCase().split(/\s+/).filter(function(w){return w.length>2;});
-    return evs.find(function(ev){
-      var title = (ev.title||'').toLowerCase();
-      return words.some(function(w){return title.includes(w);});
-    }) || null;
-  }
-
-  function fmtEventTime(ev) {
-    if(ev.allDay) return 'All day';
-    var s = new Date(ev.start);
-    var en = new Date(ev.end);
-    return s.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) + ' – ' + en.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  }
-
-  function openGcalWithFocus(timeStr) {
-    if(onAddPriority) onAddPriority(focus.trim(), timeStr);
-    saveCheckinData();
-    if(setTab) setTab('day');
     onDone();
-  }
-
-  function isSlotOccupied(timeStr, evs) {
-    if(!evs) return false;
-    var parts = timeStr.match(/^(\d+):(\d+)\s+(AM|PM)$/i);
-    var hh = parseInt(parts[1]), mm = parseInt(parts[2]), ampm = parts[3].toUpperCase();
-    if(ampm==='PM' && hh!==12) hh+=12;
-    if(ampm==='AM' && hh===12) hh=0;
-    var now = new Date();
-    var slotStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm).getTime();
-    var slotEnd = slotStart + 60*60*1000;
-    return evs.some(function(ev){
-      if(ev.allDay) return false;
-      var es = new Date(ev.start).getTime(), ee = new Date(ev.end).getTime();
-      return es < slotEnd && ee > slotStart;
-    });
-  }
-
-  if(phase === 'lockin') {
-    var TIME_SLOTS = ['8:00 AM','9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM'];
-    var loading = calEvents === null;
-    var match = !loading ? focusFuzzyMatch(calEvents) : null;
-
-    return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#F7F8FC',padding:'32px 28px',paddingTop:'calc(32px + env(safe-area-inset-top))',paddingBottom:'calc(32px + env(safe-area-inset-bottom))'}},
-      e('div', {style:{width:'100%',maxWidth:340,opacity:show?1:0,transform:show?'none':'translateY(16px)',transition:'all 0.4s ease'}},
-        e('div', {style:{fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:MUTED,marginBottom:20,textAlign:'center'}}, 'Lock It In'),
-        e('div', {style:{background:'#fff',borderRadius:18,padding:'18px 20px',border:'1.5px solid '+BORDER,textAlign:'center',marginBottom:24,boxShadow:'0 2px 12px rgba(100,80,220,0.07)'}},
-          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,color:MUTED,textTransform:'uppercase',marginBottom:6}}, "Today's #1 Focus"),
-          e('div', {style:{fontSize:19,fontWeight:800,color:TEXT}}, focus.trim())
-        ),
-
-        loading ? e('div', {style:{textAlign:'center',color:MUTED,fontSize:14,padding:'24px 0'}},
-          e('div', {style:{fontSize:24,marginBottom:10}}, '📅'),
-          'Checking your calendar...'
-        ) :
-
-        match ?
-          e('div', {},
-            e('div', {style:{background:'#F0FDF4',borderRadius:16,padding:'16px 20px',border:'1.5px solid #86EFAC',marginBottom:20,textAlign:'center'}},
-              e('div', {style:{fontSize:22,marginBottom:6}}, '✅'),
-              e('div', {style:{fontSize:13,fontWeight:700,color:'#15803D',marginBottom:8}}, "Already on your calendar"),
-              e('div', {style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:4}}, match.title),
-              e('div', {style:{fontSize:13,color:MUTED}}, fmtEventTime(match))
-            ),
-            e('button', {onClick:onDone, style:{width:'100%',padding:18,borderRadius:18,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(0,198,255,0.3)'}}, "Perfect, let's go →")
-          ) :
-
-          e('div', {},
-            e('div', {style:{fontSize:15,fontWeight:600,color:TEXT,textAlign:'center',marginBottom:4}}, 'When will you work on this?'),
-            e('div', {style:{fontSize:12,color:MUTED,textAlign:'center',marginBottom:16}}, calEvents && calEvents.length ? 'Grey = already booked' : 'Pick a time to block off'),
-            e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:20}},
-              ...TIME_SLOTS.map(function(t){
-                var isSel = selectedTime===t;
-                var busy = isSlotOccupied(t, calEvents);
-                return e('button', {key:t,
-                  onClick:function(){if(!busy)setSelectedTime(t);},
-                  style:{padding:'10px 4px',borderRadius:12,border:'2px solid '+(isSel?ACCENT:busy?'#E5E7EB':BORDER),background:isSel?ACCENT+'12':busy?'#F9FAFB':'#fff',fontSize:13,fontWeight:700,color:isSel?ACCENT:busy?'#D1D5DB':TEXT,cursor:busy?'default':'pointer',fontFamily:'inherit',transition:'all 0.15s'}},
-                  t
-                );
-              })
-            ),
-            selectedTime ? e('button', {onClick:function(){openGcalWithFocus(selectedTime);}, style:{width:'100%',padding:18,borderRadius:18,background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(0,198,255,0.3)',marginBottom:12}}, '📅 Add to Calendar →') : null,
-            e('button', {onClick:onDone, style:{width:'100%',padding:12,borderRadius:14,background:'none',border:'1.5px solid '+BORDER,color:MUTED,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',marginTop: selectedTime ? 0 : 0}}, 'Skip for now')
-          )
-      )
-    );
   }
 
   return e('div', {style:{
@@ -5493,20 +5394,6 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog, setTab, onAddPriori
             );
           })
         )
-      ),
-
-      // Focus question
-      e('div', {style:{marginBottom:32}},
-        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT,marginBottom:12}}, "Today's #1 focus?"),
-        e('input', {
-          className:'input',
-          style:{marginBottom:0, fontSize:15, textAlign:'center'},
-          placeholder:'Optional — what matters most today?',
-          value:focus,
-          onInput:function(ev){setFocus(ev.target.value);},
-          onKeyDown:function(ev){if(ev.key==='Enter')handleDone();},
-          maxLength:80,
-        })
       ),
 
       // Sleep
@@ -10555,14 +10442,6 @@ function App() {
       onDone: function(){setMorningPhase('done');},
       routineLog: routineLog,
       setRoutineLog: setRoutineLog,
-      setTab: setTab,
-      onAddPriority: function(name, time) {
-        var existing = load('priorities') || [];
-        var newP = {id:'p'+Date.now(), name:name, cat:'Personal', time:time, done:false, color:ACCENT};
-        var next = [newP, ...existing];
-        save('priorities', next);
-        setPriorities(next);
-      },
     });
   }
 
