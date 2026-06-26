@@ -5578,6 +5578,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
   const [editingItem, setEditingItem] = useState(null);
   const [editName, setEditName] = useState('');
   const [editEmoji, setEditEmoji] = useState('');
+  const [editAmazonUrl, setEditAmazonUrl] = useState('');
 
   const SMART_PROMPTS = [
     {match:'brush teeth', question:'Out of toothpaste?', item:'Toothpaste'},
@@ -5630,10 +5631,10 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
   }
   var mds = useDragSort(safeItems, function(next){ setMorningItems(next); save('morningItems', next); });
   function startEditItem(h) {
-    setEditingItem(h.id); setEditName(h.name); setEditEmoji(h.emoji);
+    setEditingItem(h.id); setEditName(h.name); setEditEmoji(h.emoji); setEditAmazonUrl(h.amazonUrl||'');
   }
   function saveEditItem(id) {
-    var next = safeItems.map(function(h){ return h.id===id ? Object.assign({},h,{name:editName.trim()||h.name,emoji:editEmoji||h.emoji}) : h; });
+    var next = safeItems.map(function(h){ return h.id===id ? Object.assign({},h,{name:editName.trim()||h.name,emoji:editEmoji||h.emoji,amazonUrl:editAmazonUrl.trim()||undefined}) : h; });
     setMorningItems(next); save('morningItems', next);
     setEditingItem(null);
   }
@@ -5753,6 +5754,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
                 return e('button',{key:em,onClick:function(){setEditEmoji(em);},style:{width:34,height:34,borderRadius:8,fontSize:17,border:'1.5px solid '+BORDER,background:editEmoji===em?ACCENT+'15':CARD2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},em);
               })
             ),
+            e('input', {className:'input', style:{marginBottom:10,fontSize:13}, placeholder:'🛒 Amazon link (optional — for reorder prompts)', value:editAmazonUrl, onInput:function(ev){setEditAmazonUrl(ev.target.value);}}),
             e('div', {style:{display:'flex',gap:8}},
               e('button', {onClick:function(){setEditingItem(null);}, style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:MUTED}}, 'Cancel'),
               e('button', {onClick:function(){saveEditItem(h.id);}, style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:'#fff',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
@@ -5818,33 +5820,48 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
             var prompt = getSmartPrompt(h.name);
             var answered = smartAnswers[h.id];
             var alreadyAdded = addedToList[h.id];
+            var hasAmazon = !!h.amazonUrl;
             return e('div', {key:h.id, style:{marginBottom:16}},
               e('div', {style:{fontSize:13,fontWeight:700,marginBottom:6,display:'flex',alignItems:'center',gap:6}},
                 e('span',{},h.emoji), e('span',{},h.name)
               ),
-              e('input', {
-                className:'input',
-                style:{marginBottom:prompt?8:0,fontSize:13},
-                placeholder:'What got in the way?',
-                value: blockers[h.id] || '',
-                onInput: function(ev){
-                  var val = ev.target.value;
-                  setBlockers(function(prev){ var n=Object.assign({},prev); n[h.id]=val; return n; });
-                }
-              }),
-              prompt ? e('div', {style:{background:'#F0F2F8',borderRadius:12,padding:'10px 12px'}},
-                e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}}, '💬 '+prompt.question),
-                answered === undefined
-                  ? e('div', {style:{display:'flex',gap:8}},
-                      e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'yes'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid #10B981',background:'rgba(16,185,129,0.08)',color:'#10B981',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Yes'),
-                      e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'no'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'No')
-                    )
-                  : answered === 'yes'
-                    ? alreadyAdded
-                      ? e('div', {style:{fontSize:12,fontWeight:700,color:'#10B981'}}, '✓ '+prompt.item+' added to My List')
-                      : e('button', {onClick:function(){addToMyList(prompt.item, h.id);}, style:{width:'100%',padding:'9px',borderRadius:10,border:'none',background:'#10B981',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Add '+prompt.item+' to My List')
-                    : e('div', {style:{fontSize:12,color:MUTED}}, 'Got it — no action needed')
-              ) : null
+              hasAmazon
+                ? e('div', {style:{background:'#FFF8EC',borderRadius:12,padding:'10px 12px',border:'1.5px solid #FCD34D'}},
+                    e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}}, '📦 Do you need more?'),
+                    answered === undefined
+                      ? e('div', {style:{display:'flex',gap:8}},
+                          e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'yes'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid #F59E0B',background:'rgba(245,158,11,0.08)',color:'#B45309',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Yes'),
+                          e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'no'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'No')
+                        )
+                      : answered === 'yes'
+                        ? e('a', {href:h.amazonUrl, target:'_blank', rel:'noopener noreferrer', style:{display:'block',padding:'9px',borderRadius:10,background:'#FF9900',color:'white',fontWeight:800,fontSize:13,textAlign:'center',textDecoration:'none'}}, '🛒 Buy on Amazon →')
+                        : e('div', {style:{fontSize:12,color:MUTED}}, 'Got it — no action needed')
+                  )
+                : e('div', {},
+                    e('input', {
+                      className:'input',
+                      style:{marginBottom:prompt?8:0,fontSize:13},
+                      placeholder:'What got in the way?',
+                      value: blockers[h.id] || '',
+                      onInput: function(ev){
+                        var val = ev.target.value;
+                        setBlockers(function(prev){ var n=Object.assign({},prev); n[h.id]=val; return n; });
+                      }
+                    }),
+                    prompt ? e('div', {style:{background:'#F0F2F8',borderRadius:12,padding:'10px 12px'}},
+                      e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}}, '💬 '+prompt.question),
+                      answered === undefined
+                        ? e('div', {style:{display:'flex',gap:8}},
+                            e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'yes'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid #10B981',background:'rgba(16,185,129,0.08)',color:'#10B981',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Yes'),
+                            e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'no'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'No')
+                          )
+                        : answered === 'yes'
+                          ? alreadyAdded
+                            ? e('div', {style:{fontSize:12,fontWeight:700,color:'#10B981'}}, '✓ '+prompt.item+' added to My List')
+                            : e('button', {onClick:function(){addToMyList(prompt.item, h.id);}, style:{width:'100%',padding:'9px',borderRadius:10,border:'none',background:'#10B981',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Add '+prompt.item+' to My List')
+                          : e('div', {style:{fontSize:12,color:MUTED}}, 'Got it — no action needed')
+                    ) : null
+                  )
             );
           }),
           e('div', {style:{display:'flex',gap:10,marginTop:8}},
@@ -6522,6 +6539,8 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
   const [editingItem, setEditingItem] = useState(null);
   const [editName, setEditName] = useState('');
   const [editEmoji, setEditEmoji] = useState('');
+  const [editAmazonUrl, setEditAmazonUrl] = useState('');
+  const [smartAnswers, setSmartAnswers] = useState({});
   const [newItemName, setNewItemName] = useState('');
   const [newItemEmoji, setNewItemEmoji] = useState('');
   var safeItems = eveningItems || DEFAULT_EVENING_HABITS;
@@ -6550,10 +6569,10 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
   }
   var eds = useDragSort(safeItems, function(next){ setEveningItems(next); save('eveningItems', next); });
   function startEditItem(h) {
-    setEditingItem(h.id); setEditName(h.name); setEditEmoji(h.emoji);
+    setEditingItem(h.id); setEditName(h.name); setEditEmoji(h.emoji); setEditAmazonUrl(h.amazonUrl||'');
   }
   function saveEditItem(id) {
-    var next = safeItems.map(function(h){ return h.id===id ? Object.assign({},h,{name:editName.trim()||h.name,emoji:editEmoji||h.emoji}) : h; });
+    var next = safeItems.map(function(h){ return h.id===id ? Object.assign({},h,{name:editName.trim()||h.name,emoji:editEmoji||h.emoji,amazonUrl:editAmazonUrl.trim()||undefined}) : h; });
     setEveningItems(next); save('eveningItems', next);
     setEditingItem(null);
   }
@@ -6626,6 +6645,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
                 return e('button',{key:em,onClick:function(){setEditEmoji(em);},style:{width:34,height:34,borderRadius:8,fontSize:17,border:'1.5px solid '+BORDER,background:editEmoji===em?NIGHT+'15':CARD2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},em);
               })
             ),
+            e('input', {className:'input', style:{marginBottom:10,fontSize:13}, placeholder:'🛒 Amazon link (optional — for reorder prompts)', value:editAmazonUrl, onInput:function(ev){setEditAmazonUrl(ev.target.value);}}),
             e('div', {style:{display:'flex',gap:8}},
               e('button', {onClick:function(){setEditingItem(null);}, style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:MUTED}}, 'Cancel'),
               e('button', {onClick:function(){saveEditItem(h.id);}, style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+NIGHT+','+NIGHT2+')',color:'#fff',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
@@ -6659,9 +6679,23 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
           e('div', {style:{fontSize:17,fontWeight:800,marginBottom:4}}, "What got in the way?"),
           e('div', {style:{fontSize:13,color:MUTED,marginBottom:20}}, "Log what blocked you — helps track patterns over time."),
           ...incomplete.map(function(h){
+            var answered = smartAnswers[h.id];
+            var hasAmazon = !!h.amazonUrl;
             return e('div', {key:h.id, style:{marginBottom:14}},
               e('div', {style:{fontSize:13,fontWeight:700,marginBottom:6,display:'flex',alignItems:'center',gap:6}}, e('span',{},h.emoji), e('span',{},h.name)),
-              e('input', {className:'input', style:{marginBottom:0,fontSize:13}, placeholder:'What got in the way?', value:blockers[h.id]||'', onInput:function(ev){var val=ev.target.value;setBlockers(function(prev){var n=Object.assign({},prev);n[h.id]=val;return n;}); }})
+              hasAmazon
+                ? e('div', {style:{background:'#FFF8EC',borderRadius:12,padding:'10px 12px',border:'1.5px solid #FCD34D'}},
+                    e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}}, '📦 Do you need more?'),
+                    answered === undefined
+                      ? e('div', {style:{display:'flex',gap:8}},
+                          e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'yes'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid #F59E0B',background:'rgba(245,158,11,0.08)',color:'#B45309',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Yes'),
+                          e('button', {onClick:function(){setSmartAnswers(function(p){return Object.assign({},p,{[h.id]:'no'});});}, style:{flex:1,padding:'9px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'No')
+                        )
+                      : answered === 'yes'
+                        ? e('a', {href:h.amazonUrl, target:'_blank', rel:'noopener noreferrer', style:{display:'block',padding:'9px',borderRadius:10,background:'#FF9900',color:'white',fontWeight:800,fontSize:13,textAlign:'center',textDecoration:'none'}}, '🛒 Buy on Amazon →')
+                        : e('div', {style:{fontSize:12,color:MUTED}}, 'Got it — no action needed')
+                  )
+                : e('input', {className:'input', style:{marginBottom:0,fontSize:13}, placeholder:'What got in the way?', value:blockers[h.id]||'', onInput:function(ev){var val=ev.target.value;setBlockers(function(prev){var n=Object.assign({},prev);n[h.id]=val;return n;}); }})
             );
           }),
           e('div', {style:{display:'flex',gap:10,marginTop:8}},
