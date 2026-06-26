@@ -5331,7 +5331,7 @@ function MorningHistory({ onBack, routineLog, wakeLog, morningItems, cpapLog }) 
   );
 }
 
-function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
+function MorningCheckin({ onDone, routineLog, setRoutineLog, setTab, onAddPriority }) {
   const td = today();
   const [energy, setEnergy] = useState(null);
   const [focus, setFocus] = useState('');
@@ -5382,15 +5382,9 @@ function MorningCheckin({ onDone, routineLog, setRoutineLog }) {
   }
 
   function openGcalWithFocus(timeStr) {
-    var now = new Date();
-    var parts = timeStr.match(/^(\d+):(\d+)\s+(AM|PM)$/i);
-    var hh = parseInt(parts[1]), mm = parseInt(parts[2]), ampm = parts[3].toUpperCase();
-    if(ampm==='PM' && hh!==12) hh+=12;
-    if(ampm==='AM' && hh===12) hh=0;
-    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm);
-    var end = new Date(start.getTime() + 60*60*1000);
-    function fmt(d){return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+'00';}
-    window.open('https://calendar.google.com/calendar/r/eventedit?text='+encodeURIComponent(focus.trim())+'&dates='+fmt(start)+'/'+fmt(end), '_blank');
+    if(onAddPriority) onAddPriority(focus.trim(), timeStr);
+    saveCheckinData();
+    if(setTab) setTab('day');
     onDone();
   }
 
@@ -10561,6 +10555,14 @@ function App() {
       onDone: function(){setMorningPhase('done');},
       routineLog: routineLog,
       setRoutineLog: setRoutineLog,
+      setTab: setTab,
+      onAddPriority: function(name, time) {
+        var existing = load('priorities') || [];
+        var newP = {id:'p'+Date.now(), name:name, cat:'Personal', time:time, done:false, color:ACCENT};
+        var next = [newP, ...existing];
+        save('priorities', next);
+        setPriorities(next);
+      },
     });
   }
 
