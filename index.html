@@ -304,6 +304,8 @@ const DEFAULT_HABITS=[];
 const DEFAULT_CATS=["Work","Health","Learning","Personal","Creative"];
 
 function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+// Before 4 AM counts as "still last night" for evening routine purposes
+function eveningDate(){const d=new Date();if(d.getHours()<4){d.setDate(d.getDate()-1);}return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function dateKey(y,m,d){return y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");}
 function getDIM(y,m){return new Date(y,m+1,0).getDate();}
 function getF1(y,m){return new Date(y,m,1).getDay();}
@@ -6511,7 +6513,7 @@ function EveningGreeting({ onStart }) {
 }
 
 function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEveningLog, eveningItems, setEveningItems }) {
-  const td = today();
+  const td = eveningDate();
   const done = eveningLog[td] || {};
   const [attempted, setAttempted] = useState(false);
   const [showBlockerModal, setShowBlockerModal] = useState(false);
@@ -6680,7 +6682,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
 
 function EveningComplete({ onContinue, eveningLog, eveningItems }) {
   var safeItems = eveningItems || DEFAULT_EVENING_HABITS;
-  const td = today();
+  const td = eveningDate();
   const endTime = eveningLog[td+'_done'] || new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   const [show, setShow] = useState(false);
   const streak = calcEveningStreak(eveningLog);
@@ -10446,7 +10448,7 @@ function App() {
   }
 
   function handleEveningStart(isTest) {
-    var td = (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
+    var td = eveningDate();
     if(isTest) {
       var newLog = Object.assign({}, eveningLog);
       newLog[td+'_test'] = true;
