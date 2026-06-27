@@ -7449,10 +7449,20 @@ function CleaningHistory({onBack, clLog}) {
 // ─── CUSTOM ROUTINES ──────────────────────────────────────────────────────────
 
 function RoutineBuilder({onSave, onClose}) {
-  var PALETTE = ['#00C6FF','#7B2FFF','#10B981','#F59E0B','#EF4444','#EC4899','#8B5CF6','#06B6D4','#F97316','#6366F1'];
-  var EMOJIS = ['⭐','🔥','💪','🧠','📚','🎯','🌿','☀️','🌙','🏃','🧘','💊','🍎','🛁','🎨','✍️','💼','🌊','🏠','❤️'];
+  var PALETTE = ['#00C6FF','#7B2FFF','#10B981','#F59E0B','#EF4444','#EC4899','#8B5CF6','#06B6D4','#F97316','#6366F1','#14B8A6','#84CC16','#0EA5E9','#A855F7','#FB923C'];
+  var EMOJI_CATS = [
+    {label:'⭐ Faves', emojis:['⭐','🔥','💪','🧠','🎯','✅','🚀','💡','⚡','🏆','🎉','💎','🌟','✨','🦁','🎪','🧩','🛡️','👑','🌈']},
+    {label:'🏃 Health', emojis:['🏃','🧘','💊','🍎','🥗','🥤','💧','🛁','🧴','🪥','😴','🫀','🦷','🩺','🏋️','🚴','🤸','🏊','🧪','🩹']},
+    {label:'🧠 Mind', emojis:['🧠','📚','✍️','📓','🎓','🧐','🔬','💭','🗣️','👂','🎵','🎧','📰','🖊️','📖','🔭','🧮','🪬','🧲','🔮']},
+    {label:'🏠 Home', emojis:['🏠','🧹','🛋️','🪴','🍳','🧺','🪟','🚪','🛏️','🪑','🛁','🪣','🧽','🔧','🔑','📦','🗂️','🪤','💡','🕯️']},
+    {label:'💼 Work', emojis:['💼','📊','📈','📋','🖥️','⌨️','📧','📞','🗓️','🖨️','📌','📎','🗒️','💹','🤝','📣','🏢','🔏','📝','🗃️']},
+    {label:'🌿 Nature', emojis:['🌿','☀️','🌙','🌊','🌸','🌻','🌲','🍃','🌺','🌙','⛅','🌦️','❄️','🌈','🍂','🌾','🦋','🐚','🌱','🍀']},
+    {label:'❤️ Life', emojis:['❤️','👶','👨‍👩‍👧','💍','🥂','🎂','🎁','📸','✈️','🗺️','🎭','🎨','🎬','🎮','⚽','🎸','🎤','🍕','🛒','🧸']},
+    {label:'🕐 Time', emojis:['🕐','⏰','⏱️','📅','🗓️','⌛','🔔','📆','🌅','🌇','🌃','🌄','🕰️','⏳','🔄','▶️','⏸️','⏹️','🔁','📡']},
+  ];
   var [name, setName] = React.useState('');
   var [emoji, setEmoji] = React.useState('⭐');
+  var [emojiCat, setEmojiCat] = React.useState(0);
   var [color, setColor] = React.useState('#00C6FF');
   var [items, setItems] = React.useState([]);
   var [newItem, setNewItem] = React.useState('');
@@ -7474,8 +7484,8 @@ function RoutineBuilder({onSave, onClose}) {
   }
 
   return e('div', {style:{position:'fixed',inset:0,zIndex:200,background:'rgba(26,24,51,0.6)',display:'flex',alignItems:'flex-end',justifyContent:'center'}},
-    e('div', {style:{background:'#fff',borderRadius:'24px 24px 0 0',width:'100%',maxWidth:480,maxHeight:'90vh',display:'flex',flexDirection:'column',paddingBottom:'env(safe-area-inset-bottom)'}},
-      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'20px 20px 12px',borderBottom:'1px solid rgba(100,80,220,0.1)'}},
+    e('div', {style:{background:'#fff',borderRadius:'24px 24px 0 0',width:'100%',maxWidth:480,maxHeight:'92vh',display:'flex',flexDirection:'column',paddingBottom:'env(safe-area-inset-bottom)'}},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'20px 20px 12px',borderBottom:'1px solid rgba(100,80,220,0.1)',flexShrink:0}},
         e('div', {style:{fontSize:17,fontWeight:800,color:TEXT}}, 'New Routine'),
         e('button', {onClick:onClose, style:{background:CARD2,border:'none',width:32,height:32,borderRadius:'50%',cursor:'pointer',fontSize:16,display:'flex',alignItems:'center',justifyContent:'center'}}, '✕')
       ),
@@ -7485,10 +7495,17 @@ function RoutineBuilder({onSave, onClose}) {
           e('input', {value:name, onChange:function(ev){setName(ev.target.value);}, placeholder:'e.g. Bedtime Wind-Down', style:{width:'100%',padding:'12px 14px',border:'1px solid rgba(100,80,220,0.2)',borderRadius:12,fontSize:15,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}})
         ),
         e('div', {},
-          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Icon'),
-          e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
-            ...EMOJIS.map(function(em){
-              return e('button', {key:em, onClick:function(){setEmoji(em);}, style:{width:40,height:40,borderRadius:10,border:'2px solid '+(emoji===em?color:'transparent'),background:emoji===em?color+'15':'#F7F8FC',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}, em);
+          e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Icon — '+emoji),
+          e('div', {style:{display:'flex',gap:6,overflowX:'auto',paddingBottom:8,marginBottom:8}},
+            ...EMOJI_CATS.map(function(cat, i){
+              var active = emojiCat === i;
+              return e('button', {key:i, onClick:function(){setEmojiCat(i);}, style:{flexShrink:0,padding:'6px 12px',borderRadius:20,border:'none',background:active?color:CARD2,color:active?'white':MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s'}}, cat.label);
+            })
+          ),
+          e('div', {style:{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:6}},
+            ...EMOJI_CATS[emojiCat].emojis.map(function(em){
+              var sel = emoji === em;
+              return e('button', {key:em, onClick:function(){setEmoji(em);}, style:{aspectRatio:'1',borderRadius:10,border:'2px solid '+(sel?color:'transparent'),background:sel?color+'18':'#F7F8FC',fontSize:22,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0,transition:'all 0.15s'}}, em);
             })
           )
         ),
@@ -7496,7 +7513,7 @@ function RoutineBuilder({onSave, onClose}) {
           e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Color'),
           e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
             ...PALETTE.map(function(c){
-              return e('button', {key:c, onClick:function(){setColor(c);}, style:{width:32,height:32,borderRadius:'50%',background:c,border:'3px solid '+(color===c?TEXT:'transparent'),cursor:'pointer',boxShadow:color===c?'0 2px 8px '+c+'60':'none'}});
+              return e('button', {key:c, onClick:function(){setColor(c);}, style:{width:30,height:30,borderRadius:'50%',background:c,border:'3px solid '+(color===c?TEXT:'transparent'),cursor:'pointer',boxShadow:color===c?'0 2px 8px '+c+'60':'none',transition:'all 0.15s'}});
             })
           )
         ),
@@ -7516,7 +7533,7 @@ function RoutineBuilder({onSave, onClose}) {
           )
         )
       ),
-      e('div', {style:{padding:'12px 20px',borderTop:'1px solid rgba(100,80,220,0.1)'}},
+      e('div', {style:{padding:'12px 20px',borderTop:'1px solid rgba(100,80,220,0.1)',flexShrink:0}},
         e('button', {onClick:handleSave, disabled:!name.trim()||items.length===0, style:{width:'100%',padding:'16px',borderRadius:16,background:(!name.trim()||items.length===0)?'#E8E8F0':'linear-gradient(135deg,'+color+','+color+'CC)',border:'none',fontSize:15,fontWeight:800,cursor:(!name.trim()||items.length===0)?'default':'pointer',color:(!name.trim()||items.length===0)?MUTED:'white',fontFamily:'inherit',transition:'all 0.2s'}}, 'Create Routine →')
       )
     )
