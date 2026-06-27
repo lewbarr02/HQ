@@ -7907,7 +7907,7 @@ function GolfLeagueCard({golfRounds, setTab}) {
   );
 }
 
-function GolfLeagueScreen({golfRounds, setGolfRounds, setTab}) {
+function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, setHabitLog}) {
   var GL='#22C55E', GL2='#16A34A';
   var [activeTab,setActiveTab]=React.useState('dashboard');
   var [logCourse,setLogCourse]=React.useState('winston-lake');
@@ -7928,6 +7928,17 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab}) {
     var newRound={id:'gr'+Date.now(),date:logDate,course:logCourse,holes:logHoles,scores:{lewis:logScores.lewis!==''?Number(logScores.lewis):null,dad:logScores.dad!==''?Number(logScores.dad):null,will:logScores.will!==''?Number(logScores.will):null}};
     var next=[...rounds,newRound].sort(function(a,b){return a.date.localeCompare(b.date);});
     setGolfRounds(next); save('golfRounds',next);
+    // Auto-check Exercise habit when logging a round for today
+    if(logDate===today()){
+      var exHabit=(habits||[]).find(function(h){return h.name&&h.name.toLowerCase()==='exercise';});
+      if(exHabit){
+        var dayLog=(habitLog||{})[logDate]||{};
+        if(!dayLog[exHabit.id]){
+          var nextHL=Object.assign({},habitLog,{[logDate]:Object.assign({},dayLog,{[exHabit.id]:true})});
+          setHabitLog(nextHL); save('habitLog',nextHL);
+        }
+      }
+    }
     setLogScores({lewis:'',dad:'',will:''}); setActiveTab('dashboard');
   }
 
@@ -11476,7 +11487,7 @@ function App() {
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog,habits,habitLog,setHabitLog});
-      case 'golf-league': return e(GolfLeagueScreen, {golfRounds,setGolfRounds,setTab});
+      case 'golf-league': return e(GolfLeagueScreen, {golfRounds,setGolfRounds,setTab,habits,habitLog,setHabitLog});
       case 'datenights': return e(DateNightsScreen, {dateNights,setDateNights,setTab});
       case 'homemaintenance': return e(HomeMaintenanceScreen, {homeItems,setHomeItems,setTab});
       case 'macros': return e(MacroScreen, {setTab});
