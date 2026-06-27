@@ -7870,97 +7870,104 @@ function glExportPNG(golfRounds) {
   ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
   for(var gy=0;gy<600;gy+=40){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(600,gy);ctx.stroke();}
 
-  // Header
-  ctx.fillStyle='rgba(255,255,255,0.1)';
-  glRoundRect(ctx,20,20,560,72,14); ctx.fill();
-  ctx.fillStyle='white'; ctx.font='bold 26px -apple-system,system-ui,sans-serif';
-  ctx.fillText('⛳  The Triad Tour', 40,58);
-  ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='13px -apple-system,system-ui,sans-serif';
-  ctx.fillText('2026 Season  •  '+rounds.length+' rounds  •  Purse: $0', 40,82);
+  function drawAll(logoImg) {
+    // Background
+    var grad=ctx.createLinearGradient(0,0,600,600);
+    grad.addColorStop(0,'#14532D'); grad.addColorStop(1,'#052E16');
+    ctx.fillStyle=grad; ctx.fillRect(0,0,600,600);
+    ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+    for(var gy=0;gy<600;gy+=40){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(600,gy);ctx.stroke();}
 
-  // Season Standings
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px -apple-system,system-ui,sans-serif';
-  ctx.letterSpacing='2px'; ctx.fillText('SEASON STANDINGS', 24,116);
-  ranked.forEach(function(p,idx){
-    var s=stats[p.key]; var rowY=130+idx*72;
+    // Header with logo
+    ctx.fillStyle='rgba(255,255,255,0.1)';
+    glRoundRect(ctx,20,20,560,76,14); ctx.fill();
+    if(logoImg){ ctx.drawImage(logoImg,28,24,64,64); }
+    ctx.fillStyle='white'; ctx.font='bold 22px -apple-system,system-ui,sans-serif';
+    ctx.fillText('The Triad Tour', logoImg?102:40, 54);
+    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='13px -apple-system,system-ui,sans-serif';
+    ctx.fillText('2026 Season  •  '+rounds.length+' rounds  •  Purse: $0', logoImg?102:40, 76);
+
+    // Season Standings
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px -apple-system,system-ui,sans-serif';
+    ctx.fillText('SEASON STANDINGS', 24,118);
+    ranked.forEach(function(p,idx){
+      var s=stats[p.key]; var rowY=132+idx*72;
+      ctx.fillStyle='rgba(255,255,255,0.08)';
+      glRoundRect(ctx,20,rowY,560,62,12); ctx.fill();
+      ctx.fillStyle=p.color; ctx.fillRect(20,rowY,4,62);
+      ctx.font='22px sans-serif'; ctx.fillText(medals[idx],34,rowY+38);
+      ctx.fillStyle='white'; ctx.font='bold 18px -apple-system,system-ui,sans-serif';
+      ctx.fillText(p.label, 70,rowY+38);
+      var cols=[{label:'PTS',val:String(s.points)},{label:'WINS',val:String(s.wins)},{label:'STREAK',val:s.currentStreak>0?s.currentStreak+' str':'—'},{label:'HDCP',val:glHandicap(p.key,rounds)||'—'}];
+      cols.forEach(function(col,ci){
+        var cx=230+ci*88;
+        ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='9px -apple-system,system-ui,sans-serif';
+        ctx.fillText(col.label,cx,rowY+24);
+        ctx.fillStyle=ci===0?p.color:'white'; ctx.font='bold 16px -apple-system,system-ui,sans-serif';
+        ctx.fillText(col.val,cx,rowY+44);
+      });
+    });
+
+    // Course Averages
+    var caY=362;
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px -apple-system,system-ui,sans-serif';
+    ctx.fillText('COURSE AVERAGES', 24,caY);
     ctx.fillStyle='rgba(255,255,255,0.08)';
-    glRoundRect(ctx,20,rowY,560,62,12); ctx.fill();
-    // Accent bar
-    ctx.fillStyle=p.color; ctx.fillRect(20,rowY,4,62);
-    // Medal + name
-    ctx.font='22px sans-serif'; ctx.fillText(medals[idx],34,rowY+38);
-    ctx.fillStyle='white'; ctx.font='bold 18px -apple-system,system-ui,sans-serif';
-    ctx.fillText(p.label, 70,rowY+38);
-    // Stats
-    var cols=[
-      {label:'PTS', val:String(s.points)},
-      {label:'WINS', val:String(s.wins)},
-      {label:'STREAK', val:s.currentStreak>0?s.currentStreak+'🔥':'—'},
-      {label:'HDCP', val:glHandicap(p.key,rounds)||'—'},
-    ];
-    cols.forEach(function(col,ci){
-      var cx=230+ci*88;
-      ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='9px -apple-system,system-ui,sans-serif';
-      ctx.fillText(col.label, cx,rowY+24);
-      ctx.fillStyle=ci===0?p.color:'white'; ctx.font='bold 16px -apple-system,system-ui,sans-serif';
-      ctx.fillText(col.val, cx,rowY+44);
-    });
-  });
-
-  // Course Averages
-  var caY=360;
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px -apple-system,system-ui,sans-serif';
-  ctx.fillText('COURSE AVERAGES', 24,caY);
-  ctx.fillStyle='rgba(255,255,255,0.08)';
-  glRoundRect(ctx,20,caY+8,560,120,12); ctx.fill();
-  // Headers
-  var colW=140;
-  courseKeys.forEach(function(ck,ci){
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px sans-serif';
-    ctx.fillText(GOLF_COURSES_DEF[ck].short.toUpperCase(), 160+ci*colW, caY+30);
-  });
-  ranked.forEach(function(p,ri){
-    ctx.fillStyle='white'; ctx.font='bold 13px -apple-system,system-ui,sans-serif';
-    ctx.fillText(p.label, 30, caY+52+ri*30);
+    glRoundRect(ctx,20,caY+8,560,120,12); ctx.fill();
+    var colW=140;
     courseKeys.forEach(function(ck,ci){
-      var avg=glCourseAvg(p.key,ck,rounds);
-      var par=GOLF_COURSES_DEF[ck].total;
-      ctx.fillStyle=avg==null?'rgba(255,255,255,0.25)':(avg-par<=2?'#4ADE80':avg-par<=6?'#FCD34D':'#F87171');
-      ctx.font='13px -apple-system,system-ui,sans-serif';
-      ctx.fillText(avg!=null?avg+'  (+'+(Math.round((avg-par)*10)/10)+')':'—', 160+ci*colW, caY+52+ri*30);
+      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px sans-serif';
+      ctx.fillText(GOLF_COURSES_DEF[ck].short.toUpperCase(),160+ci*colW,caY+30);
     });
-  });
+    ranked.forEach(function(p,ri){
+      ctx.fillStyle='white'; ctx.font='bold 13px -apple-system,system-ui,sans-serif';
+      ctx.fillText(p.label,30,caY+52+ri*30);
+      courseKeys.forEach(function(ck,ci){
+        var avg=glCourseAvg(p.key,ck,rounds);
+        var par=GOLF_COURSES_DEF[ck].total;
+        ctx.fillStyle=avg==null?'rgba(255,255,255,0.25)':(avg-par<=2?'#4ADE80':avg-par<=6?'#FCD34D':'#F87171');
+        ctx.font='13px -apple-system,system-ui,sans-serif';
+        ctx.fillText(avg!=null?avg+'  (+'+Math.round((avg-par)*10)/10+')':'—',160+ci*colW,caY+52+ri*30);
+      });
+    });
 
-  // Last round
-  if(lastRound){
-    var lrY=500;
-    ctx.fillStyle='rgba(255,255,255,0.07)';
-    glRoundRect(ctx,20,lrY,560,46,10); ctx.fill();
-    var sc=GOLF_PLAYERS_DEF.map(function(p){var s=lastRound.scores&&lastRound.scores[p.key];return(s!==''&&s!=null)?{key:p.key,label:p.label,score:Number(s)}:null;}).filter(Boolean);
-    sc.sort(function(a,b){return a.score-b.score;});
-    var winner=sc[0];
-    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='12px -apple-system,system-ui,sans-serif';
-    ctx.fillText('Last Round: '+lastRound.date+'  at  '+GOLF_COURSES_DEF[lastRound.course].name, 30, lrY+20);
-    ctx.fillStyle='white'; ctx.font='bold 13px -apple-system,system-ui,sans-serif';
-    var scoreStr = sc.map(function(p){return p.label+': '+p.score;}).join('  |  ');
-    ctx.fillText(scoreStr, 30, lrY+38);
+    // Last round
+    if(lastRound){
+      var lrY=502;
+      ctx.fillStyle='rgba(255,255,255,0.07)';
+      glRoundRect(ctx,20,lrY,560,46,10); ctx.fill();
+      var sc=GOLF_PLAYERS_DEF.map(function(p){var s=lastRound.scores&&lastRound.scores[p.key];return(s!==''&&s!=null)?{key:p.key,label:p.label,score:Number(s)}:null;}).filter(Boolean);
+      sc.sort(function(a,b){return a.score-b.score;});
+      ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='12px -apple-system,system-ui,sans-serif';
+      ctx.fillText('Last Round: '+lastRound.date+'  at  '+GOLF_COURSES_DEF[lastRound.course].name,30,lrY+20);
+      ctx.fillStyle='white'; ctx.font='bold 13px -apple-system,system-ui,sans-serif';
+      ctx.fillText(sc.map(function(p){return p.label+': '+p.score;}).join('  |  '),30,lrY+38);
+    }
+
+    // Footer
+    ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='11px -apple-system,system-ui,sans-serif';
+    ctx.fillText('HQ — Personal Life OS',30,592);
+    ctx.fillText(new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),480,592);
+
+    canvas.toBlob(function(blob){
+      if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],'x.png',{type:'image/png'})]})){
+        navigator.share({files:[new File([blob],'triad-tour.png',{type:'image/png'})],title:'The Triad Tour Leaderboard'}).catch(function(){});
+      } else {
+        var url=URL.createObjectURL(blob);
+        var a=document.createElement('a'); a.href=url; a.download='triad-tour.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){URL.revokeObjectURL(url);},2000);
+      }
+    },'image/png');
   }
 
-  // Footer
-  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='11px -apple-system,system-ui,sans-serif';
-  ctx.fillText('HQ — Personal Life OS', 30, 590);
-  ctx.fillText(new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}), 500, 590);
-
-  canvas.toBlob(function(blob){
-    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],'x.png',{type:'image/png'})]})){
-      navigator.share({files:[new File([blob],'triad-tour.png',{type:'image/png'})],title:'The Triad Tour Leaderboard'}).catch(function(){});
-    } else {
-      var url=URL.createObjectURL(blob);
-      var a=document.createElement('a'); a.href=url; a.download='golf-league.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function(){URL.revokeObjectURL(url);},2000);
-    }
-  },'image/png');
+  var logoImg=new Image();
+  logoImg.onload=function(){drawAll(logoImg);};
+  logoImg.onerror=function(){drawAll(null);};
+  logoImg.src=TRIAD_LOGO_URL;
 }
+
+var TRIAD_LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-145 -145 290 290"><circle cx="0" cy="0" r="138" fill="white" stroke="#1C1C1C" stroke-width="8"/><circle cx="0" cy="0" r="128" fill="none" stroke="#1C1C1C" stroke-width="1.5"/><ellipse cx="0" cy="-52" rx="72" ry="22" fill="#2D6A1F"/><ellipse cx="-8" cy="-58" rx="28" ry="7" fill="#3A8228" opacity="0.5"/><line x1="0" y1="-52" x2="0" y2="-105" stroke="#1C1C1C" stroke-width="2.5" stroke-linecap="round"/><polygon points="0,-105 36,-93 0,-81" fill="#1C1C1C"/><text x="0" y="-10" text-anchor="middle" font-family="Georgia,Times New Roman,serif" font-size="54" font-weight="900" fill="#CC1111" letter-spacing="3">TRIAD</text><text x="0" y="22" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="19" font-weight="700" fill="#2D6A1F" letter-spacing="5">&#8212; TOUR &#8212;</text><line x1="-45" y1="34" x2="45" y2="34" stroke="#1C1C1C" stroke-width="0.8"/><text x="0" y="50" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="12" font-weight="600" fill="#1C1C1C" letter-spacing="3">&#8212; EST. 2026 &#8212;</text><circle cx="0" cy="115" r="22" fill="#F5F5F0" stroke="#CCCCCC" stroke-width="1"/><circle cx="-7" cy="109" r="2.5" fill="none" stroke="#BBBBBB" stroke-width="1"/><circle cx="7" cy="108" r="2.5" fill="none" stroke="#BBBBBB" stroke-width="1"/><circle cx="0" cy="117" r="2.5" fill="none" stroke="#BBBBBB" stroke-width="1"/><circle cx="13" cy="118" r="2.5" fill="none" stroke="#BBBBBB" stroke-width="1"/><circle cx="-13" cy="119" r="2.5" fill="none" stroke="#BBBBBB" stroke-width="1"/><circle cx="-4" cy="125" r="2" fill="none" stroke="#BBBBBB" stroke-width="0.8"/><circle cx="8" cy="124" r="2" fill="none" stroke="#BBBBBB" stroke-width="0.8"/></svg>';
+var TRIAD_LOGO_URL = 'data:image/svg+xml,' + encodeURIComponent(TRIAD_LOGO_SVG);
 
 function GolfLeagueCard({golfRounds, setTab}) {
   var rounds=golfRounds||[];
@@ -7977,7 +7984,7 @@ function GolfLeagueCard({golfRounds, setTab}) {
     e('div',{style:{background:'linear-gradient(135deg,#15803D,#166534)',borderRadius:18,padding:16,cursor:'pointer'},onClick:function(){setTab('golf-league');}},
       e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
         e('div',{style:{display:'flex',alignItems:'center',gap:8}},
-          e('span',{style:{fontSize:24}},'⛳'),
+          e('img',{src:TRIAD_LOGO_URL,style:{width:48,height:48,objectFit:'contain',borderRadius:'50%',background:'white',flexShrink:0}}),
           e('div',{},
             e('div',{style:{fontSize:14,fontWeight:800,color:'white'}},'The Triad Tour'),
             e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.65)'}},'2026 Season  •  Purse: $0')
@@ -8283,7 +8290,8 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab}) {
     e('div',{style:{padding:'16px 16px 0',flexShrink:0}},
       e('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
         e('button',{onClick:function(){setTab('today');},style:{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:0,color:MUTED,lineHeight:1}},'←'),
-        e('div',{style:{fontSize:22,fontWeight:900,color:TEXT}},'⛳ The Triad Tour'),
+        e('img',{src:TRIAD_LOGO_URL,style:{width:38,height:38,objectFit:'contain',borderRadius:'50%',background:'white',border:'1px solid rgba(100,80,220,0.1)',flexShrink:0}}),
+        e('div',{style:{fontSize:20,fontWeight:900,color:TEXT}},'The Triad Tour'),
         e('div',{style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:GL,background:GL+'15',padding:'4px 10px',borderRadius:20}},rounds.length+' rounds')
       ),
       e('div',{style:{display:'flex',gap:6,background:'rgba(100,80,220,0.06)',borderRadius:14,padding:4}},
