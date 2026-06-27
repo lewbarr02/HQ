@@ -2197,50 +2197,106 @@ function HomeMaintenanceScreen({homeItems, setHomeItems, setTab}) {
 function DateNightsScreen({dateNights, setDateNights, setTab}) {
   var DN_PINK = '#FF6B9D';
   var TYPES = ['Dinner out','Movie','Adventure','Stay-in','Day trip','Concert/Show','Other'];
+  var BLANK_FORM = {date:today(), type:'Dinner out', rating:5, note:'', location:'', photos:[]};
   var [showForm, setShowForm] = useState(false);
-  var [form, setForm] = useState({date:today(), type:'Dinner out', rating:5, note:''});
+  var [editId, setEditId] = useState(null);
+  var [form, setForm] = useState(BLANK_FORM);
+  var [menuId, setMenuId] = useState(null);
   var [deleteId, setDeleteId] = useState(null);
+  var [lightbox, setLightbox] = useState(null); // {src}
+  var photoInputRef = React.useRef(null);
 
   var sorted = (dateNights||[]).slice().sort(function(a,b){return b.date.localeCompare(a.date);});
   var td = today();
   var ym = td.slice(0,7);
   var thisMonth = (dateNights||[]).filter(function(d){return d.date.startsWith(ym);}).length;
-
   var last = sorted[0];
   var daysSince = last ? Math.floor((Date.now() - new Date(last.date+'T12:00:00').getTime()) / 86400000) : null;
   var statusColor = daysSince===null?MUTED:daysSince<=10?'#10B981':daysSince<=20?'#F59E0B':'#EF4444';
 
-  // 30-day dot grid
   var dots = [];
   for(var i=29;i>=0;i--){
     var d = new Date(); d.setDate(d.getDate()-i);
     var ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     var hit = (dateNights||[]).some(function(n){return n.date===ds;});
-    dots.push(e('div',{key:ds,title:ds,style:{width:10,height:10,borderRadius:'50%',background:hit?DN_PINK:CARD2,flexShrink:0,cursor:hit?'pointer':'default'}}));
+    dots.push(e('div',{key:ds,title:ds,style:{width:10,height:10,borderRadius:'50%',background:hit?DN_PINK:CARD2,flexShrink:0}}));
+  }
+
+  function openNew() {
+    setEditId(null);
+    setForm(Object.assign({},BLANK_FORM,{date:today()}));
+    setShowForm(true);
+    setMenuId(null);
+  }
+
+  function openEdit(n) {
+    setEditId(n.id);
+    setForm({date:n.date, type:n.type||'Dinner out', rating:n.rating||5, note:n.note||'', location:n.location||'', photos:n.photos||[]});
+    setShowForm(true);
+    setMenuId(null);
   }
 
   function saveEntry() {
     if(!form.date) return;
-    var entry = {id:Date.now().toString(), date:form.date, type:form.type, rating:form.rating, note:form.note.trim()};
-    var next = [...(dateNights||[]), entry];
+    var entry = {id:editId||Date.now().toString(), date:form.date, type:form.type, rating:form.rating, note:form.note.trim(), location:form.location.trim(), photos:form.photos||[]};
+    var next;
+    if(editId) {
+      next = (dateNights||[]).map(function(n){ return n.id===editId ? entry : n; });
+    } else {
+      next = [...(dateNights||[]), entry];
+    }
     setDateNights(next); save('dateNights', next);
-    setShowForm(false); setForm({date:today(), type:'Dinner out', rating:5, note:''});
+    setShowForm(false); setEditId(null); setForm(Object.assign({},BLANK_FORM,{date:today()}));
   }
 
   function deleteEntry(id) {
     var next = (dateNights||[]).filter(function(n){return n.id!==id;});
     setDateNights(next); save('dateNights', next);
-    setDeleteId(null);
+    setDeleteId(null); setMenuId(null);
+  }
+
+  function handlePhotoFiles(files) {
+    var current = form.photos || [];
+    var remaining = 2 - current.length;
+    if(remaining <= 0) return;
+    var toProcess = Array.from(files).slice(0, remaining);
+    toProcess.forEach(function(file) {
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var img = new Image();
+        img.onload = function() {
+          var MAX = 900;
+          var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          var w = Math.round(img.width * scale);
+          var h = Math.round(img.height * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+          setForm(function(prev) {
+            var next = [...(prev.photos||[])];
+            if(next.length < 2) next.push(dataUrl);
+            return Object.assign({},prev,{photos:next});
+          });
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function removePhoto(idx) {
+    setForm(function(prev){
+      var next = (prev.photos||[]).filter(function(_,i){ return i!==idx; });
+      return Object.assign({},prev,{photos:next});
+    });
   }
 
   function fmtDate(ds) {
-    var dt = new Date(ds+'T12:00:00');
-    return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    return new Date(ds+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   }
-
   function starStr(r) { return '★'.repeat(r)+'☆'.repeat(5-r); }
 
-  // months for history grouping
   var byMonth = {};
   sorted.forEach(function(n){
     var mk = n.date.slice(0,7);
@@ -2248,15 +2304,72 @@ function DateNightsScreen({dateNights, setDateNights, setTab}) {
     byMonth[mk].push(n);
   });
 
+  var formEl = showForm ? e('div',{className:'card',style:{border:'1.5px solid '+DN_PINK+'40',background:DN_PINK+'06',marginBottom:0}},
+    e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+      e('div',{style:{fontSize:14,fontWeight:700,color:DN_PINK}}, editId ? 'Edit Date Night' : 'Log a Date Night'),
+      e('button',{onClick:function(){setShowForm(false);setEditId(null);},style:{background:'none',border:'none',fontSize:18,cursor:'pointer',color:MUTED}}, '✕')
+    ),
+    e('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+      e('div',{},
+        e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:4}}, 'DATE'),
+        e('input',{type:'date',value:form.date,max:td,onChange:function(ev){setForm(Object.assign({},form,{date:ev.target.value}));},style:{width:'100%',padding:'8px 10px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:14,fontFamily:'inherit',background:'white',boxSizing:'border-box'}})
+      ),
+      e('div',{},
+        e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:4}}, 'LOCATION (optional)'),
+        e('input',{type:'text',value:form.location,onChange:function(ev){setForm(Object.assign({},form,{location:ev.target.value}));},placeholder:'e.g. Carmine\'s Italian, Downtown',style:{width:'100%',padding:'8px 10px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:14,fontFamily:'inherit',background:'white',boxSizing:'border-box'}})
+      ),
+      e('div',{},
+        e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}}, 'TYPE'),
+        e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+          TYPES.map(function(t){
+            var sel = form.type===t;
+            return e('button',{key:t,onClick:function(){setForm(Object.assign({},form,{type:t}));},style:{padding:'6px 12px',borderRadius:20,border:'1.5px solid '+(sel?DN_PINK:BORDER),background:sel?DN_PINK:'white',color:sel?'white':TEXT,fontWeight:sel?700:500,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, t);
+          })
+        )
+      ),
+      e('div',{},
+        e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}}, 'RATING'),
+        e('div',{style:{display:'flex',gap:8}},
+          [1,2,3,4,5].map(function(r){
+            return e('button',{key:r,onClick:function(){setForm(Object.assign({},form,{rating:r}));},style:{fontSize:24,cursor:'pointer',background:'none',border:'none',opacity:form.rating>=r?1:0.25,transition:'opacity 0.15s'}}, '★');
+          })
+        )
+      ),
+      e('div',{},
+        e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:4}}, 'NOTE (optional)'),
+        e('textarea',{value:form.note,onInput:function(ev){setForm(Object.assign({},form,{note:ev.target.value}));},placeholder:'What did you do? Favorite moment?',rows:2,style:{width:'100%',padding:'8px 10px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:13,fontFamily:'inherit',resize:'none',boxSizing:'border-box'}})
+      ),
+      e('div',{},
+        e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:8}}, 'PHOTOS (up to 2)'),
+        e('div',{style:{display:'flex',gap:8,alignItems:'flex-start'}},
+          (form.photos||[]).map(function(src,idx){
+            return e('div',{key:idx,style:{position:'relative',flexShrink:0}},
+              e('img',{src:src,style:{width:80,height:80,borderRadius:10,objectFit:'cover',border:'1.5px solid '+BORDER,display:'block'}}),
+              e('button',{onClick:function(){removePhoto(idx);},style:{position:'absolute',top:-6,right:-6,width:20,height:20,borderRadius:'50%',background:'#EF4444',border:'2px solid white',color:'white',fontSize:11,fontWeight:800,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}, '✕')
+            );
+          }),
+          (form.photos||[]).length < 2 ? e('button',{onClick:function(){photoInputRef.current&&photoInputRef.current.click();},style:{width:80,height:80,borderRadius:10,border:'2px dashed '+DN_PINK+'60',background:DN_PINK+'06',color:DN_PINK,fontSize:28,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}, '+') : null
+        ),
+        e('input',{ref:photoInputRef,type:'file',accept:'image/*',multiple:true,style:{display:'none'},onChange:function(ev){handlePhotoFiles(ev.target.files);ev.target.value='';}})
+      ),
+      e('div',{style:{display:'flex',gap:8}},
+        e('button',{onClick:function(){setShowForm(false);setEditId(null);},style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'white',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel'),
+        e('button',{onClick:saveEntry,style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:DN_PINK,color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, editId ? 'Save Changes 💑' : 'Save Date Night 💑')
+      )
+    )
+  ) : null;
+
   return e('div',{style:{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#F7F8FC'}},
-    // header
+    lightbox ? e('div',{onClick:function(){setLightbox(null);},style:{position:'fixed',inset:0,zIndex:300,background:'rgba(0,0,0,0.92)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}},
+      e('img',{src:lightbox.src,style:{maxWidth:'100%',maxHeight:'100%',borderRadius:12,objectFit:'contain'}}),
+      e('button',{onClick:function(){setLightbox(null);},style:{position:'absolute',top:20,right:20,background:'rgba(255,255,255,0.15)',border:'none',borderRadius:'50%',width:36,height:36,color:'white',fontSize:20,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}, '✕')
+    ) : null,
     e('div',{style:{display:'flex',alignItems:'center',gap:12,padding:'16px 16px 0'}},
       e('button',{onClick:function(){setTab('today');},style:{background:CARD2,border:'none',width:36,height:36,borderRadius:'50%',cursor:'pointer',fontSize:18,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}, '‹'),
       e('div',{style:{fontSize:20,fontWeight:800,flex:1}}, '💑 Date Nights'),
-      e('button',{onClick:function(){setShowForm(true);},style:{background:DN_PINK,border:'none',borderRadius:12,padding:'8px 14px',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Log')
+      e('button',{onClick:openNew,style:{background:DN_PINK,border:'none',borderRadius:12,padding:'8px 14px',color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, '+ Log')
     ),
     e('div',{style:{flex:1,overflowY:'auto',padding:16,display:'flex',flexDirection:'column',gap:12}},
-      // stat row
       e('div',{className:'card',style:{marginBottom:0}},
         e('div',{style:{display:'flex',gap:0}},
           e('div',{style:{flex:1,textAlign:'center',padding:'8px 0'}},
@@ -2279,71 +2392,50 @@ function DateNightsScreen({dateNights, setDateNights, setTab}) {
           e('div',{style:{display:'flex',gap:3,flexWrap:'wrap'}}, dots)
         )
       ),
-
-      // log form
-      showForm ? e('div',{className:'card',style:{border:'1.5px solid '+DN_PINK+'40',background:DN_PINK+'06',marginBottom:0}},
-        e('div',{style:{fontSize:14,fontWeight:700,marginBottom:12,color:DN_PINK}}, 'Log a Date Night'),
-        e('div',{style:{display:'flex',flexDirection:'column',gap:10}},
-          e('div',{},
-            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:4}}, 'DATE'),
-            e('input',{type:'date',value:form.date,max:td,onChange:function(ev){setForm(Object.assign({},form,{date:ev.target.value}));},style:{width:'100%',padding:'8px 10px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:14,fontFamily:'inherit',background:'white',boxSizing:'border-box'}})
-          ),
-          e('div',{},
-            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}}, 'TYPE'),
-            e('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
-              TYPES.map(function(t){
-                var sel = form.type===t;
-                return e('button',{key:t,onClick:function(){setForm(Object.assign({},form,{type:t}));},style:{padding:'6px 12px',borderRadius:20,border:'1.5px solid '+(sel?DN_PINK:BORDER),background:sel?DN_PINK:'white',color:sel?'white':TEXT,fontWeight:sel?700:500,fontSize:12,cursor:'pointer',fontFamily:'inherit'}}, t);
-              })
-            )
-          ),
-          e('div',{},
-            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:6}}, 'RATING'),
-            e('div',{style:{display:'flex',gap:8}},
-              [1,2,3,4,5].map(function(r){
-                return e('button',{key:r,onClick:function(){setForm(Object.assign({},form,{rating:r}));},style:{fontSize:24,cursor:'pointer',background:'none',border:'none',opacity:form.rating>=r?1:0.25,transition:'opacity 0.15s'}}, '★');
-              })
-            )
-          ),
-          e('div',{},
-            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,marginBottom:4}}, 'NOTE (optional)'),
-            e('textarea',{value:form.note,onInput:function(ev){setForm(Object.assign({},form,{note:ev.target.value}));},placeholder:'What did you do? Favorite moment?',rows:2,style:{width:'100%',padding:'8px 10px',borderRadius:10,border:'1.5px solid '+BORDER,fontSize:13,fontFamily:'inherit',resize:'none',boxSizing:'border-box'}})
-          ),
-          e('div',{style:{display:'flex',gap:8}},
-            e('button',{onClick:function(){setShowForm(false);},style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'white',color:MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel'),
-            e('button',{onClick:saveEntry,style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:DN_PINK,color:'white',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}}, 'Save Date Night 💑')
-          )
-        )
-      ) : null,
-
-      // history
+      formEl,
       sorted.length === 0 ? e('div',{style:{textAlign:'center',padding:'40px 20px',color:MUTED}},
         e('div',{style:{fontSize:40,marginBottom:12}},'💑'),
         e('div',{style:{fontSize:16,fontWeight:700,marginBottom:8}},'No date nights logged yet'),
-        e('div',{style:{fontSize:13}},"Tap + Log to add your first one"),
-        e('button',{onClick:function(){setShowForm(true);},style:{marginTop:16,padding:'10px 24px',borderRadius:12,border:'none',background:DN_PINK,color:'white',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '+ Log Date Night')
+        e('button',{onClick:openNew,style:{marginTop:16,padding:'10px 24px',borderRadius:12,border:'none',background:DN_PINK,color:'white',fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '+ Log Date Night')
       ) : Object.keys(byMonth).sort(function(a,b){return b.localeCompare(a);}).map(function(mk){
         var label = new Date(mk+'-15').toLocaleDateString('en-US',{month:'long',year:'numeric'});
         return e('div',{key:mk},
           e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}, label),
           e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
             byMonth[mk].map(function(n){
+              var isMenuOpen = menuId===n.id;
+              var isConfirmDelete = deleteId===n.id;
               return e('div',{key:n.id,className:'card',style:{marginBottom:0,padding:'12px 14px'}},
-                e('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},
-                  e('div',{style:{flex:1}},
-                    e('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
+                e('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}},
+                  e('div',{style:{flex:1,minWidth:0}},
+                    e('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}},
                       e('div',{style:{fontSize:13,fontWeight:700,color:TEXT}}, fmtDate(n.date)),
-                      e('div',{style:{fontSize:11,fontWeight:700,color:DN_PINK,background:DN_PINK+'15',padding:'2px 8px',borderRadius:8}}, n.type)
+                      e('div',{style:{fontSize:11,fontWeight:700,color:DN_PINK,background:DN_PINK+'15',padding:'2px 8px',borderRadius:8,flexShrink:0}}, n.type)
                     ),
-                    e('div',{style:{fontSize:14,color:'#F59E0B',letterSpacing:1}}, starStr(n.rating||5)),
-                    n.note ? e('div',{style:{fontSize:12,color:MUTED,marginTop:4}}, n.note) : null
+                    n.location ? e('div',{style:{fontSize:12,color:MUTED,marginBottom:4,display:'flex',alignItems:'center',gap:4}},
+                      e('span',{},'📍'),
+                      e('span',{style:{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, n.location)
+                    ) : null,
+                    e('div',{style:{fontSize:14,color:'#F59E0B',letterSpacing:1,marginBottom:n.note||n.photos?.length?4:0}}, starStr(n.rating||5)),
+                    n.note ? e('div',{style:{fontSize:12,color:MUTED,marginBottom:(n.photos&&n.photos.length)?8:0}}, n.note) : null,
+                    n.photos && n.photos.length ? e('div',{style:{display:'flex',gap:6,marginTop:4}},
+                      n.photos.map(function(src,idx){
+                        return e('img',{key:idx,src:src,onClick:function(){setLightbox({src:src});},style:{width:64,height:64,borderRadius:8,objectFit:'cover',border:'1px solid '+BORDER,cursor:'pointer'}});
+                      })
+                    ) : null
                   ),
-                  deleteId===n.id
-                    ? e('div',{style:{display:'flex',gap:6}},
-                        e('button',{onClick:function(){deleteEntry(n.id);},style:{fontSize:11,fontWeight:700,color:'white',background:'#EF4444',border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, 'Delete'),
-                        e('button',{onClick:function(){setDeleteId(null);},style:{fontSize:11,fontWeight:700,color:MUTED,background:CARD2,border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
-                      )
-                    : e('button',{onClick:function(){setDeleteId(n.id);},style:{fontSize:16,background:'none',border:'none',cursor:'pointer',color:MUTED,padding:4}}, '⋯')
+                  e('div',{style:{position:'relative',flexShrink:0}},
+                    isConfirmDelete
+                      ? e('div',{style:{display:'flex',gap:6}},
+                          e('button',{onClick:function(){deleteEntry(n.id);},style:{fontSize:11,fontWeight:700,color:'white',background:'#EF4444',border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, 'Delete'),
+                          e('button',{onClick:function(){setDeleteId(null);},style:{fontSize:11,fontWeight:700,color:MUTED,background:CARD2,border:'none',borderRadius:8,padding:'4px 8px',cursor:'pointer',fontFamily:'inherit'}}, 'Cancel')
+                        )
+                      : e('button',{onClick:function(){setMenuId(isMenuOpen?null:n.id);},style:{fontSize:18,background:'none',border:'none',cursor:'pointer',color:MUTED,padding:'0 4px',lineHeight:1}}, '⋯'),
+                    isMenuOpen && !isConfirmDelete ? e('div',{style:{position:'absolute',right:0,top:28,background:'white',borderRadius:12,border:'1px solid '+BORDER,boxShadow:'0 4px 16px rgba(0,0,0,0.12)',zIndex:50,minWidth:120,overflow:'hidden'}},
+                      e('button',{onClick:function(){openEdit(n);},style:{display:'block',width:'100%',padding:'10px 14px',border:'none',background:'none',textAlign:'left',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',color:TEXT}}, '✏️ Edit'),
+                      e('button',{onClick:function(){setDeleteId(n.id);setMenuId(null);},style:{display:'block',width:'100%',padding:'10px 14px',border:'none',background:'none',textAlign:'left',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',color:'#EF4444'}}, '🗑️ Delete')
+                    ) : null
+                  )
                 )
               );
             })
