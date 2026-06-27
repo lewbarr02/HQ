@@ -7874,9 +7874,9 @@ function glExportPNG(golfRounds) {
   ctx.fillStyle='rgba(255,255,255,0.1)';
   glRoundRect(ctx,20,20,560,72,14); ctx.fill();
   ctx.fillStyle='white'; ctx.font='bold 26px -apple-system,system-ui,sans-serif';
-  ctx.fillText('⛳  Golf League', 40,58);
+  ctx.fillText('⛳  The Triad Tour', 40,58);
   ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='13px -apple-system,system-ui,sans-serif';
-  ctx.fillText('2025 Season  •  '+rounds.length+' rounds played', 40,82);
+  ctx.fillText('2026 Season  •  '+rounds.length+' rounds  •  Purse: $0', 40,82);
 
   // Season Standings
   ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px -apple-system,system-ui,sans-serif';
@@ -7953,7 +7953,7 @@ function glExportPNG(golfRounds) {
 
   canvas.toBlob(function(blob){
     if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],'x.png',{type:'image/png'})]})){
-      navigator.share({files:[new File([blob],'golf-league.png',{type:'image/png'})],title:'Golf League Leaderboard'}).catch(function(){});
+      navigator.share({files:[new File([blob],'triad-tour.png',{type:'image/png'})],title:'The Triad Tour Leaderboard'}).catch(function(){});
     } else {
       var url=URL.createObjectURL(blob);
       var a=document.createElement('a'); a.href=url; a.download='golf-league.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -7979,8 +7979,8 @@ function GolfLeagueCard({golfRounds, setTab}) {
         e('div',{style:{display:'flex',alignItems:'center',gap:8}},
           e('span',{style:{fontSize:24}},'⛳'),
           e('div',{},
-            e('div',{style:{fontSize:14,fontWeight:800,color:'white'}},'Golf League'),
-            e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.65)'}},'2025 Season')
+            e('div',{style:{fontSize:14,fontWeight:800,color:'white'}},'The Triad Tour'),
+            e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.65)'}},'2026 Season  •  Purse: $0')
           )
         ),
         e('div',{style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.65)',background:'rgba(255,255,255,0.15)',padding:'4px 10px',borderRadius:20}},rounds.length+' rounds')
@@ -8283,7 +8283,7 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab}) {
     e('div',{style:{padding:'16px 16px 0',flexShrink:0}},
       e('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
         e('button',{onClick:function(){setTab('today');},style:{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:0,color:MUTED,lineHeight:1}},'←'),
-        e('div',{style:{fontSize:22,fontWeight:900,color:TEXT}},'⛳ Golf League'),
+        e('div',{style:{fontSize:22,fontWeight:900,color:TEXT}},'⛳ The Triad Tour'),
         e('div',{style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:GL,background:GL+'15',padding:'4px 10px',borderRadius:20}},rounds.length+' rounds')
       ),
       e('div',{style:{display:'flex',gap:6,background:'rgba(100,80,220,0.06)',borderRadius:14,padding:4}},
@@ -11558,7 +11558,7 @@ function App() {
     {id:'review',icon:'📊',label:'Review'},
     {id:'notifications',icon:'🔔',label:'Notifications'},
     {id:'data',icon:'💾',label:'Import / Export Data'},
-    {id:'golf-league',icon:'⛳',label:'Golf League'},
+    {id:'golf-league',icon:'⛳',label:'The Triad Tour'},
   ];
 
   function renderScreen() {
