@@ -2439,7 +2439,7 @@ function TimeBlockBanner({priorities}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -2657,6 +2657,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
               {key:'evening', emoji:'🌙', label:'Evening', done:!!(eveningLog&&eveningLog[td+'_done']), onClick:function(){setEveningPhase&&setEveningPhase('greeting');}, onHistory:function(){setEveningPhase('history');}, hasHistory:true},
               {key:'postworkout', emoji:'🏋️', label:'Post WO', done:!!(pwLog&&pwLog[td+'_done']),       onClick:function(){setPostWorkoutPhase&&setPostWorkoutPhase('greeting');}, onHistory:function(){setPostWorkoutPhase&&setPostWorkoutPhase('history');}, hasHistory:true},
               {key:'cleaning', emoji:'🧹', label:'Cleaning', done:!!(cleaningLog&&cleaningLog[td+'_done']), onClick:function(){setCleaningPhase&&setCleaningPhase('greeting');}, onHistory:function(){setCleaningPhase&&setCleaningPhase('history');}, hasHistory:true},
+              {key:'golf', emoji:'⛳', label:'Golf', color:'#22C55E', done:!!(golfLog&&golfLog[td+'_done']), onClick:function(){setGolfPhase&&setGolfPhase('greeting');}, onHistory:function(){setGolfPhase&&setGolfPhase('history');}, hasHistory:true},
             ];
             var customDefs = (customRoutines||[]).map(function(r){
               var rLog = (customRoutineLogs&&customRoutineLogs[r.id]) || {};
@@ -7446,6 +7447,239 @@ function CleaningHistory({onBack, clLog}) {
   );
 }
 
+// ─── GOLF WIND DOWN ───────────────────────────────────────────────────────────
+var GL = '#22C55E'; var GL2 = '#16A34A';
+
+var DEFAULT_GOLF_HABITS = [
+  {id:'gf1', label:'Clean Clubs 🏌️'},
+  {id:'gf2', label:'Put away Glasses 🕶️'},
+  {id:'gf3', label:'Put away Glove 🧤'},
+  {id:'gf4', label:'Log Score Card 📊'},
+  {id:'gf5', label:'Put away Tees ⛳'},
+  {id:'gf6', label:'Put away Golf Balls ⚪'},
+];
+
+function calcGolfStreak(golfLog) {
+  var streak = 0;
+  var d = new Date();
+  for(var i=0;i<365;i++){
+    var dk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(i===0 && !golfLog[dk+'_done']){ d.setDate(d.getDate()-1); continue; }
+    if(golfLog[dk+'_done'] && !golfLog[dk+'_test']) streak++;
+    else break;
+    d.setDate(d.getDate()-1);
+  }
+  return streak;
+}
+
+function calcGolfTime(golfLog, date) {
+  var startStr = golfLog[date+'_start'], doneStr = golfLog[date+'_done'];
+  if(!startStr || !doneStr) return null;
+  var toMins = function(s){ var m=s.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!m) return 0; var h=parseInt(m[1]),mn=parseInt(m[2]),pm=m[3].toUpperCase()==='PM'; if(pm&&h!==12)h+=12; if(!pm&&h===12)h=0; return h*60+mn; };
+  var diff = toMins(doneStr) - toMins(startStr);
+  if(diff<0) diff+=1440;
+  return (diff>0&&diff<600) ? diff : null;
+}
+
+function GolfGreeting({onStart}) {
+  var [show, setShow] = React.useState(false);
+  React.useEffect(function(){ setTimeout(function(){ setShow(true); }, 100); }, []);
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,'+GL+'18,#fff 60%)',padding:'32px 24px',textAlign:'center',paddingTop:'env(safe-area-inset-top)'}},
+    e('div', {style:{fontSize:72,marginBottom:24,opacity:show?1:0,transition:'opacity 0.6s ease,transform 0.6s ease',transform:show?'translateY(0)':'translateY(20px)'}}, '⛳'),
+    e('div', {style:{fontSize:28,fontWeight:800,color:TEXT,marginBottom:8,opacity:show?1:0,transition:'opacity 0.5s ease 0.2s'}}, 'Golf Wind Down'),
+    e('div', {style:{fontSize:15,color:MUTED,marginBottom:40,opacity:show?1:0,transition:'opacity 0.5s ease 0.3s'}}, 'Put everything away right. Every time.'),
+    e('button', {
+      onClick:onStart,
+      style:{padding:'18px 48px',borderRadius:18,background:'linear-gradient(135deg,'+GL+','+GL2+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+GL+'40',opacity:show?1:0,transition:'opacity 0.5s ease 0.4s'}
+    }, "Let's go →")
+  );
+}
+
+function GolfChecklist({onComplete, onSkipToDashboard, golfLog, setGolfLog, golfItems, setGolfItems}) {
+  var td = today();
+  var done = (golfLog && golfLog[td]) ? golfLog[td] : {};
+  var [editMode, setEditMode] = React.useState(false);
+  var [newLabel, setNewLabel] = React.useState('');
+
+  function toggle(id) {
+    var next = Object.assign({}, done, {[id]: !done[id]});
+    var newLog = Object.assign({}, golfLog, {[td]: next});
+    if(!golfLog[td+'_start']) newLog[td+'_start'] = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    setGolfLog(newLog); save('golfLog', newLog);
+  }
+
+  function addItem() {
+    var lbl = newLabel.trim();
+    if(!lbl) return;
+    var next = [...golfItems, {id:'gf'+Date.now(), label:lbl}];
+    setGolfItems(next); save('golfItems', next);
+    setNewLabel('');
+  }
+
+  function removeItem(id) {
+    var next = golfItems.filter(function(it){ return it.id !== id; });
+    setGolfItems(next); save('golfItems', next);
+  }
+
+  function finish(partial) {
+    var doneTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    var newLog = Object.assign({}, golfLog, {[td+'_done']: doneTime});
+    if(partial) newLog[td+'_partial'] = true;
+    setGolfLog(newLog); save('golfLog', newLog);
+    onComplete();
+  }
+
+  var total = golfItems.length;
+  var doneCount = golfItems.filter(function(it){ return done[it.id]; }).length;
+  var allDone = doneCount === total && total > 0;
+
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'20px 20px 8px'}},
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '⛳ Golf Wind Down'),
+        e('div', {style:{fontSize:12,color:MUTED}}, doneCount+'/'+total+' done')
+      ),
+      e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
+        e('button', {onClick:function(){ setEditMode(!editMode); }, style:{fontSize:12,fontWeight:700,color:GL,background:GL+'15',border:'none',borderRadius:10,padding:'6px 12px',cursor:'pointer',fontFamily:'inherit'}}, editMode?'Done Editing':'Edit'),
+        e('button', {onClick:onSkipToDashboard, style:{fontSize:12,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Skip')
+      )
+    ),
+    e('div', {style:{flex:1,overflowY:'auto',padding:'8px 20px 20px'}},
+      ...golfItems.map(function(item){
+        var isDone = !!done[item.id];
+        return e('div', {key:item.id, style:{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',background:'#fff',borderRadius:16,marginBottom:8,border:'1px solid '+(isDone?GL+'40':BORDER),transition:'all 0.2s'}},
+          editMode
+            ? e('button', {onClick:function(){ removeItem(item.id); }, style:{fontSize:16,background:'#FEE2E2',border:'none',borderRadius:8,width:28,height:28,cursor:'pointer',color:'#EF4444',fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}, '−')
+            : e('div', {onClick:function(){ toggle(item.id); }, style:{width:24,height:24,borderRadius:8,border:'2px solid '+(isDone?GL:BORDER),background:isDone?GL:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,transition:'all 0.2s'}},
+                isDone ? e('div', {style:{color:'white',fontSize:14,fontWeight:800}}, '✓') : null
+              ),
+          e('div', {onClick:editMode?null:function(){ toggle(item.id); }, style:{fontSize:15,fontWeight:600,color:isDone?MUTED:TEXT,textDecoration:isDone?'line-through':'none',cursor:editMode?'default':'pointer',flex:1,transition:'all 0.2s'}}, item.label)
+        );
+      }),
+      editMode ? e('div', {style:{display:'flex',gap:8,marginTop:8}},
+        e('input', {value:newLabel, onChange:function(ev){ setNewLabel(ev.target.value); }, onKeyDown:function(ev){ if(ev.key==='Enter') addItem(); }, placeholder:'Add item…', style:{flex:1,padding:'12px 14px',border:'1px solid '+BORDER,borderRadius:12,fontSize:14,fontFamily:'inherit',outline:'none'}}),
+        e('button', {onClick:addItem, style:{padding:'12px 16px',background:GL,border:'none',borderRadius:12,color:'white',fontSize:16,fontWeight:800,cursor:'pointer'}}, '+')
+      ) : null
+    ),
+    e('div', {style:{padding:'16px 20px',borderTop:'1px solid '+BORDER,background:'#fff',display:'flex',gap:10}},
+      !allDone && doneCount > 0 ? e('button', {onClick:function(){ finish(true); }, style:{flex:1,padding:'16px',borderRadius:16,background:CARD2,border:'none',fontSize:14,fontWeight:700,cursor:'pointer',color:MUTED,fontFamily:'inherit'}}, 'Mark Partial ('+doneCount+'/'+total+')') : null,
+      e('button', {onClick:function(){ if(allDone) finish(false); }, disabled:!allDone, style:{flex:2,padding:'16px',borderRadius:16,background:allDone?'linear-gradient(135deg,'+GL+','+GL2+')':'#E8E8F0',border:'none',fontSize:15,fontWeight:800,cursor:allDone?'pointer':'default',color:allDone?'white':MUTED,fontFamily:'inherit',transition:'all 0.3s'}}, allDone?'🎉 Round complete!':'Check all items')
+    )
+  );
+}
+
+function GolfComplete({onContinue, golfLog, golfItems}) {
+  var td = today();
+  var streak = calcGolfStreak(golfLog);
+  var mins = calcGolfTime(golfLog, td);
+  var [show, setShow] = React.useState(false);
+  React.useEffect(function(){ setTimeout(function(){ setShow(true); }, 100); }, []);
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,'+GL+'20,#fff 60%)',padding:'32px 24px',textAlign:'center',paddingTop:'env(safe-area-inset-top)'}},
+    e('div', {style:{fontSize:72,marginBottom:16,opacity:show?1:0,transition:'opacity 0.5s ease'}}, '🏆'),
+    e('div', {style:{fontSize:26,fontWeight:800,color:TEXT,marginBottom:6,opacity:show?1:0,transition:'opacity 0.5s ease 0.1s'}}, 'Clubs away. Round done.'),
+    e('div', {style:{fontSize:15,color:MUTED,marginBottom:32,opacity:show?1:0,transition:'opacity 0.5s ease 0.2s'}}, mins ? 'Wrapped up in '+mins+' min' : 'Everything in its place'),
+    e('div', {style:{display:'flex',gap:16,marginBottom:40,opacity:show?1:0,transition:'opacity 0.5s ease 0.3s'}},
+      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px 24px',border:'1px solid '+GL+'40',textAlign:'center'}},
+        e('div', {style:{fontSize:28,fontWeight:800,color:GL}}, streak),
+        e('div', {style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:1}}, 'Streak')
+      )
+    ),
+    e('button', {onClick:onContinue, style:{padding:'18px 48px',borderRadius:18,background:'linear-gradient(135deg,'+GL+','+GL2+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+GL+'40',opacity:show?1:0,transition:'opacity 0.5s ease 0.4s'}}, 'Back to Dashboard →')
+  );
+}
+
+function GolfHistory({onBack, golfLog}) {
+  var completedDays = Object.keys(golfLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !golfLog[d+'_test']; }).sort();
+  var currentStreak = calcGolfStreak(golfLog);
+  var bestStreak = 0, run = 0;
+  if(completedDays.length) {
+    run = 1; bestStreak = 1;
+    for(var i=1;i<completedDays.length;i++){
+      var prev = new Date(completedDays[i-1]+'T12:00:00'), cur = new Date(completedDays[i]+'T12:00:00');
+      if(Math.round((cur-prev)/86400000)===1){ run++; if(run>bestStreak) bestStreak=run; } else { run=1; }
+    }
+  }
+  var times = completedDays.map(function(d){ return calcGolfTime(golfLog, d); }).filter(function(t){ return t && t > 0 && t < 600; });
+  var avgTime = times.length ? Math.round(times.reduce(function(a,b){return a+b;},0)/times.length) : null;
+  var fastestTime = times.length ? Math.min.apply(null,times) : null;
+  var dots = [];
+  for(var j=29;j>=0;j--){
+    var dd = new Date(); dd.setDate(dd.getDate()-j);
+    var dk = dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+    dots.push({dk:dk, done:!!golfLog[dk+'_done'] && !golfLog[dk+'_test']});
+  }
+  var rate30 = Math.round(dots.filter(function(d){return d.done;}).length/30*100);
+  var statStyle = {background:'#fff',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid '+BORDER,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'};
+  var valStyle = {fontSize:28,fontWeight:800,marginBottom:4};
+  var lblStyle = {fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED};
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'20px 20px 8px'}},
+      e('button', {onClick:onBack, style:{background:'none',border:'none',color:MUTED,fontSize:22,cursor:'pointer',padding:4,lineHeight:1}}, '←'),
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '⛳ Golf Wind Down'),
+        e('div', {style:{fontSize:12,color:MUTED}}, 'Historical Performance')
+      )
+    ),
+    e('div', {style:{padding:'12px 20px 32px',display:'flex',flexDirection:'column',gap:16}},
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+GL+'50'}},
+          e('div', {style:{...valStyle,background:'linear-gradient(135deg,'+GL+','+GL2+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
+          e('div', {style:lblStyle}, 'Current Streak'),
+          e('div', {style:{fontSize:10,color:GL,marginTop:4}}, currentStreak===1?'round':'rounds 🔥')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid '+GL+'30'}},
+          e('div', {style:{...valStyle,color:GL}}, bestStreak||'—'),
+          e('div', {style:lblStyle}, 'Best Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, bestStreak>1?bestStreak+' rounds':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+GL+'40'}},
+          e('div', {style:{...valStyle,color:GL}}, avgTime ? avgTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Avg Wind Down'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, avgTime?'minutes':'no data yet')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
+          e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime ? fastestTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Fastest Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, fastestTime?'personal best':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+GL2+'40'}},
+          e('div', {style:{...valStyle,color:GL2}}, completedDays.length ? rate30+'%' : '—'),
+          e('div', {style:lblStyle}, '30-Day Rate'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?dots.filter(function(d){return d.done;}).length+' of 30 days':'no data')
+        ),
+        e('div', {style:{...statStyle}},
+          e('div', {style:{...valStyle,color:GL}}, completedDays.length || '—'),
+          e('div', {style:lblStyle}, 'Total Rounds'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?'logged':'no rounds yet')
+        )
+      ),
+      e('div', {style:{...statStyle,textAlign:'left'}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Last 30 Days'),
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:5}},
+          ...dots.map(function(d,i){
+            return e('div', {key:i, title:d.dk, style:{aspectRatio:'1',borderRadius:5,background:d.done?'linear-gradient(135deg,'+GL+','+GL2+')':'#E8E8F0',boxShadow:d.done?'0 2px 8px '+GL+'40':'none'}});
+          })
+        ),
+        e('div', {style:{display:'flex',gap:16,marginTop:10}},
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'linear-gradient(135deg,'+GL+','+GL2+')'}}),
+            'Completed'
+          ),
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'#E8E8F0'}}),
+            'Missed'
+          )
+        )
+      ),
+      e('button', {onClick:onBack, style:{padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+GL+','+GL2+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+GL+'40'}}, '← Back to Dashboard')
+    )
+  );
+}
+
 // ─── CUSTOM ROUTINES ──────────────────────────────────────────────────────────
 
 function RoutineBuilder({onSave, onClose}) {
@@ -10552,6 +10786,9 @@ function App() {
   const [pwItems, setPwItems] = useState(() => load('pwItems') || DEFAULT_POST_WORKOUT_HABITS);
   const [cleaningPhase, setCleaningPhase] = useState('done');
   const [cleaningLog, setCleaningLog] = useState(() => load('cleaningLog') || {});
+  const [golfPhase, setGolfPhase] = useState('done');
+  const [golfLog, setGolfLog] = useState(() => load('golfLog') || {});
+  const [golfItems, setGolfItems] = useState(() => load('golfItems') || DEFAULT_GOLF_HABITS);
   const [customRoutines, setCustomRoutines] = useState(() => load('customRoutines') || []);
   const [customRoutineLogs, setCustomRoutineLogs] = useState(() => load('customRoutineLogs') || {});
   const [activeCustomRoutine, setActiveCustomRoutine] = useState(null); // {id, phase}
@@ -10705,7 +10942,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
@@ -10877,6 +11114,27 @@ function App() {
   }
   if(!splash && cleaningPhase === 'history') {
     return e(CleaningHistory, {onBack: function(){setCleaningPhase('done');}, clLog: cleaningLog});
+  }
+
+  if(!splash && golfPhase === 'greeting') {
+    return e(GolfGreeting, {onStart: function(){setGolfPhase('checklist');}});
+  }
+  if(!splash && golfPhase === 'checklist') {
+    return e(GolfChecklist, {
+      onComplete: function(){setGolfPhase('complete');},
+      onSkipToDashboard: function(){setGolfPhase('done');},
+      golfLog: golfLog, setGolfLog: setGolfLog,
+      golfItems: golfItems, setGolfItems: setGolfItems,
+    });
+  }
+  if(!splash && golfPhase === 'complete') {
+    return e(GolfComplete, {
+      onContinue: function(){setGolfPhase('done');},
+      golfLog: golfLog, golfItems: golfItems,
+    });
+  }
+  if(!splash && golfPhase === 'history') {
+    return e(GolfHistory, {onBack: function(){setGolfPhase('done');}, golfLog: golfLog});
   }
 
   if(!splash && activeCustomRoutine) {
