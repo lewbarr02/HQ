@@ -2548,8 +2548,6 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
   const [hardStopText, setHardStopText] = useState('');
   const [hardStopProjectId, setHardStopProjectId] = useState('');
   const [qlDate, setQlDate] = useState(td);
-  const [workoutNote, setWorkoutNote] = useState(() => localStorage.getItem('hq_wn_'+td)||'');
-  const [nutrition, setNutrition] = useState(() => localStorage.getItem('hq_nut_'+td)||null);
   const [water, setWater] = useState(() => {
     var v = parseInt(localStorage.getItem('hq_water_'+td)||'0');
     // Migrate old glass count (max 12) to percentage
@@ -2558,16 +2556,11 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
   const [sleep, setSleep] = useState(() => parseFloat(localStorage.getItem('hq_sleep_'+td)||'0'));
   const [wins, setWins] = useState(() => JSON.parse(localStorage.getItem('hq_wins_'+td)||'[]'));
   const [winDraft, setWinDraft] = useState('');
-  const [intentEditing, setIntentEditing] = useState(false);
-  const [intentFocusDraft, setIntentFocusDraft] = useState('');
-  const [intentEnergyDraft, setIntentEnergyDraft] = useState(null);
   const [emailToast, setEmailToast] = useState(null);
   const [emailToastId, setEmailToastId] = useState(null);
   const [emailToastTime, setEmailToastTime] = useState('');
 
   useEffect(() => {
-    setWorkoutNote(localStorage.getItem('hq_wn_'+qlDate)||'');
-    setNutrition(localStorage.getItem('hq_nut_'+qlDate)||null);
     var wv = parseInt(localStorage.getItem('hq_water_'+qlDate)||'0');
     setWater(wv <= 12 && wv > 0 ? Math.round(wv/12*100) : wv);
     setSleep(parseFloat(localStorage.getItem('hq_sleep_'+qlDate)||'0'));
@@ -3013,112 +3006,59 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
         })
       )
     ),
+    e('div', {className:'card', style:{marginBottom:12}},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '🏆 Small Wins'),
+        e('div', {style:{fontSize:11,color:MUTED}}, qlIsToday?'Today':qlDisplay)
+      ),
+      e('div', {style:{display:'flex',gap:6,marginBottom:wins.length>0?10:0}},
+        e('input', {
+          className:'input',
+          placeholder:'What did you get done today?',
+          value:winDraft,
+          onInput:function(ev){setWinDraft(ev.target.value);},
+          onKeyDown:function(ev){
+            if(ev.key==='Enter' && winDraft.trim()){
+              var next=[...wins,{id:Date.now().toString(),text:winDraft.trim()}];
+              setWins(next);localStorage.setItem('hq_wins_'+td,JSON.stringify(next));setWinDraft('');
+            }
+          },
+          style:{marginBottom:0,flex:1,fontSize:13},
+        }),
+        e('button', {
+          onClick:function(){
+            if(!winDraft.trim()) return;
+            var next=[...wins,{id:Date.now().toString(),text:winDraft.trim()}];
+            setWins(next);localStorage.setItem('hq_wins_'+td,JSON.stringify(next));setWinDraft('');
+          },
+          style:{padding:'10px 16px',borderRadius:12,border:'none',background:ACCENT,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',flexShrink:0}
+        }, '+')
+      ),
+      wins.length > 0 ? e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
+        ...wins.map(function(w){
+          return e('div', {key:w.id, style:{display:'flex',alignItems:'center',gap:8,background:'rgba(0,198,255,0.06)',borderRadius:10,padding:'8px 10px',border:'1px solid rgba(0,198,255,0.15)'}},
+            e('span', {style:{fontSize:14,flexShrink:0}}, '✅'),
+            e('span', {style:{fontSize:13,color:TEXT,flex:1,lineHeight:1.4}}, w.text),
+            e('button', {onClick:function(){
+              var next=wins.filter(function(x){return x.id!==w.id;});
+              setWins(next);localStorage.setItem('hq_wins_'+td,JSON.stringify(next));
+            }, style:{background:'none',border:'none',fontSize:14,color:MUTED,cursor:'pointer',padding:'0 2px',lineHeight:1}}, '×')
+          );
+        })
+      ) : null
+    ),
     e('div', {className:'card'},
       e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Daily Log'),
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '💧 Water Log'),
         e('div', {style:{display:'flex',alignItems:'center',gap:8}},
           e('button', {className:'time-btn', style:{width:32,height:32,fontSize:16}, onClick:()=>shiftQl(-1)}, '‹'),
           e('div', {style:{fontSize:12,fontWeight:700,color:qlIsToday?ACCENT:TEXT,minWidth:80,textAlign:'center'}}, qlIsToday?'Today':qlDisplay),
           e('button', {className:'time-btn', style:{width:32,height:32,fontSize:16,opacity:qlIsToday?0.3:1}, onClick:()=>shiftQl(1), disabled:qlIsToday}, '›')
         )
       ),
-      (function(){
-        var qlFocus  = routineLog && routineLog[qlDate+'_focus'];
-        var qlEnergy = routineLog && routineLog[qlDate+'_energy'];
-        var energyOpt = qlEnergy ? ENERGY_OPTS.find(function(o){return o.val===qlEnergy;}) : null;
-        var hasData = !!(qlFocus || qlEnergy);
-
-        function openEdit() {
-          setIntentFocusDraft(qlFocus || '');
-          setIntentEnergyDraft(qlEnergy || null);
-          setIntentEditing(true);
-        }
-        function saveIntent() {
-          var newLog = Object.assign({}, routineLog);
-          if(intentFocusDraft.trim()) newLog[qlDate+'_focus'] = intentFocusDraft.trim();
-          else delete newLog[qlDate+'_focus'];
-          if(intentEnergyDraft) newLog[qlDate+'_energy'] = intentEnergyDraft;
-          else delete newLog[qlDate+'_energy'];
-          setRoutineLog(newLog);
-          save('routineLog', newLog);
-          setIntentEditing(false);
-        }
-
-        if(intentEditing) {
-          return e('div', {style:{marginBottom:14,padding:'14px',background:'linear-gradient(135deg,'+ACCENT+'0D,'+PURPLE+'08)',borderRadius:14,border:'1.5px solid '+ACCENT+'40'}},
-            e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:ACCENT,marginBottom:10}}, '🌅 Morning Intention'),
-            e('div', {style:{display:'flex',justifyContent:'space-between',gap:6,marginBottom:12}},
-              ...ENERGY_OPTS.map(function(opt){
-                var sel = intentEnergyDraft === opt.val;
-                return e('button', {key:opt.val, onClick:function(){setIntentEnergyDraft(opt.val);},
-                  style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'8px 2px',borderRadius:12,border:'2px solid '+(sel?ACCENT:BORDER),background:sel?ACCENT+'12':'#fff',cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s'}},
-                  e('span',{style:{fontSize:22,lineHeight:1}},opt.emoji),
-                  e('span',{style:{fontSize:9,fontWeight:700,color:sel?ACCENT:MUTED}},opt.label)
-                );
-              })
-            ),
-            e('input', {
-              className:'input', style:{marginBottom:10,fontSize:13},
-              placeholder:"Today's #1 focus...",
-              value:intentFocusDraft,
-              onInput:function(ev){setIntentFocusDraft(ev.target.value);},
-              onKeyDown:function(ev){if(ev.key==='Enter')saveIntent();},
-              maxLength:80,
-              autoFocus:true,
-            }),
-            e('div', {style:{display:'flex',gap:8}},
-              e('button', {onClick:function(){setIntentEditing(false);}, style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:MUTED}}, 'Cancel'),
-              e('button', {onClick:saveIntent, style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+ACCENT+','+PURPLE+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
-            )
-          );
-        }
-
-        return e('div', {
-          onClick: openEdit,
-          style:{marginBottom:14,padding:'12px 14px',background:'linear-gradient(135deg,'+ACCENT+'0D,'+PURPLE+'08)',borderRadius:14,border:'1px solid '+ACCENT+'25',cursor:'pointer'}
-        },
-          e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom: hasData ? 8 : 0}},
-            e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:ACCENT}}, '🌅 Morning Intention'),
-            e('div', {style:{fontSize:10,fontWeight:700,color:ACCENT,opacity:0.7}}, hasData ? '✏️ Edit' : '+ Add')
-          ),
-          hasData ? e('div', {style:{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}},
-            energyOpt ? e('div', {style:{display:'flex',alignItems:'center',gap:5,padding:'4px 10px',borderRadius:20,background:'#fff',border:'1px solid '+BORDER}},
-              e('span',{style:{fontSize:16}}, energyOpt.emoji),
-              e('span',{style:{fontSize:11,fontWeight:700,color:TEXT}}, energyOpt.label)
-            ) : null,
-            qlFocus ? e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,flex:1,minWidth:0}},
-              e('span',{style:{color:MUTED,fontSize:11,fontWeight:600,marginRight:4}}, '#1:'),
-              qlFocus
-            ) : null
-          ) : e('div', {style:{fontSize:12,color:MUTED}}, 'Tap to add your energy + #1 focus for the day')
-        );
-      })(),
-      e('div', {style:{marginBottom:14}},
-        e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '✅ HABITS'),
-        e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
-          ...habits.map(h => {
-            const isDone=!!((habitLog[qlDate]||{})[h.id]) || (h.id==='h4' && (qlDate===td ? water : parseInt(localStorage.getItem('hq_water_'+qlDate)||'0')) >= 50);
-            return e('button', {key:h.id, onClick:()=>{
-              const log=habitLog[qlDate]||{};const next={...habitLog,[qlDate]:{...log,[h.id]:!log[h.id]}};setHabitLog(next);save('habitLog',next);
-            }, style:{display:'flex',alignItems:'center',gap:6,padding:'7px 12px',borderRadius:20,border:'1.5px solid '+(isDone?h.color:BORDER),background:isDone?h.color:CARD2,color:isDone?'#fff':MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},
-              h.emoji+' '+h.name+(isDone?' ✓':'')
-            );
-          })
-        )
-      ),
-      e('div', {style:{marginBottom:14}},
-        e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:6}}, '🏋️ WORKOUT NOTE'),
-        e('input', {className:'input', placeholder:'e.g. Push day — bench 185×5...', value:workoutNote, onInput:ev=>{setWorkoutNote(ev.target.value);localStorage.setItem('hq_wn_'+qlDate,ev.target.value);}, style:{marginBottom:0}})
-      ),
-      e('div', {style:{marginBottom:14}},
-        e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '🥗 NUTRITION'),
-        e('div', {style:{display:'flex',gap:6}},
-          ...NUTRI.map(o => e('button', {key:o.val, onClick:()=>{setNutrition(o.val);localStorage.setItem('hq_nut_'+qlDate,o.val);}, style:{flex:1,padding:'8px 4px',borderRadius:12,fontSize:11,fontWeight:700,border:'1.5px solid '+(nutrition===o.val?o.color:BORDER),background:nutrition===o.val?o.color+'15':CARD2,color:nutrition===o.val?o.color:MUTED,cursor:'pointer',fontFamily:'inherit'}}, o.label))
-        )
-      ),
-      e('div', {style:{marginBottom:14}},
+      e('div', {},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
-          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED}}, '💧 WATER — DAILY GALLON'),
+          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED}}, 'Daily Gallon'),
           water>=100 ? e('div', {style:{fontSize:11,fontWeight:700,color:'#00C864'}}, '✓ Complete!') : null
         ),
         e('div', {style:{display:'flex',justifyContent:'center',marginBottom:12}},
@@ -3140,52 +3080,6 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
             style:{padding:'8px 16px',borderRadius:12,border:'1.5px solid rgba(100,80,220,0.18)',background:CARD2,color:MUTED,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
           }, 'Reset') : null
         )
-      ),
-      e('div', {style:{marginBottom:14}},
-        e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '🏆 SMALL WINS'),
-        e('div', {style:{display:'flex',gap:6,marginBottom:8}},
-          e('input', {
-            className:'input',
-            placeholder:'What did you get done today?',
-            value:winDraft,
-            onInput:function(ev){setWinDraft(ev.target.value);},
-            onKeyDown:function(ev){
-              if(ev.key==='Enter' && winDraft.trim()){
-                var next=[...wins,{id:Date.now().toString(),text:winDraft.trim()}];
-                setWins(next);localStorage.setItem('hq_wins_'+qlDate,JSON.stringify(next));setWinDraft('');
-              }
-            },
-            style:{marginBottom:0,flex:1,fontSize:13},
-          }),
-          e('button', {
-            onClick:function(){
-              if(!winDraft.trim()) return;
-              var next=[...wins,{id:Date.now().toString(),text:winDraft.trim()}];
-              setWins(next);localStorage.setItem('hq_wins_'+qlDate,JSON.stringify(next));setWinDraft('');
-            },
-            style:{padding:'10px 16px',borderRadius:12,border:'none',background:ACCENT,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',flexShrink:0}
-          }, '+')
-        ),
-        wins.length > 0 ? e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
-          ...wins.map(function(w){
-            return e('div', {key:w.id, style:{display:'flex',alignItems:'center',gap:8,background:'rgba(0,198,255,0.06)',borderRadius:10,padding:'8px 10px',border:'1px solid rgba(0,198,255,0.15)'}},
-              e('span', {style:{fontSize:14,flexShrink:0}}, '✅'),
-              e('span', {style:{fontSize:13,color:TEXT,flex:1,lineHeight:1.4}}, w.text),
-              e('button', {onClick:function(){
-                var next=wins.filter(function(x){return x.id!==w.id;});
-                setWins(next);localStorage.setItem('hq_wins_'+qlDate,JSON.stringify(next));
-              }, style:{background:'none',border:'none',fontSize:14,color:MUTED,cursor:'pointer',padding:'0 2px',lineHeight:1}}, '×')
-            );
-          })
-        ) : null
-      ),
-      e('div', {},
-        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
-          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED}}, '😴 SLEEP'),
-          e('div', {style:{fontSize:13,fontWeight:800,color:PURPLE}}, sleep?sleep+'h':'—')
-        ),
-        e('input', {type:'range', min:0, max:12, step:0.5, value:sleep, onInput:ev=>{const n=parseFloat(ev.target.value);setSleep(n);localStorage.setItem('hq_sleep_'+qlDate,n);}, style:{background:'linear-gradient(to right,'+PURPLE+' '+(sleep/12*100)+'%, '+CARD2+' '+(sleep/12*100)+'%)'}}),
-        e('div', {style:{display:'flex',justifyContent:'space-between',fontSize:10,color:MUTED,marginTop:4}}, e('span',{},'0h'), e('span',{},'6h'), e('span',{},'12h'))
       ),
       (function(){
         var FLOW_COLOR = '#F59E0B';
