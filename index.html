@@ -2531,7 +2531,7 @@ function TimeBlockBanner({priorities}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -2783,6 +2783,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
     e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog, hqBacklog, setHqBacklog}),
     e(QuickShoppingCard, {groceries, setGroceries, returns, setReturns, setTab}),
     e(DateNightCard, {dateNights, setDateNights, setTab}),
+    e(GolfLeagueCard, {golfRounds, setTab}),
     e('div', {style:{marginBottom:12}},
       e('div', {style:{background:'#fff',border:'1px solid rgba(100,80,220,0.12)',borderRadius:18,padding:14}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
@@ -7772,6 +7773,532 @@ function GolfHistory({onBack, golfLog}) {
   );
 }
 
+// ─── GOLF LEAGUE ──────────────────────────────────────────────────────────────
+
+var GOLF_COURSES_DEF = {
+  'winston-lake': {name:'Winston Lake', short:'Winston', front:36, back:35, total:71},
+  'reynolds-park': {name:'Reynolds Park', short:'Reynolds', front:36, back:35, total:71},
+  'tanglewood':   {name:'Tanglewood',   short:'Tanglewood', front:36, back:36, total:72},
+};
+var GOLF_PLAYERS_DEF = [
+  {key:'lewis', label:'Lewis', color:'#00C6FF'},
+  {key:'dad',   label:'Dad',   color:'#F59E0B'},
+  {key:'will',  label:'Will',  color:'#10B981'},
+];
+
+function glCoursePar(courseKey, holes) {
+  var c = GOLF_COURSES_DEF[courseKey];
+  if(!c) return 72;
+  if(holes==='front9') return c.front;
+  if(holes==='back9') return c.back;
+  return c.total;
+}
+
+function glComputeStats(rounds) {
+  var stats = {};
+  GOLF_PLAYERS_DEF.forEach(function(p){ stats[p.key]={wins:0,second:0,third:0,points:0,rounds:[],currentStreak:0,bestStreak:0}; });
+  var sorted = (rounds||[]).slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
+  sorted.forEach(function(rnd){
+    var par = glCoursePar(rnd.course, rnd.holes||'full');
+    var scored = GOLF_PLAYERS_DEF.map(function(p){ var s=rnd.scores&&rnd.scores[p.key]; return (s!==''&&s!=null)?{key:p.key,score:Number(s)}:null; }).filter(Boolean);
+    if(scored.length < 2) return;
+    scored.sort(function(a,b){ return a.score-b.score; });
+    var minScore = scored[0].score;
+    var tiedWinners = scored.filter(function(x){ return x.score===minScore; });
+    scored.forEach(function(p,idx){
+      stats[p.key].rounds.push({score:p.score, par:par, date:rnd.date, course:rnd.course});
+      if(p.score===minScore){ if(tiedWinners.length===1){stats[p.key].wins++;stats[p.key].points+=3;}else{stats[p.key].points+=2;} }
+      else if(idx===tiedWinners.length){ stats[p.key].second++;stats[p.key].points+=1; }
+      else{ stats[p.key].third++; }
+    });
+  });
+  GOLF_PLAYERS_DEF.forEach(function(p){
+    var best=0,temp=0,curr=0;
+    sorted.forEach(function(rnd){
+      var sc=GOLF_PLAYERS_DEF.map(function(pl){var s=rnd.scores&&rnd.scores[pl.key];return(s!==''&&s!=null)?{key:pl.key,score:Number(s)}:null;}).filter(Boolean);
+      if(sc.length<2)return; sc.sort(function(a,b){return a.score-b.score;});
+      var tw=sc.filter(function(x){return x.score===sc[0].score;});
+      if(tw.length===1&&tw[0].key===p.key){temp++;if(temp>best)best=temp;}else temp=0;
+    });
+    var rev=sorted.slice().reverse();
+    for(var i=0;i<rev.length;i++){
+      var sc2=GOLF_PLAYERS_DEF.map(function(pl){var s=rev[i].scores&&rev[i].scores[pl.key];return(s!==''&&s!=null)?{key:pl.key,score:Number(s)}:null;}).filter(Boolean);
+      if(sc2.length<2)continue; sc2.sort(function(a,b){return a.score-b.score;});
+      var tw2=sc2.filter(function(x){return x.score===sc2[0].score;});
+      if(tw2.length===1&&tw2[0].key===p.key)curr++;else break;
+    }
+    stats[p.key].bestStreak=best; stats[p.key].currentStreak=curr;
+  });
+  return stats;
+}
+
+function glHandicap(playerKey, rounds) {
+  var pr=(rounds||[]).filter(function(r){var s=r.scores&&r.scores[playerKey];return s!==''&&s!=null;});
+  var last=pr.slice(-8); if(!last.length)return null;
+  var avg=last.reduce(function(a,r){return a+(Number(r.scores[playerKey])-glCoursePar(r.course,r.holes||'full'));},0)/last.length;
+  return (avg>=0?'+':'')+Math.round(avg*10)/10;
+}
+
+function glCourseAvg(playerKey, courseKey, rounds) {
+  var f=(rounds||[]).filter(function(r){var s=r.scores&&r.scores[playerKey];return r.course===courseKey&&s!==''&&s!=null;});
+  if(!f.length)return null;
+  return Math.round(f.reduce(function(a,r){return a+Number(r.scores[playerKey]);},0)/f.length*10)/10;
+}
+
+function glRoundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}
+
+function glExportPNG(golfRounds) {
+  var stats = glComputeStats(golfRounds);
+  var ranked = GOLF_PLAYERS_DEF.slice().sort(function(a,b){return (stats[b.key].points||0)-(stats[a.key].points||0);});
+  var rounds = golfRounds||[];
+  var lastRound = rounds.slice().sort(function(a,b){return b.date.localeCompare(a.date);})[0];
+  var medals = ['🥇','🥈','🥉'];
+  var courseKeys = Object.keys(GOLF_COURSES_DEF);
+
+  var canvas = document.createElement('canvas');
+  canvas.width=600; canvas.height=600;
+  var ctx = canvas.getContext('2d');
+
+  // Background
+  var grad=ctx.createLinearGradient(0,0,600,600);
+  grad.addColorStop(0,'#14532D'); grad.addColorStop(1,'#052E16');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,600,600);
+
+  // Subtle grid
+  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+  for(var gy=0;gy<600;gy+=40){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(600,gy);ctx.stroke();}
+
+  // Header
+  ctx.fillStyle='rgba(255,255,255,0.1)';
+  glRoundRect(ctx,20,20,560,72,14); ctx.fill();
+  ctx.fillStyle='white'; ctx.font='bold 26px -apple-system,system-ui,sans-serif';
+  ctx.fillText('⛳  Golf League', 40,58);
+  ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='13px -apple-system,system-ui,sans-serif';
+  ctx.fillText('2025 Season  •  '+rounds.length+' rounds played', 40,82);
+
+  // Season Standings
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px -apple-system,system-ui,sans-serif';
+  ctx.letterSpacing='2px'; ctx.fillText('SEASON STANDINGS', 24,116);
+  ranked.forEach(function(p,idx){
+    var s=stats[p.key]; var rowY=130+idx*72;
+    ctx.fillStyle='rgba(255,255,255,0.08)';
+    glRoundRect(ctx,20,rowY,560,62,12); ctx.fill();
+    // Accent bar
+    ctx.fillStyle=p.color; ctx.fillRect(20,rowY,4,62);
+    // Medal + name
+    ctx.font='22px sans-serif'; ctx.fillText(medals[idx],34,rowY+38);
+    ctx.fillStyle='white'; ctx.font='bold 18px -apple-system,system-ui,sans-serif';
+    ctx.fillText(p.label, 70,rowY+38);
+    // Stats
+    var cols=[
+      {label:'PTS', val:String(s.points)},
+      {label:'WINS', val:String(s.wins)},
+      {label:'STREAK', val:s.currentStreak>0?s.currentStreak+'🔥':'—'},
+      {label:'HDCP', val:glHandicap(p.key,rounds)||'—'},
+    ];
+    cols.forEach(function(col,ci){
+      var cx=230+ci*88;
+      ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='9px -apple-system,system-ui,sans-serif';
+      ctx.fillText(col.label, cx,rowY+24);
+      ctx.fillStyle=ci===0?p.color:'white'; ctx.font='bold 16px -apple-system,system-ui,sans-serif';
+      ctx.fillText(col.val, cx,rowY+44);
+    });
+  });
+
+  // Course Averages
+  var caY=360;
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px -apple-system,system-ui,sans-serif';
+  ctx.fillText('COURSE AVERAGES', 24,caY);
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  glRoundRect(ctx,20,caY+8,560,120,12); ctx.fill();
+  // Headers
+  var colW=140;
+  courseKeys.forEach(function(ck,ci){
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px sans-serif';
+    ctx.fillText(GOLF_COURSES_DEF[ck].short.toUpperCase(), 160+ci*colW, caY+30);
+  });
+  ranked.forEach(function(p,ri){
+    ctx.fillStyle='white'; ctx.font='bold 13px -apple-system,system-ui,sans-serif';
+    ctx.fillText(p.label, 30, caY+52+ri*30);
+    courseKeys.forEach(function(ck,ci){
+      var avg=glCourseAvg(p.key,ck,rounds);
+      var par=GOLF_COURSES_DEF[ck].total;
+      ctx.fillStyle=avg==null?'rgba(255,255,255,0.25)':(avg-par<=2?'#4ADE80':avg-par<=6?'#FCD34D':'#F87171');
+      ctx.font='13px -apple-system,system-ui,sans-serif';
+      ctx.fillText(avg!=null?avg+'  (+'+(Math.round((avg-par)*10)/10)+')':'—', 160+ci*colW, caY+52+ri*30);
+    });
+  });
+
+  // Last round
+  if(lastRound){
+    var lrY=500;
+    ctx.fillStyle='rgba(255,255,255,0.07)';
+    glRoundRect(ctx,20,lrY,560,46,10); ctx.fill();
+    var sc=GOLF_PLAYERS_DEF.map(function(p){var s=lastRound.scores&&lastRound.scores[p.key];return(s!==''&&s!=null)?{key:p.key,label:p.label,score:Number(s)}:null;}).filter(Boolean);
+    sc.sort(function(a,b){return a.score-b.score;});
+    var winner=sc[0];
+    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='12px -apple-system,system-ui,sans-serif';
+    ctx.fillText('Last Round: '+lastRound.date+'  at  '+GOLF_COURSES_DEF[lastRound.course].name, 30, lrY+20);
+    ctx.fillStyle='white'; ctx.font='bold 13px -apple-system,system-ui,sans-serif';
+    var scoreStr = sc.map(function(p){return p.label+': '+p.score;}).join('  |  ');
+    ctx.fillText(scoreStr, 30, lrY+38);
+  }
+
+  // Footer
+  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='11px -apple-system,system-ui,sans-serif';
+  ctx.fillText('HQ — Personal Life OS', 30, 590);
+  ctx.fillText(new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}), 500, 590);
+
+  canvas.toBlob(function(blob){
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],'x.png',{type:'image/png'})]})){
+      navigator.share({files:[new File([blob],'golf-league.png',{type:'image/png'})],title:'Golf League Leaderboard'}).catch(function(){});
+    } else {
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a'); a.href=url; a.download='golf-league.png'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){URL.revokeObjectURL(url);},2000);
+    }
+  },'image/png');
+}
+
+function GolfLeagueCard({golfRounds, setTab}) {
+  var rounds=golfRounds||[];
+  var stats=glComputeStats(rounds);
+  var ranked=GOLF_PLAYERS_DEF.slice().sort(function(a,b){return (stats[b.key].points||0)-(stats[a.key].points||0);});
+  var lastRound=rounds.slice().sort(function(a,b){return b.date.localeCompare(a.date);})[0];
+  var lastWinner=null;
+  if(lastRound){
+    var lsc=GOLF_PLAYERS_DEF.map(function(p){var s=lastRound.scores&&lastRound.scores[p.key];return(s!==''&&s!=null)?{key:p.key,label:p.label,score:Number(s)}:null;}).filter(Boolean);
+    lsc.sort(function(a,b){return a.score-b.score;}); if(lsc.length)lastWinner=lsc[0];
+  }
+  var medals=['🥇','🥈','🥉'];
+  return e('div',{style:{marginBottom:12}},
+    e('div',{style:{background:'linear-gradient(135deg,#15803D,#166534)',borderRadius:18,padding:16,cursor:'pointer'},onClick:function(){setTab('golf-league');}},
+      e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+        e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+          e('span',{style:{fontSize:24}},'⛳'),
+          e('div',{},
+            e('div',{style:{fontSize:14,fontWeight:800,color:'white'}},'Golf League'),
+            e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.65)'}},'2025 Season')
+          )
+        ),
+        e('div',{style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.65)',background:'rgba(255,255,255,0.15)',padding:'4px 10px',borderRadius:20}},rounds.length+' rounds')
+      ),
+      rounds.length===0
+        ? e('div',{style:{color:'rgba(255,255,255,0.65)',fontSize:13,textAlign:'center',padding:'8px 0'}},'No rounds yet — tap to log your first round')
+        : e('div',{},
+            e('div',{style:{display:'flex',gap:8,marginBottom:8}},
+              ranked.map(function(p,idx){
+                return e('div',{key:p.key,style:{flex:1,background:'rgba(255,255,255,0.12)',borderRadius:12,padding:'8px 4px',textAlign:'center'}},
+                  e('div',{style:{fontSize:18}},medals[idx]),
+                  e('div',{style:{fontSize:12,fontWeight:700,color:'white'}},p.label),
+                  e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.6)'}},stats[p.key].points+' pts')
+                );
+              })
+            ),
+            lastWinner ? e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.7)',textAlign:'center'}},
+              'Last win: ',e('span',{style:{fontWeight:700,color:'white'}},lastWinner.label),
+              '  •  ',e('span',{},(GOLF_COURSES_DEF[lastRound.course]||{}).short||lastRound.course)
+            ) : null
+          )
+    )
+  );
+}
+
+function GolfLeagueScreen({golfRounds, setGolfRounds, setTab}) {
+  var GL='#22C55E', GL2='#16A34A';
+  var [activeTab,setActiveTab]=React.useState('dashboard');
+  var [logCourse,setLogCourse]=React.useState('winston-lake');
+  var [logHoles,setLogHoles]=React.useState('full');
+  var [logDate,setLogDate]=React.useState(today());
+  var [logScores,setLogScores]=React.useState({lewis:'',dad:'',will:''});
+  var [deleteConfirm,setDeleteConfirm]=React.useState(null);
+
+  var rounds=golfRounds||[];
+  var stats=glComputeStats(rounds);
+  var ranked=GOLF_PLAYERS_DEF.slice().sort(function(a,b){return(stats[b.key].points||0)-(stats[a.key].points||0);});
+  var medals=['🥇','🥈','🥉'];
+  var courseKeys=Object.keys(GOLF_COURSES_DEF);
+
+  function saveRound(){
+    var hasScore=GOLF_PLAYERS_DEF.some(function(p){return logScores[p.key]!=='';});
+    if(!hasScore)return;
+    var newRound={id:'gr'+Date.now(),date:logDate,course:logCourse,holes:logHoles,scores:{lewis:logScores.lewis!==''?Number(logScores.lewis):null,dad:logScores.dad!==''?Number(logScores.dad):null,will:logScores.will!==''?Number(logScores.will):null}};
+    var next=[...rounds,newRound].sort(function(a,b){return a.date.localeCompare(b.date);});
+    setGolfRounds(next); save('golfRounds',next);
+    setLogScores({lewis:'',dad:'',will:''}); setActiveTab('dashboard');
+  }
+
+  function deleteRound(id){
+    var next=rounds.filter(function(r){return r.id!==id;});
+    setGolfRounds(next); save('golfRounds',next); setDeleteConfirm(null);
+  }
+
+  var sortedRounds=rounds.slice().sort(function(a,b){return b.date.localeCompare(a.date);});
+  var lastRound=sortedRounds[0];
+  var par=glCoursePar(logCourse,logHoles);
+
+  function renderDashboard(){
+    return e('div',{style:{padding:'0 16px 100px'}},
+      // Share button
+      e('button',{onClick:function(){glExportPNG(rounds);},style:{width:'100%',padding:'14px',borderRadius:14,background:'linear-gradient(135deg,'+GL+','+GL2+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',marginBottom:20,display:'flex',alignItems:'center',justifyContent:'center',gap:8}},
+        '📤  Share Leaderboard'
+      ),
+
+      // Standings
+      e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.2,color:MUTED,textTransform:'uppercase',marginBottom:10}},'Season Standings'),
+      e('div',{style:{display:'flex',flexDirection:'column',gap:10,marginBottom:24}},
+        ranked.map(function(p,idx){
+          var s=stats[p.key];
+          var hdcp=glHandicap(p.key,rounds);
+          return e('div',{key:p.key,style:{background:'white',border:'1.5px solid '+(idx===0?p.color+'50':'rgba(100,80,220,0.1)'),borderRadius:16,padding:'14px 16px',display:'flex',alignItems:'center',gap:14,position:'relative',overflow:'hidden'}},
+            e('div',{style:{position:'absolute',left:0,top:0,bottom:0,width:4,background:p.color}}),
+            e('div',{style:{fontSize:28,lineHeight:1}},medals[idx]),
+            e('div',{style:{flex:1}},
+              e('div',{style:{fontWeight:800,fontSize:16,color:TEXT}},p.label),
+              e('div',{style:{fontSize:11,color:MUTED,marginTop:2}},s.wins+' win'+(s.wins!==1?'s':'')+' • '+s.second+' 2nd • '+s.third+' 3rd')
+            ),
+            e('div',{style:{display:'flex',gap:16,alignItems:'center'}},
+              e('div',{style:{textAlign:'center'}},
+                e('div',{style:{fontSize:22,fontWeight:900,color:p.color}},s.points),
+                e('div',{style:{fontSize:9,color:MUTED,fontWeight:700,textTransform:'uppercase'}}, 'pts')
+              ),
+              e('div',{style:{textAlign:'center'}},
+                e('div',{style:{fontSize:15,fontWeight:700,color:TEXT}},s.currentStreak>0?s.currentStreak+'🔥':'—'),
+                e('div',{style:{fontSize:9,color:MUTED,fontWeight:700,textTransform:'uppercase'}},'streak')
+              ),
+              e('div',{style:{textAlign:'center'}},
+                e('div',{style:{fontSize:15,fontWeight:700,color:TEXT}},hdcp||'—'),
+                e('div',{style:{fontSize:9,color:MUTED,fontWeight:700,textTransform:'uppercase'}},'hdcp')
+              )
+            )
+          );
+        })
+      ),
+
+      // Recent round
+      lastRound ? e('div',{style:{marginBottom:24}},
+        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.2,color:MUTED,textTransform:'uppercase',marginBottom:10}},'Most Recent Round'),
+        e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:16,padding:'14px 16px'}},
+          e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
+            e('div',{style:{fontWeight:700,fontSize:14,color:TEXT}},GOLF_COURSES_DEF[lastRound.course].name),
+            e('div',{style:{fontSize:12,color:MUTED}},lastRound.date)
+          ),
+          e('div',{style:{display:'flex',gap:10}},
+            (function(){
+              var sc=GOLF_PLAYERS_DEF.map(function(p){var s=lastRound.scores&&lastRound.scores[p.key];return(s!==''&&s!=null)?{key:p.key,label:p.label,color:p.color,score:Number(s)}:null;}).filter(Boolean);
+              sc.sort(function(a,b){return a.score-b.score;});
+              return sc.map(function(p,i){
+                var rpar=glCoursePar(lastRound.course,lastRound.holes||'full');
+                var diff=p.score-rpar;
+                return e('div',{key:p.key,style:{flex:1,textAlign:'center',padding:'10px 6px',borderRadius:12,background:i===0?p.color+'15':'#F8F9FF',border:i===0?'2px solid '+p.color+'50':'1px solid rgba(100,80,220,0.08)'}},
+                  i===0?e('div',{style:{fontSize:12}},medals[0]):null,
+                  e('div',{style:{fontSize:20,fontWeight:900,color:i===0?p.color:TEXT}},p.score),
+                  e('div',{style:{fontSize:11,fontWeight:700,color:i===0?p.color:MUTED}},p.label),
+                  e('div',{style:{fontSize:10,color:diff>0?'#EF4444':diff<0?GL:MUTED}},diff>0?'+'+diff:diff===0?'E':diff)
+                );
+              });
+            })()
+          )
+        )
+      ) : null,
+
+      // Course Averages
+      e('div',{style:{marginBottom:24}},
+        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.2,color:MUTED,textTransform:'uppercase',marginBottom:10}},'Course Averages'),
+        e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:16,overflow:'hidden'}},
+          e('div',{style:{display:'grid',gridTemplateColumns:'80px 1fr 1fr 1fr',background:'rgba(100,80,220,0.05)',borderBottom:'1px solid rgba(100,80,220,0.08)'}},
+            e('div',{style:{padding:'8px 12px',fontSize:10,fontWeight:700,color:MUTED}},''),
+            courseKeys.map(function(ck){
+              return e('div',{key:ck,style:{padding:'8px 6px',fontSize:10,fontWeight:700,color:MUTED,textAlign:'center'}},GOLF_COURSES_DEF[ck].short);
+            })
+          ),
+          ranked.map(function(p){
+            return e('div',{key:p.key,style:{display:'grid',gridTemplateColumns:'80px 1fr 1fr 1fr',borderBottom:'1px solid rgba(100,80,220,0.06)'}},
+              e('div',{style:{padding:'10px 12px',fontSize:13,fontWeight:700,color:p.color}},p.label),
+              courseKeys.map(function(ck){
+                var avg=glCourseAvg(p.key,ck,rounds);
+                var cpar=GOLF_COURSES_DEF[ck].total;
+                var diff=avg!=null?Math.round((avg-cpar)*10)/10:null;
+                return e('div',{key:ck,style:{padding:'10px 6px',textAlign:'center'}},
+                  avg!=null
+                    ? e('div',{},
+                        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT}},avg),
+                        e('div',{style:{fontSize:10,color:diff>0?'#EF4444':diff<0?GL:MUTED}},diff>0?'+'+diff:diff===0?'E':diff)
+                      )
+                    : e('div',{style:{fontSize:13,color:MUTED}},'—')
+                );
+              })
+            );
+          })
+        )
+      ),
+
+      // Head to Head
+      e('div',{style:{marginBottom:24}},
+        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.2,color:MUTED,textTransform:'uppercase',marginBottom:10}},'Head to Head'),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          [['lewis','dad'],['lewis','will'],['dad','will']].map(function(pair){
+            var wins={};wins[pair[0]]=0;wins[pair[1]]=0;var ties=0;
+            rounds.forEach(function(r){
+              var s0=r.scores&&r.scores[pair[0]],s1=r.scores&&r.scores[pair[1]];
+              if(s0==null||s0===''||s1==null||s1==='')return;
+              s0=Number(s0);s1=Number(s1);
+              if(s0<s1)wins[pair[0]]++;else if(s1<s0)wins[pair[1]]++;else ties++;
+            });
+            var p0=GOLF_PLAYERS_DEF.find(function(p){return p.key===pair[0];});
+            var p1=GOLF_PLAYERS_DEF.find(function(p){return p.key===pair[1];});
+            return e('div',{key:pair.join('-'),style:{background:'white',border:'1px solid rgba(100,80,220,0.08)',borderRadius:14,padding:'12px 16px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+              e('div',{style:{textAlign:'center',minWidth:60}},
+                e('div',{style:{fontSize:20,fontWeight:900,color:p0.color}},wins[pair[0]]),
+                e('div',{style:{fontSize:12,fontWeight:700,color:p0.color}},p0.label)
+              ),
+              e('div',{style:{textAlign:'center',color:MUTED,fontSize:12}},
+                e('div',{style:{fontWeight:700,color:MUTED}},'vs'),
+                ties>0?e('div',{style:{fontSize:10,marginTop:2}},ties+' tie'+(ties!==1?'s':'')):null
+              ),
+              e('div',{style:{textAlign:'center',minWidth:60}},
+                e('div',{style:{fontSize:20,fontWeight:900,color:p1.color}},wins[pair[1]]),
+                e('div',{style:{fontSize:12,fontWeight:700,color:p1.color}},p1.label)
+              )
+            );
+          })
+        )
+      ),
+
+      // Best Round Records
+      e('div',{style:{marginBottom:24}},
+        e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.2,color:MUTED,textTransform:'uppercase',marginBottom:10}},'Personal Bests'),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          GOLF_PLAYERS_DEF.map(function(p){
+            var pr=rounds.filter(function(r){var s=r.scores&&r.scores[p.key];return s!==''&&s!=null;});
+            if(!pr.length)return e('div',{key:p.key,style:{background:'white',border:'1px solid rgba(100,80,220,0.08)',borderRadius:14,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}},
+              e('div',{style:{fontSize:14,fontWeight:700,color:p.color,minWidth:50}},p.label),
+              e('div',{style:{fontSize:13,color:MUTED}},'No rounds yet')
+            );
+            var best=pr.reduce(function(a,r){return Number(r.scores[p.key])<Number(a.scores[p.key])?r:a;});
+            var bpar=glCoursePar(best.course,best.holes||'full');
+            var diff=Number(best.scores[p.key])-bpar;
+            return e('div',{key:p.key,style:{background:'white',border:'1px solid rgba(100,80,220,0.08)',borderRadius:14,padding:'12px 16px',display:'flex',alignItems:'center',gap:12}},
+              e('div',{style:{fontSize:14,fontWeight:700,color:p.color,minWidth:50}},p.label),
+              e('div',{style:{flex:1}},
+                e('div',{style:{fontSize:12,color:MUTED}},GOLF_COURSES_DEF[best.course].name+' • '+best.date)
+              ),
+              e('div',{style:{textAlign:'right'}},
+                e('div',{style:{fontSize:18,fontWeight:900,color:TEXT}},best.scores[p.key]),
+                e('div',{style:{fontSize:10,color:diff>0?'#EF4444':diff<0?GL:MUTED}},diff>0?'+'+diff:diff===0?'E':diff)
+              )
+            );
+          })
+        )
+      )
+    );
+  }
+
+  function renderLog(){
+    return e('div',{style:{padding:'0 16px 100px'}},
+      e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:18,padding:16,marginBottom:16}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}},'Date'),
+        e('input',{type:'date',value:logDate,onChange:function(ev){setLogDate(ev.target.value);},style:{width:'100%',border:'1.5px solid rgba(100,80,220,0.2)',borderRadius:10,padding:'10px 12px',fontSize:14,fontFamily:'inherit',boxSizing:'border-box',outline:'none'}})
+      ),
+      e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:18,padding:16,marginBottom:16}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}},'Course'),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+          courseKeys.map(function(ck){
+            var sel=logCourse===ck;
+            return e('button',{key:ck,onClick:function(){setLogCourse(ck);},style:{padding:'12px 14px',borderRadius:12,border:sel?'2px solid '+GL:'1.5px solid rgba(100,80,220,0.15)',background:sel?GL+'15':'white',color:sel?GL:TEXT,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit',textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+              GOLF_COURSES_DEF[ck].name,
+              e('span',{style:{fontSize:11,color:MUTED}},'Par '+(GOLF_COURSES_DEF[ck].total))
+            );
+          })
+        )
+      ),
+      e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:18,padding:16,marginBottom:16}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:8}},'Holes Played'),
+        e('div',{style:{display:'flex',gap:8}},
+          [['full','Full 18  (Par '+glCoursePar(logCourse,'full')+')'],['front9','Front 9  (Par '+glCoursePar(logCourse,'front9')+')'],['back9','Back 9  (Par '+glCoursePar(logCourse,'back9')+')']].map(function(opt){
+            var sel=logHoles===opt[0];
+            return e('button',{key:opt[0],onClick:function(){setLogHoles(opt[0]);},style:{flex:1,padding:'10px 4px',borderRadius:10,border:sel?'2px solid '+GL:'1.5px solid rgba(100,80,220,0.15)',background:sel?GL+'15':'white',color:sel?GL:TEXT,fontWeight:700,fontSize:11,cursor:'pointer',fontFamily:'inherit'}},opt[1]);
+          })
+        )
+      ),
+      e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:18,padding:16,marginBottom:20}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:12}},'Scores  (Par '+par+')'),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+          GOLF_PLAYERS_DEF.map(function(p){
+            var val=logScores[p.key];
+            var diff=val!==''?Number(val)-par:null;
+            return e('div',{key:p.key,style:{display:'flex',alignItems:'center',gap:12}},
+              e('div',{style:{width:60,fontWeight:700,fontSize:14,color:p.color}},p.label),
+              e('input',{type:'number',inputMode:'numeric',placeholder:'—',value:val,onChange:function(ev){var nxt=Object.assign({},logScores);nxt[p.key]=ev.target.value;setLogScores(nxt);},style:{flex:1,border:'1.5px solid rgba(100,80,220,0.2)',borderRadius:10,padding:'10px 12px',fontSize:18,fontWeight:700,fontFamily:'inherit',outline:'none',textAlign:'center',color:TEXT}}),
+              diff!=null?e('div',{style:{width:40,fontSize:13,fontWeight:700,color:diff>0?'#EF4444':diff<0?GL:MUTED,textAlign:'right'}},diff>0?'+'+diff:diff===0?'E':diff):e('div',{style:{width:40}})
+            );
+          })
+        )
+      ),
+      e('button',{onClick:saveRound,style:{width:'100%',padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+GL+','+GL2+')',border:'none',color:'white',fontSize:16,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+GL+'40'}},
+        '+ Save Round'
+      )
+    );
+  }
+
+  function renderHistory(){
+    if(!sortedRounds.length) return e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}},'No rounds logged yet.');
+    return e('div',{style:{padding:'0 16px 100px'}},
+      sortedRounds.map(function(rnd){
+        var sc=GOLF_PLAYERS_DEF.map(function(p){var s=rnd.scores&&rnd.scores[p.key];return(s!==''&&s!=null)?{key:p.key,label:p.label,color:p.color,score:Number(s)}:null;}).filter(Boolean);
+        sc.sort(function(a,b){return a.score-b.score;});
+        var rpar=glCoursePar(rnd.course,rnd.holes||'full');
+        return e('div',{key:rnd.id,style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:16,padding:'14px 16px',marginBottom:10}},
+          e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+            e('div',{},
+              e('div',{style:{fontWeight:700,fontSize:14,color:TEXT}},GOLF_COURSES_DEF[rnd.course].name),
+              e('div',{style:{fontSize:11,color:MUTED}},rnd.date+(rnd.holes!=='full'?' • '+(rnd.holes==='front9'?'Front 9':'Back 9'):''))
+            ),
+            e('button',{onClick:function(){setDeleteConfirm(rnd.id);},style:{background:'none',border:'none',cursor:'pointer',fontSize:16,color:MUTED,padding:4}},'🗑️')
+          ),
+          e('div',{style:{display:'flex',gap:8}},
+            sc.map(function(p,i){
+              var diff=p.score-rpar;
+              return e('div',{key:p.key,style:{flex:1,textAlign:'center',padding:'8px 4px',borderRadius:10,background:i===0?p.color+'15':'#F8F9FF',border:i===0?'1.5px solid '+p.color+'40':'1px solid rgba(100,80,220,0.06)'}},
+                e('div',{style:{fontSize:16,fontWeight:800,color:i===0?p.color:TEXT}},p.score),
+                e('div',{style:{fontSize:11,fontWeight:600,color:i===0?p.color:MUTED}},p.label),
+                e('div',{style:{fontSize:10,color:diff>0?'#EF4444':diff<0?GL:MUTED}},diff>0?'+'+diff:diff===0?'E':diff)
+              );
+            })
+          ),
+          deleteConfirm===rnd.id ? e('div',{style:{marginTop:10,padding:'10px',background:'#FEF2F2',borderRadius:10,display:'flex',gap:8}},
+            e('div',{style:{flex:1,fontSize:13,color:'#EF4444',fontWeight:600}},'Delete this round?'),
+            e('button',{onClick:function(){deleteRound(rnd.id);},style:{padding:'6px 14px',borderRadius:8,background:'#EF4444',border:'none',color:'white',fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}},'Delete'),
+            e('button',{onClick:function(){setDeleteConfirm(null);},style:{padding:'6px 14px',borderRadius:8,background:'white',border:'1px solid rgba(100,80,220,0.2)',color:TEXT,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}},'Cancel')
+          ) : null
+        );
+      })
+    );
+  }
+
+  return e('div',{style:{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden',background:'#F7F8FC'}},
+    // Header
+    e('div',{style:{padding:'16px 16px 0',flexShrink:0}},
+      e('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
+        e('button',{onClick:function(){setTab('today');},style:{background:'none',border:'none',cursor:'pointer',fontSize:20,padding:0,color:MUTED,lineHeight:1}},'←'),
+        e('div',{style:{fontSize:22,fontWeight:900,color:TEXT}},'⛳ Golf League'),
+        e('div',{style:{marginLeft:'auto',fontSize:11,fontWeight:700,color:GL,background:GL+'15',padding:'4px 10px',borderRadius:20}},rounds.length+' rounds')
+      ),
+      e('div',{style:{display:'flex',gap:6,background:'rgba(100,80,220,0.06)',borderRadius:14,padding:4}},
+        [['dashboard','📊 Dashboard'],['log','+ Log Round'],['history','📋 History']].map(function(t){
+          var sel=activeTab===t[0];
+          return e('button',{key:t[0],onClick:function(){setActiveTab(t[0]);},style:{flex:1,padding:'9px 6px',borderRadius:10,border:'none',background:sel?'white':'transparent',color:sel?GL:MUTED,fontWeight:sel?700:600,fontSize:12,cursor:'pointer',fontFamily:'inherit',boxShadow:sel?'0 2px 8px rgba(0,0,0,0.08)':'none',transition:'all 0.15s'}},t[1]);
+        })
+      )
+    ),
+    e('div',{style:{flex:1,overflowY:'auto',paddingTop:16}},
+      activeTab==='dashboard'?renderDashboard():activeTab==='log'?renderLog():renderHistory()
+    )
+  );
+}
+
 // ─── CUSTOM ROUTINES ──────────────────────────────────────────────────────────
 
 function RoutineBuilder({onSave, onClose}) {
@@ -10892,6 +11419,7 @@ function App() {
   const [dateNights, setDateNights] = useState(() => load('dateNights') || []);
   const [homeItems, setHomeItems] = useState(() => load('homeItems') || []);
   const [returns, setReturns] = useState(() => load('returns') || []);
+  const [golfRounds, setGolfRounds] = useState(() => load('golfRounds') || []);
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
@@ -11030,11 +11558,12 @@ function App() {
     {id:'review',icon:'📊',label:'Review'},
     {id:'notifications',icon:'🔔',label:'Notifications'},
     {id:'data',icon:'💾',label:'Import / Export Data'},
+    {id:'golf-league',icon:'⛳',label:'Golf League'},
   ];
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
@@ -11045,6 +11574,7 @@ function App() {
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog,habits,habitLog,setHabitLog});
+      case 'golf-league': return e(GolfLeagueScreen, {golfRounds,setGolfRounds,setTab});
       case 'datenights': return e(DateNightsScreen, {dateNights,setDateNights,setTab});
       case 'homemaintenance': return e(HomeMaintenanceScreen, {homeItems,setHomeItems,setTab});
       case 'macros': return e(MacroScreen, {setTab});
