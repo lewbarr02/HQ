@@ -1092,7 +1092,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
         var availableRoutines = routineItems.filter(function(item){ return !scheduledIds.includes(item.id); });
         var availableHabits = (habits || []).filter(function(h){ return !scheduledIds.includes('habit-'+h.id); });
-        var untimedPriorities = (priorities || []).filter(function(p){ return !p.time && !scheduledIds.includes('priority-'+p.id); });
+        var untimedPriorities = (priorities || []).filter(function(p){ return !p.done && !p.time && !scheduledIds.includes('priority-'+p.id); });
 
         function SectionHeader(label, key, mt) {
           return e('div', {key:key, style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8,marginTop:mt||0}}, label);
