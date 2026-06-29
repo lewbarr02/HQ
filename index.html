@@ -188,7 +188,7 @@ async function unsubscribeFromPush() {
 function save(k,v){
   try{localStorage.setItem("hq_"+k,JSON.stringify(v));}catch{}
   if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return;
-  _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);});
+  _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);else localStorage.setItem('hq_lastCloudSync',new Date().toISOString());});
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
 function useDragSort(items, onReorder) {
@@ -2531,7 +2531,7 @@ function TimeBlockBanner({priorities}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -2742,22 +2742,21 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
               {key:'evening', emoji:'🌙', label:'Evening', done:!!(eveningLog&&eveningLog[td+'_done']), onClick:function(){setEveningPhase&&setEveningPhase('greeting');}, onHistory:function(){setEveningPhase('history');}, hasHistory:true},
               {key:'postworkout', emoji:'🏋️', label:'Post WO', done:!!(pwLog&&pwLog[td+'_done']),       onClick:function(){setPostWorkoutPhase&&setPostWorkoutPhase('greeting');}, onHistory:function(){setPostWorkoutPhase&&setPostWorkoutPhase('history');}, hasHistory:true},
               {key:'cleaning', emoji:'🧹', label:'Cleaning', done:!!(cleaningLog&&cleaningLog[td+'_done']), onClick:function(){setCleaningPhase&&setCleaningPhase('greeting');}, onHistory:function(){setCleaningPhase&&setCleaningPhase('history');}, hasHistory:true},
-              {key:'golf', emoji:'⛳', label:'Golf', color:'#22C55E', done:!!(golfLog&&golfLog[td+'_done']), onClick:function(){setGolfPhase&&setGolfPhase('greeting');}, onHistory:function(){setGolfPhase&&setGolfPhase('history');}, hasHistory:true},
             ];
             var customDefs = (customRoutines||[]).map(function(r){
               var rLog = (customRoutineLogs&&customRoutineLogs[r.id]) || {};
-              return {key:r.id, emoji:r.emoji, label:r.name, color:r.color, done:!!(rLog[td+'_done']), onClick:function(){setActiveCustomRoutine&&setActiveCustomRoutine({id:r.id,phase:'greeting'});}, hasHistory:false};
+              return {key:r.id, emoji:r.emoji, label:r.name, done:!!(rLog[td+'_done']), onClick:function(){setActiveCustomRoutine&&setActiveCustomRoutine({id:r.id,phase:'greeting'});}, hasHistory:false, isCustom:true, onDelete:function(ev){ev.stopPropagation();if(window.confirm('Delete "'+r.name+'" routine?')){var next=(customRoutines||[]).filter(function(x){return x.id!==r.id;});setCustomRoutines&&setCustomRoutines(next);save('customRoutines',next);}}};
             });
             var allDefs = routineDefs.concat(customDefs);
             return allDefs.map(function(r){
               var c = r.done ? DONE_C : TODO_C;
               return e('div', {key:r.key, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:60}, onClick:r.onClick},
-                e('div', {className:'habit-circle'+(r.done?' done':''), style:{borderColor:r.color||c, background:r.done?'white':'#FFF5F5'}},
+                e('div', {className:'habit-circle'+(r.done?' done':''), style:{borderColor:c, background:r.done?'white':'#FFF5F5'}},
                   e('span', {style:{fontSize:24}}, r.emoji),
-                  e('div', {style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:r.color||c,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, r.done?'✓':'!')
+                  e('div', {style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:c,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, r.done?'✓':'!')
                 ),
                 e('div', {style:{fontSize:10,fontWeight:700,color:r.done?TEXT:MUTED,textAlign:'center',lineHeight:1.2,maxWidth:60,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, r.label),
-                r.hasHistory ? e('button', {onClick:function(ev){ev.stopPropagation();r.onHistory&&r.onHistory();}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:0,marginTop:-2}}, '📊') : e('div',{style:{height:15}})
+                r.hasHistory ? e('button', {onClick:function(ev){ev.stopPropagation();r.onHistory&&r.onHistory();}, style:{fontSize:9,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:0,marginTop:-2}}, '📊') : r.isCustom ? e('button', {onClick:r.onDelete, style:{fontSize:9,fontWeight:700,color:'#EF4444',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:0,marginTop:-2}}, '✕ remove') : e('div',{style:{height:15}})
               );
             }).concat([
               e('div', {key:'add-routine', style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:60}, onClick:function(){setShowRoutineBuilder&&setShowRoutineBuilder(true);}},
@@ -5054,13 +5053,34 @@ function DataScreen({habits,habitLog,timeLog,goals,projects,notes,groceries,brai
     // Cloud sync
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '☁️ Cloud Sync'),
-      e('div', {style:{fontSize:13,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'HQ syncs automatically across devices. Use this once on your primary device to push all existing data to the cloud.'),
-      e('button', {className:'btn-primary', onClick:function(){
-        pushAllToSupabase().then(function(){
-          setStatus('✅ All data pushed to cloud! Other devices will sync on next load.');
-          setTimeout(function(){setStatus('');},4000);
-        });
-      }}, '☁️ Push This Device to Cloud')
+      e('div', {style:{fontSize:13,color:MUTED,marginBottom:8,lineHeight:1.5}}, 'Every save syncs to Supabase automatically. Use Push to force-upload all data from this device, or Restore to pull the latest cloud snapshot.'),
+      (function(){
+        var raw = localStorage.getItem('hq_lastCloudSync');
+        if(!raw) return e('div', {style:{fontSize:12,color:MUTED,marginBottom:12}}, 'Last sync: not yet synced on this device');
+        var d = new Date(raw);
+        var label = d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) + ' at ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        return e('div', {style:{fontSize:12,color:MUTED,marginBottom:12}}, '✅ Last synced: ' + label);
+      })(),
+      e('div', {style:{display:'flex',gap:10}},
+        e('button', {className:'btn-primary', style:{flex:1}, onClick:function(){
+          pushAllToSupabase().then(function(){
+            localStorage.setItem('hq_lastCloudSync', new Date().toISOString());
+            setStatus('✅ All data pushed to cloud!');
+            setTimeout(function(){setStatus('');},4000);
+          });
+        }}, '☁️ Push to Cloud'),
+        e('button', {className:'btn-primary', style:{flex:1,background:'linear-gradient(135deg,#7B2FFF,#4F46E5)'}, onClick:function(){
+          setStatus('⏳ Restoring from cloud…');
+          syncFromSupabase().then(function(){
+            localStorage.setItem('hq_lastCloudSync', new Date().toISOString());
+            setStatus('✅ Restored! Reloading…');
+            setTimeout(function(){ window.location.reload(); }, 1200);
+          }).catch(function(){
+            setStatus('❌ Restore failed — check your connection.');
+            setTimeout(function(){setStatus('');},4000);
+          });
+        }}, '🔄 Restore from Cloud')
+      )
     ),
 
     // Export
@@ -11318,10 +11338,12 @@ function App() {
   const [pwItems, setPwItems] = useState(() => load('pwItems') || DEFAULT_POST_WORKOUT_HABITS);
   const [cleaningPhase, setCleaningPhase] = useState('done');
   const [cleaningLog, setCleaningLog] = useState(() => load('cleaningLog') || {});
-  const [golfPhase, setGolfPhase] = useState('done');
-  const [golfLog, setGolfLog] = useState(() => load('golfLog') || {});
-  const [golfItems, setGolfItems] = useState(() => load('golfItems') || DEFAULT_GOLF_HABITS);
-  const [customRoutines, setCustomRoutines] = useState(() => load('customRoutines') || []);
+  const [customRoutines, setCustomRoutines] = useState(() => {
+    var r = load('customRoutines') || [];
+    var cleaned = r.filter(function(x){ return !(x.emoji==='⭐' && (x.name||'').toLowerCase().includes('golf')); });
+    if(cleaned.length !== r.length) save('customRoutines', cleaned);
+    return cleaned;
+  });
   const [customRoutineLogs, setCustomRoutineLogs] = useState(() => load('customRoutineLogs') || {});
   const [activeCustomRoutine, setActiveCustomRoutine] = useState(null); // {id, phase}
   const [showRoutineBuilder, setShowRoutineBuilder] = useState(false);
@@ -11476,7 +11498,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
@@ -11649,27 +11671,6 @@ function App() {
   }
   if(!splash && cleaningPhase === 'history') {
     return e(CleaningHistory, {onBack: function(){setCleaningPhase('done');}, clLog: cleaningLog});
-  }
-
-  if(!splash && golfPhase === 'greeting') {
-    return e(GolfGreeting, {onStart: function(){setGolfPhase('checklist');}});
-  }
-  if(!splash && golfPhase === 'checklist') {
-    return e(GolfChecklist, {
-      onComplete: function(){setGolfPhase('complete');},
-      onSkipToDashboard: function(){setGolfPhase('done');},
-      golfLog: golfLog, setGolfLog: setGolfLog,
-      golfItems: golfItems, setGolfItems: setGolfItems,
-    });
-  }
-  if(!splash && golfPhase === 'complete') {
-    return e(GolfComplete, {
-      onContinue: function(){setGolfPhase('done');},
-      golfLog: golfLog, golfItems: golfItems,
-    });
-  }
-  if(!splash && golfPhase === 'history') {
-    return e(GolfHistory, {onBack: function(){setGolfPhase('done');}, golfLog: golfLog});
   }
 
   if(!splash && activeCustomRoutine) {
