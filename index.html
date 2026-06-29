@@ -1009,7 +1009,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           return e(BlockItem, {key:'cal-'+ev.id, min:sMin, durationMin:Math.max(15, eMin-sMin), color:'#4285F4', label:'📅 '+ev.title, sublabel:fmt(s)+' – '+fmt(en)});
         }),
         ...scheduled.map(function(s) {
-          var blockColor = (s.id && s.id.startsWith('routine-')) ? ACCENT : s.color;
+          var blockColor = (s.id && s.id.startsWith('routine-')) ? '#EF4444' : s.color;
           function nudge(delta) {
             var newMin = Math.max(START_MIN, Math.min(END_MIN - s.durationMin, s.minute + delta));
             var next = scheduled.map(function(b){ return b.schedId === s.schedId ? Object.assign({}, b, {minute: newMin}) : b; });
