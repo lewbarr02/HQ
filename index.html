@@ -1139,7 +1139,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           ...savedTemplates.map(function(item){ return TemplateChip({item:item}); }),
 
           // Untimed priorities
-          untimedPriorities.length > 0 ? SectionHeader('Unscheduled', 'uph', 16) : null,
+          untimedPriorities.length > 0 ? SectionHeader('To-Do', 'uph', 16) : null,
           ...untimedPriorities.map(function(p){
             var item = {id:'priority-'+p.id, label:p.name, color:p.color||ACCENT, durationMin:45};
             return DraggableChip({key:item.id, item:item});
