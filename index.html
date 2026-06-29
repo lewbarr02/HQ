@@ -1148,7 +1148,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           // Habits
           availableHabits.length > 0 ? SectionHeader('Habits', 'hh', 16) : null,
           ...availableHabits.map(function(h){
-            var item = {id:'habit-'+h.id, label:h.name, color:h.color||ACCENT, durationMin:15};
+            var item = {id:'habit-'+h.id, label:(h.emoji ? h.emoji+' ' : '')+h.name, color:h.color||ACCENT, durationMin:15};
             return DraggableChip({key:item.id, item:item});
           }),
         ];
