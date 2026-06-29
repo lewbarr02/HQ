@@ -1141,7 +1141,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           // Untimed priorities
           untimedPriorities.length > 0 ? SectionHeader('To-Do', 'uph', 16) : null,
           ...untimedPriorities.map(function(p){
-            var item = {id:'priority-'+p.id, label:p.name, color:p.color||ACCENT, durationMin:45};
+            var item = {id:'priority-'+p.id, label:p.name, color:p.color||ACCENT, durationMin:p.duration||30};
             return DraggableChip({key:item.id, item:item});
           }),
 
@@ -2543,8 +2543,9 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
   ]);
   const [addingP, setAddingP] = useState(false);
   const [newPN, setNewPN] = useState(''), [newPC, setNewPC] = useState('Work'), [newPT, setNewPT] = useState('09:00');
-  const [newPD, setNewPD] = useState(45);
+  const [newPD, setNewPD] = useState(30);
   const [newPPID, setNewPPID] = useState('');
+  const [editDurId, setEditDurId] = useState(null);
   const [hardStopModal, setHardStopModal] = useState(null);
   const [hardStopText, setHardStopText] = useState('');
   const [hardStopProjectId, setHardStopProjectId] = useState('');
@@ -2812,7 +2813,25 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
         ),
         e('div', {style:{textAlign:'right',flexShrink:0}},
           e('div', {style:{fontSize:12,fontWeight:700,color:p.color}}, p.time||''),
-          p.duration ? e('div', {style:{fontSize:10,color:MUTED,fontWeight:600}}, p.duration>=60?(p.duration/60)+'h':p.duration+'m') : null
+          editDurId === p.id
+            ? e('select', {
+                value: p.duration||30,
+                onChange: function(ev){ savePriorities(priorities.map(function(x){return x.id===p.id?Object.assign({},x,{duration:parseInt(ev.target.value)}):x;})); setEditDurId(null); },
+                onBlur: function(){ setEditDurId(null); },
+                autoFocus: true,
+                style:{fontSize:11,borderRadius:6,border:'1.5px solid '+BORDER,padding:'2px 4px',fontFamily:'inherit',color:TEXT,background:'#fff'}
+              },
+              e('option',{value:15},'15m'),
+              e('option',{value:30},'30m'),
+              e('option',{value:45},'45m'),
+              e('option',{value:60},'1h'),
+              e('option',{value:90},'1.5h'),
+              e('option',{value:120},'2h')
+            )
+            : e('div', {
+                onClick: function(){ setEditDurId(p.id); },
+                style:{fontSize:10,color:MUTED,fontWeight:600,cursor:'pointer',padding:'2px 4px',borderRadius:4,background:CARD2}
+              }, (p.duration||30)>=60?((p.duration||30)/60)+'h':(p.duration||30)+'m')
         ),
         e('button', {onClick:()=>savePriorities(priorities.filter(x=>x.id!==p.id)), style:{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:16,padding:4}}, '✕')
       )),
@@ -2843,7 +2862,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
           e('button', {className:'btn-primary', onClick:()=>{
             if(!newPN.trim())return;
             savePriorities([...priorities,{id:Date.now().toString(),name:newPN,cat:newPC,time:newPT,duration:newPD,projectId:newPPID||null,done:false,color:CAT_COLORS[newPC]||MUTED}]);
-            setNewPN('');setNewPD(45);setNewPPID('');setAddingP(false);
+            setNewPN('');setNewPD(30);setNewPPID('');setAddingP(false);
           }}, 'Add')
         )
       ) : e('button', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:10,fontSize:13,fontWeight:700,color:ACCENT,cursor:'pointer',border:'none',background:'none',width:'100%',fontFamily:'inherit'},onClick:()=>setAddingP(true)},
