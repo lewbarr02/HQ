@@ -1078,7 +1078,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           setEditingPreset(null);
         }
         function PresetChip({item}) {
-          return e('div', {style:{position:'relative',marginBottom:8}},
+          return e('div', {key:item.id, style:{position:'relative',marginBottom:8}},
             DraggableChip({item:item, noMargin:true}),
             e('button', {
               onClick:function(ev){ ev.stopPropagation(); openEditPreset(item); },
@@ -1105,7 +1105,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
         function TemplateChip({item}) {
           return e('div', {
-            style:{position:'relative', marginBottom:8}
+            key:item.id, style:{position:'relative', marginBottom:8}
           },
             DraggableChip({key:item.id, item:item, noMargin:true}),
             e('button', {
@@ -1131,11 +1131,11 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
           // Presets
           SectionHeader('Presets', 'ph', 16),
-          ...presets.map(function(item){ return e(PresetChip, {key:item.id, item:item}); }),
+          ...presets.map(function(item){ return PresetChip({item:item}); }),
 
           // Saved templates
           savedTemplates.length > 0 ? SectionHeader('Saved Templates', 'th', 16) : null,
-          ...savedTemplates.map(function(item){ return e(TemplateChip, {key:item.id, item:item}); }),
+          ...savedTemplates.map(function(item){ return TemplateChip({item:item}); }),
 
           // Untimed priorities
           untimedPriorities.length > 0 ? SectionHeader('Unscheduled', 'uph', 16) : null,
