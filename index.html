@@ -844,6 +844,18 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
   }
 
+  function savePreset() {
+    if (!presetForm.label.trim()) return;
+    var next = presets.map(function(p){ return p.id === editingPreset.id ? Object.assign({}, p, {label:presetForm.label.trim(), color:presetForm.color, durationMin:presetForm.durationMin}) : p; });
+    setPresets(next); save('dayPresets', next);
+    setEditingPreset(null);
+  }
+  function deletePreset(id) {
+    var next = presets.filter(function(p){ return p.id !== id; });
+    setPresets(next); save('dayPresets', next);
+    setEditingPreset(null);
+  }
+
   function DraggableChip({item, forceAccent, noMargin}) {
     var chipColor = forceAccent ? ACCENT : (item.color || ACCENT);
     return e('div', {
@@ -1065,17 +1077,6 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         function openEditPreset(item) {
           setEditingPreset(item);
           setPresetForm({label: item.label, color: item.color, durationMin: item.durationMin});
-        }
-        function savePreset() {
-          if(!presetForm.label.trim()) return;
-          var next = presets.map(function(p){ return p.id===editingPreset.id ? Object.assign({},p,{label:presetForm.label.trim(),color:presetForm.color,durationMin:presetForm.durationMin}) : p; });
-          setPresets(next); save('dayPresets', next);
-          setEditingPreset(null);
-        }
-        function deletePreset(id) {
-          var next = presets.filter(function(p){ return p.id!==id; });
-          setPresets(next); save('dayPresets', next);
-          setEditingPreset(null);
         }
         function PresetChip({item}) {
           return e('div', {key:item.id, style:{position:'relative',marginBottom:8}},
