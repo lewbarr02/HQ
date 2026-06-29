@@ -500,6 +500,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [presets, setPresets] = useState(function(){ return load('dayPresets') || DEFAULT_PRESETS; });
   const [editingPreset, setEditingPreset] = useState(null);
   const [presetForm, setPresetForm] = useState({label:'', color:'#10B981', durationMin:30});
+  const [collapsedSections, setCollapsedSections] = useState(() => load('dayCollapsed') || {});
   const timelineRef = useRef(null);
 
   function doCalSync(showMsg) {
@@ -1095,8 +1096,16 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         var untimedPriorities = (priorities || []).filter(function(p){ return !p.done && !p.time && !scheduledIds.includes('priority-'+p.id); });
 
         function SectionHeader(label, key, mt) {
-          return e('div', {key:key, style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8,marginTop:mt||0}}, label);
+          var collapsed = !!collapsedSections[key];
+          return e('button', {key:key, onClick:function(){
+            var next = Object.assign({}, collapsedSections, {[key]: !collapsed});
+            setCollapsedSections(next); save('dayCollapsed', next);
+          }, style:{display:'flex',alignItems:'center',justifyContent:'space-between',width:'100%',background:'none',border:'none',cursor:'pointer',padding:0,marginBottom:collapsed?4:8,marginTop:mt||0,fontFamily:'inherit'}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, label),
+            e('span', {style:{fontSize:10,color:MUTED,transition:'transform 0.2s',display:'inline-block',transform:collapsed?'rotate(-90deg)':'rotate(0deg)'}}, '▾')
+          );
         }
+        function isColl(key){ return !!collapsedSections[key]; }
 
         function deleteTemplate(tid) {
           var next = savedTemplates.filter(function(t){ return t.id !== tid; });
@@ -1126,31 +1135,31 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             'Custom Block'
           ),
 
-          // Routines — top of list
+          // Routines
           SectionHeader('Routines', 'rh', 0),
-          ...availableRoutines.map(function(item){ return DraggableChip({key:item.id, item:item}); }),
+          ...(isColl('rh') ? [] : availableRoutines.map(function(item){ return DraggableChip({key:item.id, item:item}); })),
 
           // Presets
           SectionHeader('Presets', 'ph', 16),
-          ...presets.map(function(item){ return PresetChip({item:item}); }),
+          ...(isColl('ph') ? [] : presets.map(function(item){ return PresetChip({item:item}); })),
 
           // Saved templates
           savedTemplates.length > 0 ? SectionHeader('Saved Templates', 'th', 16) : null,
-          ...savedTemplates.map(function(item){ return TemplateChip({item:item}); }),
+          ...(isColl('th') ? [] : savedTemplates.map(function(item){ return TemplateChip({item:item}); })),
 
-          // Untimed priorities
+          // To-Do
           untimedPriorities.length > 0 ? SectionHeader('To-Do', 'uph', 16) : null,
-          ...untimedPriorities.map(function(p){
+          ...(isColl('uph') ? [] : untimedPriorities.map(function(p){
             var item = {id:'priority-'+p.id, label:'✓ '+p.name, color:'#00C6FF', durationMin:p.duration||30};
             return DraggableChip({key:item.id, item:item});
-          }),
+          })),
 
           // Habits
           availableHabits.length > 0 ? SectionHeader('Habits', 'hh', 16) : null,
-          ...availableHabits.map(function(h){
+          ...(isColl('hh') ? [] : availableHabits.map(function(h){
             var item = {id:'habit-'+h.id, label:(h.emoji ? h.emoji+' ' : '')+h.name, color:h.color||ACCENT, durationMin:15};
             return DraggableChip({key:item.id, item:item});
-          }),
+          })),
         ];
       })(),
       e('div', {style:{height:40}})
