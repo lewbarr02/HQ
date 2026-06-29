@@ -2828,10 +2828,10 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
               e('option',{value:90},'1.5h'),
               e('option',{value:120},'2h')
             )
-            : e('div', {
+            : e('button', {
                 onClick: function(){ setEditDurId(p.id); },
-                style:{fontSize:10,color:MUTED,fontWeight:600,cursor:'pointer',padding:'2px 4px',borderRadius:4,background:CARD2}
-              }, (p.duration||30)>=60?((p.duration||30)/60)+'h':(p.duration||30)+'m')
+                style:{fontSize:11,color:ACCENT,fontWeight:700,cursor:'pointer',padding:'3px 8px',borderRadius:20,border:'1.5px solid '+ACCENT+'50',background:ACCENT+'0D',fontFamily:'inherit',display:'flex',alignItems:'center',gap:3,flexShrink:0}
+              }, (p.duration||30)>=60?((p.duration||30)/60)+'h':(p.duration||30)+'m', ' ✏️')
         ),
         e('button', {onClick:()=>savePriorities(priorities.filter(x=>x.id!==p.id)), style:{background:'none',border:'none',color:MUTED,cursor:'pointer',fontSize:16,padding:4}}, '✕')
       )),
