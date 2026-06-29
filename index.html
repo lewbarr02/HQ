@@ -986,8 +986,8 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             e('div', {style:{flex:1,height:'0.5px',background: isNow?ACCENT+'60':'rgba(100,80,220,0.08)'}})
           );
         }),
-        mStartMin ? e(BlockItem, {key:'morning', min:mStartMin, durationMin: mDoneMin ? mDoneMin - mStartMin : 30, color:ACCENT, label:'☀️ Morning Routine', sublabel: mDone ? ('Done ' + mDone) : 'In progress', done:!!mDoneMin, onClick:()=>setMorningPhase('history')}) : null,
-        eStartMin ? e(BlockItem, {key:'evening', min:eStartMin, durationMin: eDoneMin ? eDoneMin - eStartMin : 30, color:NIGHT, label:'🌙 Evening Routine', sublabel: eDone ? ('Done ' + eDone) : 'In progress', done:!!eDoneMin, onClick:()=>setEveningPhase('history')}) : null,
+        mStartMin ? e(BlockItem, {key:'morning', min:mStartMin, durationMin: mDoneMin ? mDoneMin - mStartMin : 30, color:'#EF4444', label:'☀️ Morning Routine', sublabel: mDone ? ('Done ' + mDone) : 'In progress', done:!!mDoneMin, onClick:()=>setMorningPhase('history')}) : null,
+        eStartMin ? e(BlockItem, {key:'evening', min:eStartMin, durationMin: eDoneMin ? eDoneMin - eStartMin : 30, color:'#EF4444', label:'🌙 Evening Routine', sublabel: eDone ? ('Done ' + eDone) : 'In progress', done:!!eDoneMin, onClick:()=>setEveningPhase('history')}) : null,
         ...todayPriorities.map(p => {
           var min = parseTimeToMin(p.time);
           if (!min || min < START_MIN || min >= END_MIN) return null;
