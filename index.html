@@ -1141,7 +1141,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           // Untimed priorities
           untimedPriorities.length > 0 ? SectionHeader('To-Do', 'uph', 16) : null,
           ...untimedPriorities.map(function(p){
-            var item = {id:'priority-'+p.id, label:p.name, color:p.color||ACCENT, durationMin:p.duration||30};
+            var item = {id:'priority-'+p.id, label:'✓ '+p.name, color:'#00C6FF', durationMin:p.duration||30};
             return DraggableChip({key:item.id, item:item});
           }),
 
