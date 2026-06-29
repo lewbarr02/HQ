@@ -2531,7 +2531,7 @@ function TimeBlockBanner({priorities}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -2742,6 +2742,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
               {key:'evening', emoji:'🌙', label:'Evening', done:!!(eveningLog&&eveningLog[td+'_done']), onClick:function(){setEveningPhase&&setEveningPhase('greeting');}, onHistory:function(){setEveningPhase('history');}, hasHistory:true},
               {key:'postworkout', emoji:'🏋️', label:'Post WO', done:!!(pwLog&&pwLog[td+'_done']),       onClick:function(){setPostWorkoutPhase&&setPostWorkoutPhase('greeting');}, onHistory:function(){setPostWorkoutPhase&&setPostWorkoutPhase('history');}, hasHistory:true},
               {key:'cleaning', emoji:'🧹', label:'Cleaning', done:!!(cleaningLog&&cleaningLog[td+'_done']), onClick:function(){setCleaningPhase&&setCleaningPhase('greeting');}, onHistory:function(){setCleaningPhase&&setCleaningPhase('history');}, hasHistory:true},
+              {key:'golf', emoji:'⛳', label:'Golf WD', done:!!(golfLog&&golfLog[td+'_done']), onClick:function(){setGolfPhase&&setGolfPhase('greeting');}, onHistory:function(){setGolfPhase&&setGolfPhase('history');}, hasHistory:true},
             ];
             var customDefs = (customRoutines||[]).map(function(r){
               var rLog = (customRoutineLogs&&customRoutineLogs[r.id]) || {};
@@ -11355,6 +11356,9 @@ function App() {
   const [homeItems, setHomeItems] = useState(() => load('homeItems') || []);
   const [returns, setReturns] = useState(() => load('returns') || []);
   const [golfRounds, setGolfRounds] = useState(() => load('golfRounds') || []);
+  const [golfLog, setGolfLog] = useState(() => load('golfLog') || {});
+  const [golfItems, setGolfItems] = useState(() => load('golfItems') || DEFAULT_GOLF_HABITS);
+  const [golfPhase, setGolfPhase] = useState('done');
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
@@ -11498,7 +11502,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
@@ -11671,6 +11675,27 @@ function App() {
   }
   if(!splash && cleaningPhase === 'history') {
     return e(CleaningHistory, {onBack: function(){setCleaningPhase('done');}, clLog: cleaningLog});
+  }
+
+  if(!splash && golfPhase === 'greeting') {
+    return e(GolfGreeting, {onStart: function(){setGolfPhase('checklist');}});
+  }
+  if(!splash && golfPhase === 'checklist') {
+    return e(GolfChecklist, {
+      onComplete: function(){setGolfPhase('complete');},
+      onSkipToDashboard: function(){setGolfPhase('done');},
+      golfLog: golfLog, setGolfLog: setGolfLog,
+      golfItems: golfItems, setGolfItems: setGolfItems,
+    });
+  }
+  if(!splash && golfPhase === 'complete') {
+    return e(GolfComplete, {
+      onContinue: function(){setGolfPhase('done');},
+      golfLog: golfLog, golfItems: golfItems,
+    });
+  }
+  if(!splash && golfPhase === 'history') {
+    return e(GolfHistory, {onBack: function(){setGolfPhase('done');}, golfLog: golfLog});
   }
 
   if(!splash && activeCustomRoutine) {
