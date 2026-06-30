@@ -1360,9 +1360,9 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         e('div', {style:{marginBottom:14}},
           e('div', {style:{fontSize:12,fontWeight:600,color:MUTED,marginBottom:8}}, 'DURATION'),
           e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
-            ...[15,30,45,60,90,120].map(function(min){
+            ...[15,30,45,60,90,120,180,240].map(function(min){
               var active = presetForm.durationMin === min;
-              var label = min<60 ? min+'m' : (min===60?'1h':min===90?'1.5h':'2h');
+              var label = min<60 ? min+'m' : (min===60?'1h':min===90?'1.5h':min===120?'2h':min===180?'3h':'4h');
               return e('button', {key:min, onClick:function(){setPresetForm(function(f){return Object.assign({},f,{durationMin:min});});},
                 style:{padding:'10px 14px',borderRadius:20,border:'1.5px solid '+(active?presetForm.color:BORDER),background:active?presetForm.color:'#F8FAFC',color:active?'white':TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',flex:'1 0 auto',minWidth:52,transition:'all 0.15s'}
               }, label);
