@@ -502,7 +502,18 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     {id:'preset-commute',  label:'🚗 Commute',       color:MUTED,     durationMin:30},
     {id:'preset-buildaday',label:'🏗️ Build-a-Day',   color:'#F97316', durationMin:30},
   ];
-  const [presets, setPresets] = useState(function(){ return load('dayPresets') || DEFAULT_PRESETS; });
+  const [presets, setPresets] = useState(function(){
+    var saved = load('dayPresets') || DEFAULT_PRESETS;
+    var toInject = [
+      {id:'preset-buildaday', label:'🏗️ Build-a-Day', color:'#F97316', durationMin:30},
+    ];
+    var changed = false;
+    toInject.forEach(function(p){
+      if (!saved.find(function(s){ return s.id === p.id; })) { saved = saved.concat([p]); changed = true; }
+    });
+    if (changed) save('dayPresets', saved);
+    return saved;
+  });
   const [editingPreset, setEditingPreset] = useState(null);
   const [presetForm, setPresetForm] = useState({label:'', color:'#10B981', durationMin:30});
   const [collapsedSections, setCollapsedSections] = useState(() => load('dayCollapsed') || {});
