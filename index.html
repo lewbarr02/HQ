@@ -976,6 +976,16 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             title: 'Export to calendar file',
             style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:MUTED,flexShrink:0,marginRight:4}
           }, '📤 Export'),
+          e('button', {
+            onClick: function(){
+              if (!window.confirm('Clear all blocks from today\'s timeline?')) return;
+              setScheduled([]);
+              save('dayScheduled', []);
+              var sl = load('scheduledLog') || {}; sl[today()] = []; save('scheduledLog', sl);
+            },
+            title: 'Clear timeline',
+            style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid #EF444440',background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#EF4444',flexShrink:0,marginRight:4}
+          }, '🗑 Clear'),
           ViewToggle({})
         ),
         priorityBarEl
