@@ -500,6 +500,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     {id:'preset-meeting',  label:'👥 Meeting',       color:'#EC4899', durationMin:45},
     {id:'preset-moonshot', label:'🚀 Moonshot Work', color:'#EF4444', durationMin:90},
     {id:'preset-commute',  label:'🚗 Commute',       color:MUTED,     durationMin:30},
+    {id:'preset-buildaday',label:'🏗️ Build-a-Day',   color:'#F97316', durationMin:30},
   ];
   const [presets, setPresets] = useState(function(){ return load('dayPresets') || DEFAULT_PRESETS; });
   const [editingPreset, setEditingPreset] = useState(null);
