@@ -506,6 +506,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var saved = load('dayPresets') || DEFAULT_PRESETS;
     var toInject = [
       {id:'preset-buildaday', label:'🏗️ Build-a-Day', color:'#F97316', durationMin:30},
+      {id:'preset-chuck',     label:'👧 Chuck',        color:'#EC4899', durationMin:120},
     ];
     var changed = false;
     toInject.forEach(function(p){
