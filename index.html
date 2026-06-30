@@ -480,6 +480,8 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [calEvents, setCalEvents] = useState([]);
   const [calSyncMsg, setCalSyncMsg] = useState('');
   const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
+  const [undoSchedule, setUndoSchedule] = useState(null);
+  const undoTimerRef = useRef(null);
   const [dragItem, setDragItem] = useState(null);
   const dragItemRef = useRef(null);
   const [dragOverMinute, setDragOverMinute] = useState(null);
@@ -979,9 +981,13 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           e('button', {
             onClick: function(){
               if (!window.confirm('Clear all blocks from today\'s timeline?')) return;
+              var snapshot = scheduled.slice();
               setScheduled([]);
               save('dayScheduled', []);
               var sl = load('scheduledLog') || {}; sl[today()] = []; save('scheduledLog', sl);
+              setUndoSchedule(snapshot);
+              if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+              undoTimerRef.current = setTimeout(function(){ setUndoSchedule(null); }, 10000);
             },
             title: 'Clear timeline',
             style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid #EF444440',background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#EF4444',flexShrink:0,marginRight:4}
@@ -1081,6 +1087,30 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     );
   }
 
+  // Undo toast
+  var UndoToast = undoSchedule ? e('div', {style:{
+    position:'fixed', bottom:80, left:'50%', transform:'translateX(-50%)', zIndex:9999,
+    background:'#1A1833', color:'white', borderRadius:14, padding:'12px 18px',
+    display:'flex', alignItems:'center', gap:12, boxShadow:'0 4px 20px rgba(0,0,0,0.3)',
+    fontSize:13, fontWeight:600, whiteSpace:'nowrap',
+  }},
+    e('span', {}, '🗑 Timeline cleared'),
+    e('button', {
+      onClick: function(){
+        if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+        setScheduled(undoSchedule);
+        save('dayScheduled', undoSchedule);
+        var sl = load('scheduledLog') || {}; sl[today()] = undoSchedule; save('scheduledLog', sl);
+        setUndoSchedule(null);
+      },
+      style:{background:ACCENT, border:'none', borderRadius:8, color:'#1A1833', padding:'6px 14px', fontSize:13, fontWeight:800, cursor:'pointer', fontFamily:'inherit'}
+    }, 'Undo'),
+    e('button', {
+      onClick: function(){ if (undoTimerRef.current) clearTimeout(undoTimerRef.current); setUndoSchedule(null); },
+      style:{background:'rgba(255,255,255,0.12)', border:'none', borderRadius:8, color:'white', padding:'6px 10px', fontSize:12, cursor:'pointer', fontFamily:'inherit'}
+    }, '✕')
+  ) : null;
+
   // Floating ghost that follows finger during touch drag
   var GhostOverlay = ghostPos ? e('div', {style:{
     position:'fixed', left: ghostPos.x - 80, top: ghostPos.y - 20,
@@ -1093,12 +1123,14 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   if (!splitView) {
     return e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}},
       GhostOverlay,
+      UndoToast,
       TimelinePanel({fullWidth: true})
     );
   }
 
   return e('div', {style:{flex:1, display:'flex', overflow:'hidden', position:'relative'}},
     GhostOverlay,
+    UndoToast,
 
     // LEFT PANEL — draggable items
     e('div', {style:{width:210, flexShrink:0, borderRight:'1px solid '+BORDER, overflowY:'auto', padding:'16px 12px', background:'#FAFAFE'}},
