@@ -475,6 +475,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   });
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
+  const [editActionId, setEditActionId] = useState(null);
   const [calEvents, setCalEvents] = useState([]);
   const [calSyncMsg, setCalSyncMsg] = useState('');
   const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
@@ -666,10 +667,15 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var stateColor = STATE_COLORS[a.state] || '#EF4444';
     var emoji = a.emoji || null;
     var initials = a.name.slice(0,2).toUpperCase();
-    return e('div', {key:'ai-'+a.id, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:3,flexShrink:0,width:cs.w}},
+    function openEdit(ev) {
+      ev.stopPropagation();
+      setEditActionId(a.id);
+      setActionForm({name:a.name, emoji:a.emoji||'', tier:a.tier||'primary', timeOfDay:a.timeOfDay||'am', coveredBy:a.coveredBy||[]});
+      setShowActionModal(true);
+    }
+    return e('div', {key:'ai-'+a.id, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:3,flexShrink:0,width:cs.w,position:'relative'}},
       e('div', {
         onClick: function(){ tapActionItem(a.id); },
-        onContextMenu: function(ev){ ev.preventDefault(); removeActionItem(a.id); },
         style:{
           position:'relative', width:cs.sz, height:cs.sz, borderRadius:'50%',
           background: stateColor+'18',
@@ -690,14 +696,22 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           background:'#F59E0B', border:'2px solid white',
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:8, color:'white', fontWeight:800, lineHeight:1,
-        }}, '📅') : null
+        }}, '📅') : null,
+        e('button', {
+          onClick: function(ev){ ev.stopPropagation(); removeActionItem(a.id); },
+          style:{position:'absolute',top:-5,left:-5,width:16,height:16,borderRadius:'50%',background:'#EF4444',border:'2px solid white',cursor:'pointer',color:'white',fontSize:9,lineHeight:'12px',textAlign:'center',padding:0,fontFamily:'inherit',zIndex:5,touchAction:'auto'}
+        }, '✕')
       ),
-      cs.lbl > 0 ? e('div', {style:{
-        fontSize:cs.lbl, fontWeight:600, color:stateColor,
-        textAlign:'center', lineHeight:1.2, maxWidth:cs.w,
-        overflow:'hidden', wordBreak:'break-word',
-        display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',
-      }}, a.name) : null
+      cs.lbl > 0 ? e('div', {
+        onClick: openEdit,
+        style:{
+          fontSize:cs.lbl, fontWeight:600, color:stateColor,
+          textAlign:'center', lineHeight:1.2, maxWidth:cs.w,
+          overflow:'hidden', wordBreak:'break-word',
+          display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',
+          cursor:'pointer', textDecoration:'underline dotted',
+        }
+      }, a.name) : e('button', {onClick:openEdit, style:{background:'none',border:'none',cursor:'pointer',fontSize:9,color:MUTED,padding:0,fontFamily:'inherit'}}, '✏️')
     );
   }
 
@@ -1168,7 +1182,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     // Action Item modal
     showActionModal ? e('div', {onClick:()=>setShowActionModal(false), style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
       e('div', {onClick:ev=>ev.stopPropagation(), style:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 24px 36px',width:'100%',maxWidth:480,boxShadow:'0 -8px 40px rgba(0,0,0,0.18)',maxHeight:'90vh',overflowY:'auto'}},
-        e('div', {style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:20}}, 'Add Action Item'),
+        e('div', {style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:20}}, editActionId ? 'Edit Action Item' : 'Add Action Item'),
 
         // Name
         e('div', {style:{marginBottom:14}},
@@ -1254,15 +1268,22 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         ),
 
         e('div', {style:{display:'flex',gap:10}},
-          e('button', {onClick:()=>setShowActionModal(false), style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
+          editActionId ? e('button', {onClick:function(){
+            removeActionItem(editActionId);
+            setEditActionId(null); setShowActionModal(false);
+            setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]});
+          }, style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid #EF444440',background:'#EF444408',fontFamily:'inherit',fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer'}}, 'Delete') : null,
+          e('button', {onClick:()=>{ setEditActionId(null); setShowActionModal(false); setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]}); }, style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
           e('button', {onClick:()=>{
             if (!actionForm.name.trim()) return;
-            var newItem = {id:Date.now().toString(), name:actionForm.name.trim(), emoji:actionForm.emoji,
-              tier:actionForm.tier, timeOfDay:actionForm.timeOfDay, state:'unplanned', coveredBy:actionForm.coveredBy};
-            setActionItems(function(cur){ var next=cur.concat([newItem]); save('dayActionItems',next); return next; });
-            setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]});
-            setShowActionModal(false);
-          }, style:{flex:1,padding:'12px',borderRadius:10,border:'none',background:'#EF4444',fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, 'Add')
+            if (editActionId) {
+              setActionItems(function(cur){ var next=cur.map(function(x){ return x.id===editActionId ? Object.assign({},x,{name:actionForm.name.trim(),emoji:actionForm.emoji,tier:actionForm.tier,timeOfDay:actionForm.timeOfDay,coveredBy:actionForm.coveredBy}) : x; }); save('dayActionItems',next); return next; });
+            } else {
+              var newItem = {id:Date.now().toString(), name:actionForm.name.trim(), emoji:actionForm.emoji, tier:actionForm.tier, timeOfDay:actionForm.timeOfDay, state:'unplanned', coveredBy:actionForm.coveredBy};
+              setActionItems(function(cur){ var next=cur.concat([newItem]); save('dayActionItems',next); return next; });
+            }
+            setEditActionId(null); setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]}); setShowActionModal(false);
+          }, style:{flex:1,padding:'12px',borderRadius:10,border:'none',background:'#EF4444',fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, editActionId ? 'Save' : 'Add')
         )
       )
     ) : null,
