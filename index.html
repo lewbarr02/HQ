@@ -477,6 +477,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
   const [editActionId, setEditActionId] = useState(null);
   const [actionEditMode, setActionEditMode] = useState(false);
+  const [actionItemsOpen, setActionItemsOpen] = useState(() => load('dayActionItemsOpen') !== false);
   const [calEvents, setCalEvents] = useState([]);
   const [calSyncMsg, setCalSyncMsg] = useState('');
   const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
@@ -757,30 +758,33 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     );
   }
 
-  var priorityBarEl = e('div', {style:{paddingBottom:10, borderBottom:'1px solid '+BORDER}},
+  var priorityBarEl = e('div', {style:{paddingBottom: actionItemsOpen ? 10 : 4, borderBottom:'1px solid '+BORDER}},
     // Header row
-    e('div', {style:{display:'flex',alignItems:'center',gap:6,marginBottom:8}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:6,marginBottom: actionItemsOpen ? 8 : 0}},
       e('div', {style:{fontSize:11,fontWeight:800,letterSpacing:'0.08em',textTransform:'uppercase',color:TEXT,flex:1}}, 'Action Items'),
-      actionItems.length > 0 ? e('button', {
+      e('button', {
+        onClick: function(){ var next = !actionItemsOpen; setActionItemsOpen(next); save('dayActionItemsOpen', next); },
+        style:{display:'flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:20,border:'1.5px solid '+BORDER,background: actionItemsOpen ? ACCENT+'10' : '#F0F2F8',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color: actionItemsOpen ? ACCENT : MUTED,flexShrink:0}
+      }, actionItemsOpen ? '▾ Hide' : '▸ Show'),
+      actionItemsOpen && actionItems.length > 0 ? e('button', {
         onClick: resetActionItems,
         title:'Reset all to unplanned',
         style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid #EF444450',background:'#EF44440D',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color:'#EF4444',flexShrink:0}
       }, '↺ Reset') : null,
-      e('button', {
+      actionItemsOpen ? e('button', {
         onClick: function(){ setActionEditMode(function(m){ return !m; }); },
         style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid '+(actionEditMode?PURPLE+'80':BORDER),background:actionEditMode?PURPLE+'15':'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color:actionEditMode?PURPLE:MUTED,flexShrink:0}
-      }, actionEditMode ? 'Done Editing' : '✏️ Edit')
+      }, actionEditMode ? 'Done Editing' : '✏️ Edit') : null
     ),
-    // Primary AM
-    TierRow(aiPrimaryAM, 'Must Happen', 'AM', 'primary', 'am', false),
-    // Primary PM
-    aiPrimaryPM.length > 0 || true
-      ? TierRow(aiPrimaryPM, 'Must Happen', 'PM', 'primary', 'pm', false)
-      : null,
-    // Divider
-    e('div', {style:{height:1,background:BORDER,margin:'6px 0 8px'}}),
-    // Secondary
-    TierRow(aiSecondary, 'Like to Happen', '', 'secondary', 'am', secondaryDimmed)
+    // Collapsible body
+    actionItemsOpen ? e('div', {},
+      TierRow(aiPrimaryAM, 'Must Happen', 'AM', 'primary', 'am', false),
+      aiPrimaryPM.length > 0 || true
+        ? TierRow(aiPrimaryPM, 'Must Happen', 'PM', 'primary', 'pm', false)
+        : null,
+      e('div', {style:{height:1,background:BORDER,margin:'6px 0 8px'}}),
+      TierRow(aiSecondary, 'Like to Happen', '', 'secondary', 'am', secondaryDimmed)
+    ) : null
   );
 
   // Ghost overlay for touch drag
