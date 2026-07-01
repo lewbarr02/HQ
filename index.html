@@ -461,18 +461,22 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const now = new Date();
   const currentMinute = now.getHours() * 60 + now.getMinutes();
   const priorities = load('priorities') || [];
-  const [actionItems, setActionItems] = useState(() => {
-    var items = load('dayActionItems') || [];
+  const [dayDate, setDayDate] = useState(td);
+
+  function loadScheduledForDate(d) { return ((load('scheduledLog') || {})[d]) || []; }
+  function saveScheduledForDate(d, next) {
+    save('dayScheduled', next); // keep flat key for today compat
+    var sl = load('scheduledLog') || {}; sl[d] = next; save('scheduledLog', sl);
+  }
+  function loadActionItemsForDate(d) {
+    var items = load('dayActionItems_'+d) || (d === td ? load('dayActionItems') || [] : []);
     return items.map(function(a) {
-      return {
-        id: a.id, name: a.name, emoji: a.emoji || '',
-        tier: a.tier || 'primary',
-        timeOfDay: a.timeOfDay || 'am',
-        state: a.state || (a.done ? 'done' : 'unplanned'),
-        coveredBy: a.coveredBy || [],
-      };
+      return { id:a.id, name:a.name, emoji:a.emoji||'', tier:a.tier||'primary', timeOfDay:a.timeOfDay||'am', state:a.state||(a.done?'done':'unplanned'), coveredBy:a.coveredBy||[] };
     });
-  });
+  }
+  function saveActionItemsForDate(d, next) { save('dayActionItems_'+d, next); if (d===td) save('dayActionItems', next); }
+
+  const [actionItems, setActionItems] = useState(() => loadActionItemsForDate(td));
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
   const [editActionId, setEditActionId] = useState(null);
@@ -480,9 +484,16 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [actionItemsOpen, setActionItemsOpen] = useState(() => load('dayActionItemsOpen') !== false);
   const [calEvents, setCalEvents] = useState([]);
   const [calSyncMsg, setCalSyncMsg] = useState('');
-  const [scheduled, setScheduled] = useState(() => load('dayScheduled') || []);
+  const [scheduled, setScheduled] = useState(() => loadScheduledForDate(td));
   const [undoSchedule, setUndoSchedule] = useState(null);
   const undoTimerRef = useRef(null);
+
+  // Reload scheduled + action items when date changes
+  useEffect(function() {
+    setScheduled(loadScheduledForDate(dayDate));
+    setActionItems(loadActionItemsForDate(dayDate));
+    setUndoSchedule(null);
+  }, [dayDate]);
   const [dragItem, setDragItem] = useState(null);
   const dragItemRef = useRef(null);
   const [dragOverMinute, setDragOverMinute] = useState(null);
@@ -572,18 +583,18 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   }
 
   // Morning routine block
-  var mStart = routineLog[td + '_start'];
-  var mDone = routineLog[td + '_done'];
+  var mStart = routineLog[dayDate + '_start'];
+  var mDone = routineLog[dayDate + '_done'];
   var mStartMin = mStart ? parseTimeToMin(mStart) : null;
   var mDoneMin = mDone ? parseTimeToMin(mDone) : null;
 
   // Evening routine block
-  var eStart = eveningLog[td + '_start'];
-  var eDone = eveningLog[td + '_done'];
+  var eStart = eveningLog[dayDate + '_start'];
+  var eDone = eveningLog[dayDate + '_done'];
   var eStartMin = eStart ? parseTimeToMin(eStart) : null;
   var eDoneMin = eDone ? parseTimeToMin(eDone) : null;
 
-  var todayPriorities = (priorities || []).filter(p => p.time);
+  var todayPriorities = dayDate === td ? (priorities || []).filter(p => p.time) : [];
 
   var hours = [];
   for (var h = 5; h <= 24; h++) hours.push(h === 24 ? 0 : h);
@@ -644,21 +655,21 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         var newState = a.state === 'done' ? 'unplanned' : 'done';
         return Object.assign({}, a, {state: newState});
       });
-      save('dayActionItems', next);
+      saveActionItemsForDate(dayDate, next);
       return next;
     });
   }
   function removeActionItem(id) {
     setActionItems(function(cur) {
       var next = cur.filter(function(a){ return a.id !== id; });
-      save('dayActionItems', next);
+      saveActionItemsForDate(dayDate, next);
       return next;
     });
   }
   function resetActionItems() {
     setActionItems(function(cur) {
       var next = cur.map(function(a){ return Object.assign({}, a, {state:'unplanned'}); });
-      save('dayActionItems', next);
+      saveActionItemsForDate(dayDate, next);
       return next;
     });
   }
@@ -838,8 +849,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var newBlock = {schedId: Date.now().toString(), id: di.id, label: di.label, color: di.color, durationMin: di.durationMin, minute: minute};
     var next = scheduled.concat([newBlock]);
     setScheduled(next);
-    save('dayScheduled', next);
-    var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
+    saveScheduledForDate(dayDate, next);
     // Auto-schedule action items that list this block in their coveredBy
     setActionItems(function(cur) {
       var changed = false;
@@ -850,7 +860,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         }
         return a;
       });
-      if (changed) save('dayActionItems', updated);
+      if (changed) saveActionItemsForDate(dayDate, updated);
       return changed ? updated : cur;
     });
     dragItemRef.current = null;
@@ -881,8 +891,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   function removeScheduled(schedId) {
     var next = scheduled.filter(function(s){ return s.schedId !== schedId; });
     setScheduled(next);
-    save('dayScheduled', next);
-    var sl = load('scheduledLog') || {}; sl[today()] = next; save('scheduledLog', sl);
+    saveScheduledForDate(dayDate, next);
   }
 
   function savePreset() {
@@ -981,8 +990,30 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       // ── Anchored header: title row + priority bar ──
       e('div', {style:{flexShrink:0, padding:'16px 12px 0', background:'#fff', borderBottom: priorityBarEl ? '1px solid '+BORDER : 'none'}},
         e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
-          e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, "Today's Schedule"),
-          e('div', {style:{fontSize:12,color:MUTED,marginLeft:'auto',marginRight:8}}, new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+          e('button', {
+            onClick: function(){
+              var d = new Date(dayDate + 'T12:00:00');
+              d.setDate(d.getDate() - 1);
+              setDayDate(d.toISOString().slice(0,10));
+            },
+            style:{background:'transparent',border:'none',cursor:'pointer',fontSize:18,color:MUTED,padding:'0 4px',lineHeight:1,flexShrink:0}
+          }, '‹'),
+          e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',flex:1,minWidth:0}},
+            e('div', {style:{fontSize:14,fontWeight:800,color:TEXT,whiteSpace:'nowrap'}}, (function(){
+              var d = new Date(dayDate + 'T12:00:00');
+              return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+            })()),
+            dayDate === td ? e('div', {style:{fontSize:10,fontWeight:700,color:ACCENT,letterSpacing:'0.05em'}}, 'TODAY') :
+            e('button', {onClick:function(){ setDayDate(td); }, style:{background:'transparent',border:'none',cursor:'pointer',fontSize:10,fontWeight:700,color:ACCENT,padding:0,fontFamily:'inherit',letterSpacing:'0.05em'}}, '← Back to Today')
+          ),
+          e('button', {
+            onClick: function(){
+              var d = new Date(dayDate + 'T12:00:00');
+              d.setDate(d.getDate() + 1);
+              setDayDate(d.toISOString().slice(0,10));
+            },
+            style:{background:'transparent',border:'none',cursor:'pointer',fontSize:18,color:MUTED,padding:'0 4px',lineHeight:1,flexShrink:0}
+          }, '›'),
           e('div', {style:{display:'flex',flexDirection:'column',alignItems:'flex-end',flexShrink:0,marginRight:4}},
             e('button', {
               onClick: function(){ setCalSyncMsg('syncing…'); doCalSync(true); },
@@ -1001,8 +1032,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
               if (!window.confirm('Clear all blocks from today\'s timeline?')) return;
               var snapshot = scheduled.slice();
               setScheduled([]);
-              save('dayScheduled', []);
-              var sl = load('scheduledLog') || {}; sl[today()] = []; save('scheduledLog', sl);
+              saveScheduledForDate(dayDate, []);
               setUndoSchedule(snapshot);
               if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
               undoTimerRef.current = setTimeout(function(){ setUndoSchedule(null); }, 10000);
@@ -1069,8 +1099,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             var newMin = Math.max(START_MIN, Math.min(END_MIN - s.durationMin, s.minute + delta));
             var next = scheduled.map(function(b){ return b.schedId === s.schedId ? Object.assign({}, b, {minute: newMin}) : b; });
             setScheduled(next);
-            save('dayScheduled', next);
-            var sl = load('scheduledLog')||{}; sl[today()] = next; save('scheduledLog', sl);
+            saveScheduledForDate(dayDate, next);
           }
           return e(BlockItem, {key:'sched-'+s.schedId, min:s.minute, durationMin:s.durationMin, color:blockColor, label:s.label, sublabel:minToTimeStr(s.minute), done:false,
             onRemove:()=>removeScheduled(s.schedId),
@@ -1095,7 +1124,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           e('div', {style:{fontSize:11,fontWeight:700,color:dragItem.color||ACCENT}}, dragItem.label + ' · ' + minToTimeStr(dragOverMinute))
         ) : null,
 
-        currentMinute >= START_MIN && currentMinute < END_MIN ? e('div', {style:{position:'absolute',top:minToY(currentMinute),left:36,right:0,zIndex:10,display:'flex',alignItems:'center',pointerEvents:'none'}},
+        dayDate === td && currentMinute >= START_MIN && currentMinute < END_MIN ? e('div', {style:{position:'absolute',top:minToY(currentMinute),left:36,right:0,zIndex:10,display:'flex',alignItems:'center',pointerEvents:'none'}},
           e('div', {style:{width:8,height:8,borderRadius:'50%',background:ACCENT,flexShrink:0,marginLeft:-4}}),
           e('div', {style:{flex:1,height:2,background:ACCENT}})
         ) : null
@@ -1117,8 +1146,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       onClick: function(){
         if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
         setScheduled(undoSchedule);
-        save('dayScheduled', undoSchedule);
-        var sl = load('scheduledLog') || {}; sl[today()] = undoSchedule; save('scheduledLog', sl);
+        saveScheduledForDate(dayDate, undoSchedule);
         setUndoSchedule(null);
       },
       style:{background:ACCENT, border:'none', borderRadius:8, color:'#1A1833', padding:'6px 14px', fontSize:13, fontWeight:800, cursor:'pointer', fontFamily:'inherit'}
@@ -1343,10 +1371,10 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           e('button', {onClick:()=>{
             if (!actionForm.name.trim()) return;
             if (editActionId) {
-              setActionItems(function(cur){ var next=cur.map(function(x){ return x.id===editActionId ? Object.assign({},x,{name:actionForm.name.trim(),emoji:actionForm.emoji,tier:actionForm.tier,timeOfDay:actionForm.timeOfDay,coveredBy:actionForm.coveredBy}) : x; }); save('dayActionItems',next); return next; });
+              setActionItems(function(cur){ var next=cur.map(function(x){ return x.id===editActionId ? Object.assign({},x,{name:actionForm.name.trim(),emoji:actionForm.emoji,tier:actionForm.tier,timeOfDay:actionForm.timeOfDay,coveredBy:actionForm.coveredBy}) : x; }); saveActionItemsForDate(dayDate,next); return next; });
             } else {
               var newItem = {id:Date.now().toString(), name:actionForm.name.trim(), emoji:actionForm.emoji, tier:actionForm.tier, timeOfDay:actionForm.timeOfDay, state:'unplanned', coveredBy:actionForm.coveredBy};
-              setActionItems(function(cur){ var next=cur.concat([newItem]); save('dayActionItems',next); return next; });
+              setActionItems(function(cur){ var next=cur.concat([newItem]); saveActionItemsForDate(dayDate,next); return next; });
             }
             setEditActionId(null); setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]}); setShowActionModal(false);
           }, style:{flex:1,padding:'12px',borderRadius:10,border:'none',background:'#EF4444',fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, editActionId ? 'Save' : 'Add')
@@ -1456,8 +1484,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             var newBlock = {schedId:Date.now().toString(), id:newItem.id, label:newItem.label, color:newItem.color, durationMin:newItem.durationMin, minute:startMin};
             var nextSched = scheduled.concat([newBlock]);
             setScheduled(nextSched);
-            save('dayScheduled', nextSched);
-            var sl = load('scheduledLog')||{}; sl[today()]=nextSched; save('scheduledLog',sl);
+            saveScheduledForDate(dayDate, nextSched);
             setCustomForm({label:'',color:'#10B981',durationMin:30,emoji:''});
             closeCustomModal();
           }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:PURPLE,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, '+ Place Now')
