@@ -462,6 +462,32 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const currentMinute = now.getHours() * 60 + now.getMinutes();
   const priorities = load('priorities') || [];
   const [dayDate, setDayDate] = useState(td);
+  const [calView, setCalView] = useState(function(){ return load('dayCalView') || 'day'; });
+
+  function getWeekDays(dateStr) {
+    var d = new Date(dateStr + 'T12:00:00');
+    var dow = d.getDay();
+    var monday = new Date(d);
+    monday.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    return Array.from({length:7}, function(_,i){
+      var day = new Date(monday); day.setDate(monday.getDate() + i);
+      return day.getFullYear()+'-'+String(day.getMonth()+1).padStart(2,'0')+'-'+String(day.getDate()).padStart(2,'0');
+    });
+  }
+
+  function getMonthGrid(dateStr) {
+    var d = new Date(dateStr + 'T12:00:00');
+    var year = d.getFullYear(), month = d.getMonth();
+    var firstDow = new Date(year, month, 1).getDay();
+    var daysInMonth = new Date(year, month+1, 0).getDate();
+    var offset = firstDow === 0 ? 6 : firstDow - 1;
+    var grid = Array.from({length:offset}, function(){ return null; });
+    for (var i = 1; i <= daysInMonth; i++) {
+      grid.push(year+'-'+String(month+1).padStart(2,'0')+'-'+String(i).padStart(2,'0'));
+    }
+    while (grid.length % 7 !== 0) grid.push(null);
+    return grid;
+  }
 
   function loadScheduledForDate(d) { return ((load('scheduledLog') || {})[d]) || []; }
   function saveScheduledForDate(d, next) {
@@ -971,16 +997,18 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   }
 
   function ViewToggle() {
-    return e('button', {
-      onClick: () => {
-        var next = !splitView;
-        setSplitView(next);
-        save('daySplitView', next);
-      },
-      style:{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+BORDER,background:splitView?ACCENT+'15':'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:splitView?ACCENT:MUTED,flexShrink:0}
-    },
-      e('span', {style:{fontSize:13}}, splitView ? '⊟' : '⊞'),
-      splitView ? 'Split' : 'Split'
+    return e('div', {style:{display:'flex',borderRadius:8,border:'1.5px solid '+BORDER,overflow:'hidden',flexShrink:0}},
+      ...[['day','Day'],['week','Wk'],['month','Mo']].map(function(pair){
+        var v = pair[0], label = pair[1];
+        var active = calView === v;
+        return e('button', {key:v, onClick:function(){ setCalView(v); save('dayCalView',v); },
+          style:{padding:'5px 8px',border:'none',borderLeft: v==='day'?'none':'1px solid '+BORDER,background:active?ACCENT:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:active?'white':MUTED,minWidth:32}
+        }, label);
+      }),
+      e('button', {
+        onClick: function(){ var next = !splitView; setSplitView(next); save('daySplitView', next); },
+        style:{padding:'5px 8px',border:'none',borderLeft:'1px solid '+BORDER,background:splitView&&calView==='day'?PURPLE:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:13,color:splitView&&calView==='day'?'white':MUTED,title:'Split view'}
+      }, '⊞')
     );
   }
 
@@ -1166,11 +1194,154 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     e('div', {style:{fontSize:13,fontWeight:700,color:'white'}}, ghostPos.label)
   ) : null;
 
+  // ── Week View ──
+  function WeekView() {
+    var weekDays = getWeekDays(dayDate);
+    var allSched = load('scheduledLog') || {};
+    var DAY_W = 50;
+    var TIME_W = 36;
+    var DAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    var weekLabel = (function(){
+      var a = new Date(weekDays[0]+'T12:00:00'), b = new Date(weekDays[6]+'T12:00:00');
+      var mo = function(d){ return d.toLocaleDateString('en-US',{month:'short'}); };
+      var sameMonth = a.getMonth() === b.getMonth();
+      return sameMonth
+        ? mo(a)+' '+a.getDate()+'–'+b.getDate()+', '+a.getFullYear()
+        : mo(a)+' '+a.getDate()+' – '+mo(b)+' '+b.getDate();
+    })();
+    return e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:'#fff'}},
+      // Nav header
+      e('div', {style:{display:'flex',alignItems:'center',gap:6,padding:'12px 12px 0',flexShrink:0,borderBottom:'1px solid '+BORDER,paddingBottom:12}},
+        e('button', {onClick:function(){ var d=new Date(dayDate+'T12:00:00'); d.setDate(d.getDate()-7); setDayDate(d.toISOString().slice(0,10)); },
+          style:{background:'transparent',border:'none',cursor:'pointer',fontSize:20,color:MUTED,padding:'0 4px',lineHeight:1,flexShrink:0}}, '‹'),
+        e('div', {style:{flex:1,textAlign:'center',fontSize:14,fontWeight:800,color:TEXT}}, weekLabel),
+        e('button', {onClick:function(){ var d=new Date(dayDate+'T12:00:00'); d.setDate(d.getDate()+7); setDayDate(d.toISOString().slice(0,10)); },
+          style:{background:'transparent',border:'none',cursor:'pointer',fontSize:20,color:MUTED,padding:'0 4px',lineHeight:1,flexShrink:0}}, '›'),
+        ViewToggle({})
+      ),
+      // Day column headers
+      e('div', {style:{display:'flex',flexShrink:0,borderBottom:'1px solid '+BORDER,background:'#fff',overflowX:'auto'}},
+        e('div', {style:{width:TIME_W,flexShrink:0}}),
+        ...weekDays.map(function(d,i){
+          var isToday = d===td, isSel = d===dayDate;
+          var dn = new Date(d+'T12:00:00').getDate();
+          return e('div', {key:d,onClick:function(){ setDayDate(d); setCalView('day'); save('dayCalView','day'); },
+            style:{width:DAY_W,flexShrink:0,textAlign:'center',padding:'6px 0',cursor:'pointer',
+              borderBottom:isSel?'2px solid '+ACCENT:'2px solid transparent'}},
+            e('div', {style:{fontSize:9,fontWeight:700,color:MUTED,marginBottom:2}}, DAY_LABELS[i]),
+            e('div', {style:{width:24,height:24,borderRadius:'50%',margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'center',
+              background:isToday?ACCENT:'transparent',color:isToday?'white':isSel?ACCENT:TEXT,
+              fontSize:12,fontWeight:isToday||isSel?800:500,
+              border:isSel&&!isToday?'1.5px solid '+ACCENT:'1.5px solid transparent'}}, dn)
+          );
+        })
+      ),
+      // Scrollable time grid
+      e('div', {style:{flex:1,overflowY:'auto',overflowX:'auto',WebkitOverflowScrolling:'touch'}},
+        e('div', {style:{position:'relative',height:totalHeight,minWidth:TIME_W+DAY_W*7}},
+          // Hour lines
+          ...hours.map(function(h,i){
+            var min = i===0?300:(h===0?24:h)*60;
+            var y = minToY(min);
+            return e('div', {key:'wh-'+i,style:{position:'absolute',top:y,left:0,right:0,display:'flex',pointerEvents:'none'}},
+              e('div', {style:{width:TIME_W,fontSize:9,textAlign:'right',paddingRight:5,color:MUTED,lineHeight:'1',flexShrink:0,paddingTop:0}},
+                fmtHour(h===0&&i>0?0:(i===0?5:h))),
+              e('div', {style:{flex:1,height:'0.5px',background:'rgba(100,80,220,0.08)'}})
+            );
+          }),
+          // Current-time line (today only)
+          currentMinute>=START_MIN&&currentMinute<END_MIN ? e('div', {key:'now-line',style:{position:'absolute',top:minToY(currentMinute),left:TIME_W,right:0,height:2,background:ACCENT,zIndex:10,pointerEvents:'none'}}) : null,
+          // Day columns + blocks
+          ...weekDays.map(function(d,i){
+            var blocks = allSched[d] || [];
+            var isToday = d===td;
+            var colLeft = TIME_W + i*DAY_W;
+            return [
+              e('div', {key:'bg-'+d,style:{position:'absolute',top:0,bottom:0,left:colLeft,width:DAY_W,borderLeft:'0.5px solid rgba(100,80,220,0.08)',background:isToday?ACCENT+'05':'transparent',pointerEvents:'none'}}),
+              ...blocks.map(function(blk){
+                if (blk.minute<START_MIN||blk.minute>=END_MIN) return null;
+                var bColor = (blk.id&&blk.id.startsWith('routine-'))?'#EF4444':(blk.color||ACCENT);
+                var bH = Math.max(18,blk.durationMin*PX_PER_MIN);
+                return e('div', {key:'wb-'+d+'-'+blk.schedId,
+                  onClick:function(){ setDayDate(d); setCalView('day'); save('dayCalView','day'); },
+                  style:{position:'absolute',top:minToY(blk.minute),left:colLeft+2,width:DAY_W-4,height:bH,
+                    borderRadius:4,background:bColor+'DD',cursor:'pointer',overflow:'hidden',
+                    display:'flex',alignItems:'flex-start',padding:'2px 3px',boxSizing:'border-box',zIndex:5}},
+                  e('div', {style:{fontSize:8,fontWeight:700,color:'white',lineHeight:1.2,overflow:'hidden',wordBreak:'break-word'}}, blk.label)
+                );
+              })
+            ];
+          }).flat().filter(Boolean)
+        )
+      )
+    );
+  }
+
+  // ── Month View ──
+  function MonthView() {
+    var allSched = load('scheduledLog') || {};
+    var grid = getMonthGrid(dayDate);
+    var d0 = new Date(dayDate+'T12:00:00');
+    var monthLabel = d0.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+    var DAY_LABELS = ['M','T','W','T','F','S','S'];
+    return e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:'#fff'}},
+      // Nav header
+      e('div', {style:{display:'flex',alignItems:'center',gap:6,padding:'12px 12px 0',flexShrink:0,borderBottom:'1px solid '+BORDER,paddingBottom:12}},
+        e('button', {onClick:function(){ var d=new Date(dayDate+'T12:00:00'); d.setDate(1); d.setMonth(d.getMonth()-1); setDayDate(d.toISOString().slice(0,10)); },
+          style:{background:'transparent',border:'none',cursor:'pointer',fontSize:20,color:MUTED,padding:'0 4px',lineHeight:1,flexShrink:0}}, '‹'),
+        e('div', {style:{flex:1,textAlign:'center',fontSize:15,fontWeight:800,color:TEXT}}, monthLabel),
+        e('button', {onClick:function(){ var d=new Date(dayDate+'T12:00:00'); d.setDate(1); d.setMonth(d.getMonth()+1); setDayDate(d.toISOString().slice(0,10)); },
+          style:{background:'transparent',border:'none',cursor:'pointer',fontSize:20,color:MUTED,padding:'0 4px',lineHeight:1,flexShrink:0}}, '›'),
+        ViewToggle({})
+      ),
+      // Scrollable grid
+      e('div', {style:{flex:1,overflowY:'auto',padding:'0 8px 16px'}},
+        // Day-of-week headers
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',marginBottom:4,marginTop:10}},
+          ...DAY_LABELS.map(function(dl,i){ return e('div', {key:'dh-'+i,style:{textAlign:'center',fontSize:10,fontWeight:700,color:MUTED,padding:'4px 0'}}, dl); })
+        ),
+        // Calendar cells
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3}},
+          ...grid.map(function(d,i){
+            if (!d) return e('div', {key:'empty-'+i,style:{minHeight:60}});
+            var blocks = allSched[d] || [];
+            var isToday = d===td, isSel = d===dayDate;
+            var dn = new Date(d+'T12:00:00').getDate();
+            return e('div', {key:d,
+              onClick:function(){ setDayDate(d); setCalView('day'); save('dayCalView','day'); },
+              style:{minHeight:60,borderRadius:8,padding:'4px 3px',cursor:'pointer',
+                background:isSel?ACCENT+'18':isToday?ACCENT+'08':'#F8FAFC',
+                border:isSel?'1.5px solid '+ACCENT:isToday?'1.5px solid '+ACCENT+'50':'1.5px solid transparent',
+                boxSizing:'border-box'}},
+              e('div', {style:{width:20,height:20,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',
+                background:isToday?ACCENT:'transparent',color:isToday?'white':isSel?ACCENT:TEXT,
+                fontSize:11,fontWeight:isToday||isSel?800:400,marginBottom:2}}, dn),
+              ...blocks.slice(0,2).map(function(blk,bi){
+                var bColor=(blk.id&&blk.id.startsWith('routine-'))?'#EF4444':(blk.color||ACCENT);
+                return e('div', {key:'mb-'+bi,style:{fontSize:8,fontWeight:700,color:'white',background:bColor,
+                  borderRadius:3,padding:'1px 3px',marginBottom:1,overflow:'hidden',
+                  textOverflow:'ellipsis',whiteSpace:'nowrap'}}, blk.label);
+              }),
+              blocks.length>2 ? e('div', {style:{fontSize:9,color:MUTED,fontWeight:600}}, '+' +(blocks.length-2)) : null
+            );
+          })
+        )
+      )
+    );
+  }
+
   if (!splitView) {
     return e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}},
       GhostOverlay,
       UndoToast,
-      TimelinePanel({fullWidth: true})
+      calView==='week' ? WeekView({}) : calView==='month' ? MonthView({}) : TimelinePanel({fullWidth: true})
+    );
+  }
+
+  // Week/month views don't use split layout
+  if (calView === 'week' || calView === 'month') {
+    return e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}},
+      calView==='week' ? WeekView({}) : MonthView({})
     );
   }
 
