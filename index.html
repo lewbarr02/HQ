@@ -3650,7 +3650,7 @@ function ProjectsProgressScreen({projectItems, setProjectItems, projectLog, setP
   const [overId, setOverId] = useState(null);
   const cardRefs = React.useRef({});
   const COLORS = [PURPLE,ACCENT,'#FF6B9D','#00E5CC','#FFB347','#FF6B6B','#10B981','#F59E0B'];
-  const EMOJIS = ['🏠','🚀','💼','🌱','🎯','📦','🔧','🎨','💡','📋','🏗️','⚙️','🌍','🧩','📈','🤝','🧹'];
+  const EMOJIS = ['🏠','🚀','💼','🌱','🎯','📦','🔧','🎨','💡','📋','🏗️','⚙️','🌍','🧩','📈','🤝','🧹','🪚','🚽','⛳','👧','🧩','🗄️','💻'];
   const STATUSES = ['not-started','active','blocked','done'];
   const STATUS_LABEL = {'not-started':'Not Started','active':'Active','blocked':'Blocked','done':'Done'};
   const STATUS_COLOR = {'not-started':MUTED,'active':ACCENT,'blocked':'#F59E0B','done':'#10B981'};
@@ -6283,7 +6283,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
   const doneCount = safeItems.filter(function(h){return done[h.id];}).length;
   const startTime = routineLog[td+'_start'] || new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 
-  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱','👑'];
+  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱','👑','💈','🧼'];
 
   function addItem() {
     if(!newItemName.trim()) return;
@@ -7226,7 +7226,7 @@ function EveningChecklist({ onComplete, onSkipToDashboard, eveningLog, setEvenin
   var safeItems = eveningItems || DEFAULT_EVENING_HABITS;
   const allDone = safeItems.every(function(h){return done[h.id];});
   const doneCount = safeItems.filter(function(h){return done[h.id];}).length;
-  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱','😴','🔑','👛','👑'];
+  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','☀️','🥗','🎯','✍️','🧹','💪🏽','🔌','🛁','🧴','👟','🎸','💻','📱','😴','🔑','👛','👑','💈','🧼'];
 
   function addItem() {
     if(!newItemName.trim()) return;
@@ -7543,7 +7543,7 @@ function PostWorkoutChecklist({ onComplete, onSkipToDashboard, pwLog, setPwLog, 
   var safeItems = pwItems || DEFAULT_POST_WORKOUT_HABITS;
   const allDone = safeItems.every(function(h){return done[h.id];});
   const doneCount = safeItems.filter(function(h){return done[h.id];}).length;
-  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','✂️','🧴','💎','👑','🌬️','🧹','💪🏽','🔌','🛁','👟','🎸','💻','📱'];
+  const QUICK_EMOJIS = ['🪥','💊','🚿','⌚','🛏','💧','💬','📧','🏋️','📚','🧘','✂️','🧴','💎','👑','🌬️','🧹','💪🏽','🔌','🛁','👟','🎸','💻','📱','💈','🧼'];
 
   function addItem() {
     if(!newItemName.trim()) return;
@@ -8832,7 +8832,7 @@ function RoutineBuilder({onSave, onClose}) {
   var PALETTE = ['#00C6FF','#7B2FFF','#10B981','#F59E0B','#EF4444','#EC4899','#8B5CF6','#06B6D4','#F97316','#6366F1','#14B8A6','#84CC16','#0EA5E9','#A855F7','#FB923C'];
   var EMOJI_CATS = [
     {label:'⭐ Faves', emojis:['⭐','🔥','💪','🧠','🎯','✅','🚀','💡','⚡','🏆','🎉','💎','🌟','✨','🦁','🎪','🧩','🛡️','👑','🌈','🏌️','🕶️','🧤','⛳','⚪','📊']},
-    {label:'🏃 Health', emojis:['🏃','🧘','💊','🍎','🥗','🥤','💧','🛁','🧴','🪥','😴','🫀','🦷','🩺','🏋️','🚴','🤸','🏊','🧪','🩹']},
+    {label:'🏃 Health', emojis:['🏃','🧘','💊','🍎','🥗','🥤','💧','🛁','🧴','🪥','😴','🫀','🦷','🩺','🏋️','🚴','🤸','🏊','🧪','🩹','💈','🧼','🔌']},
     {label:'🧠 Mind', emojis:['🧠','📚','✍️','📓','🎓','🧐','🔬','💭','🗣️','👂','🎵','🎧','📰','🖊️','📖','🔭','🧮','🪬','🧲','🔮']},
     {label:'🏠 Home', emojis:['🏠','🧹','🛋️','🪴','🍳','🧺','🪟','🚪','🛏️','🪑','🛁','🪣','🧽','🔧','🔑','📦','🗂️','🪤','💡','🕯️']},
     {label:'💼 Work', emojis:['💼','📊','📈','📋','🖥️','⌨️','📧','📞','🗓️','🖨️','📌','📎','🗒️','💹','🤝','📣','🏢','🔏','📝','🗃️']},
