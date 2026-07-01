@@ -456,7 +456,7 @@ function Sidebar({tab, setTab, moreOpen, setMoreOpen, NAV, dateStr, groceries, p
   );
 }
 
-function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, setEveningPhase, setTab}) {
+function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, setEveningPhase, setTab, projectItems}) {
   const td = today();
   const now = new Date();
   const currentMinute = now.getHours() * 60 + now.getMinutes();
@@ -558,6 +558,20 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [presetForm, setPresetForm] = useState({label:'', color:'#10B981', durationMin:30});
   const [collapsedSections, setCollapsedSections] = useState(() => load('dayCollapsed') || {});
   const timelineRef = useRef(null);
+  const [projectFilter, setProjectFilter] = useState(null); // minutes or null=any
+
+  const ETC_OPTIONS = [
+    {label:'15 min', value:15},
+    {label:'30 min', value:30},
+    {label:'45 min', value:45},
+    {label:'1 hour', value:60},
+    {label:'1.5 hrs', value:90},
+    {label:'2 hrs', value:120},
+    {label:'3 hrs', value:180},
+    {label:'Half day', value:240},
+    {label:'Full day', value:480},
+    {label:'Multi-day', value:999},
+  ];
 
   function doCalSync(showMsg) {
     gcalFetchToday().then(function(res) {
@@ -1439,6 +1453,39 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             var item = {id:'habit-'+h.id, label:(h.emoji ? h.emoji+' ' : '')+h.name, color:h.color||ACCENT, durationMin:15};
             return DraggableChip({key:item.id, item:item});
           })),
+
+          // Projects
+          (function(){
+            var activeProj = (projectItems||[]).filter(function(p){ return p.status !== 'done' && p.etc; });
+            if(activeProj.length === 0) return null;
+            var filteredProj = projectFilter ? activeProj.filter(function(p){ return (p.etc||0) <= projectFilter; }) : activeProj;
+            var etcValues = [...new Set(activeProj.map(function(p){ return p.etc; }).filter(Boolean))].sort(function(a,b){return a-b;});
+            return [
+              SectionHeader('Projects', 'prjh', 16),
+              ...(isColl('prjh') ? [] : [
+                // Time filter pills
+                e('div', {key:'proj-filter', style:{display:'flex',gap:5,flexWrap:'wrap',marginBottom:10}},
+                  e('button', {
+                    onClick:function(){setProjectFilter(null);},
+                    style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid '+(projectFilter===null?PURPLE:BORDER),background:projectFilter===null?PURPLE+'15':CARD2,color:projectFilter===null?PURPLE:MUTED,fontWeight:700,fontSize:10,cursor:'pointer',fontFamily:'inherit'}
+                  }, 'Any'),
+                  ...ETC_OPTIONS.filter(function(o){ return etcValues.includes(o.value); }).map(function(o){
+                    var active = projectFilter===o.value;
+                    return e('button', {key:o.value,
+                      onClick:function(){setProjectFilter(active?null:o.value);},
+                      style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid '+(active?PURPLE:BORDER),background:active?PURPLE+'15':CARD2,color:active?PURPLE:MUTED,fontWeight:700,fontSize:10,cursor:'pointer',fontFamily:'inherit'}
+                    }, o.label);
+                  })
+                ),
+                // Project chips
+                ...filteredProj.map(function(p){
+                  var etcLabel = ETC_OPTIONS.find(function(o){return o.value===p.etc;});
+                  var item = {id:'proj-'+p.id, label:(p.emoji||'🎯')+' '+p.name, color:p.color||PURPLE, durationMin:p.etc||60, sublabel:etcLabel?etcLabel.label:''};
+                  return DraggableChip({key:item.id, item:item});
+                }),
+              ])
+            ];
+          })(),
         ];
       })(),
       e('div', {style:{height:40}})
@@ -3273,34 +3320,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
         e('span',{},'View habit progress'), e('span',{},'›')
       )
     ),
-    e('div', {className:'card'},
-      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Projects'),
-        e('div', {style:{fontSize:13,fontWeight:700,color:PURPLE,background:PURPLE+'12',padding:'5px 12px',borderRadius:12}},
-          (projectItems||[]).filter(function(p){return !!(projectLog[td]||{})[p.id];}).length + '/' + (projectItems||[]).length + ' done'
-        )
-      ),
-      e('div', {style:{display:'flex',gap:12,overflowX:'auto',paddingBottom:4}},
-        ...(projectItems||[]).map(function(p) {
-          var isDone = !!((projectLog[td]||{})[p.id]);
-          return e('div', {key:p.id, onClick:function(){
-            var dayLog = Object.assign({}, projectLog[td]||{});
-            dayLog[p.id] = !dayLog[p.id];
-            var next = Object.assign({}, projectLog); next[td] = dayLog;
-            setProjectLog(next); save('projectLog', next);
-          }, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:60}},
-            e('div', {className:'habit-circle'+(isDone?' done':''), style:{borderColor:isDone?p.color:'transparent'}},
-              p.emoji,
-              isDone ? e('div', {style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:p.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, '✓') : null
-            ),
-            e('div', {style:{fontSize:10,fontWeight:700,color:isDone?TEXT:MUTED,textAlign:'center',maxWidth:60,lineHeight:1.2}}, p.name)
-          );
-        })
-      ),
-      e('button', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:10,marginTop:2,fontSize:13,fontWeight:700,color:PURPLE,cursor:'pointer',border:'none',background:'none',width:'100%',fontFamily:'inherit'},onClick:()=>setTab('projects-progress')},
-        e('span',{},'View project progress'), e('span',{},'›')
-      )
-    ),
+    e(ProjectsCard, {projectItems, projectLog, setProjectLog, setTab}),
     e('div', {className:'card'},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Pillars'),
       e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}},
@@ -3537,20 +3557,196 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
 <script>
 'use strict';
 
+function ProjectsCard({projectItems, projectLog, setProjectLog, setTab}) {
+  const td = today();
+  const [logModal, setLogModal] = useState(null);
+  const [logNote, setLogNote] = useState('');
+
+  var activeProjects = (projectItems||[]).filter(function(p){return p.status!=='done';});
+
+  function loggedToday(pid) {
+    var entry = (projectLog[td]||{})[pid];
+    return entry && (entry.note || entry === true);
+  }
+
+  function openLog(p) { setLogModal(p); setLogNote(''); }
+
+  function submitLog() {
+    if(!logNote.trim() || !logModal) return;
+    var dayLog = Object.assign({}, projectLog[td]||{});
+    dayLog[logModal.id] = { note: logNote.trim(), time: new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) };
+    var next = Object.assign({}, projectLog); next[td] = dayLog;
+    setProjectLog(next); save('projectLog', next);
+    setLogModal(null); setLogNote('');
+  }
+
+  var loggedCount = activeProjects.filter(function(p){return loggedToday(p.id);}).length;
+
+  return e('div', {className:'card'},
+    // Log modal
+    logModal ? e('div', {style:{position:'fixed',inset:0,background:'rgba(26,24,51,0.55)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center'},
+      onClick:function(ev){if(ev.target===ev.currentTarget)setLogModal(null);}},
+      e('div', {style:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:480}},
+        e('div', {style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
+          e('div', {style:{width:44,height:44,borderRadius:'50%',background:logModal.color+'18',border:'2px solid '+logModal.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}, logModal.emoji),
+          e('div', {},
+            e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, logModal.name),
+            e('div', {style:{fontSize:12,color:MUTED}}, 'Log what you worked on')
+          )
+        ),
+        // Next action reminder
+        (function(){
+          var nextTask = (logModal.tasks||[]).find(function(t){return !t.done;});
+          return nextTask ? e('div', {style:{background:logModal.color+'12',border:'1.5px solid '+logModal.color+'30',borderRadius:10,padding:'8px 12px',marginBottom:14,fontSize:13,color:TEXT}},
+            e('span', {style:{color:logModal.color,fontWeight:700}}, '→ Next: '), nextTask.text
+          ) : null;
+        })(),
+        e('textarea', {
+          className:'input', placeholder:'What did you work on today?', value:logNote, rows:3,
+          style:{resize:'none',marginBottom:12},
+          onInput:function(ev){setLogNote(ev.target.value);},
+          autoFocus:true
+        }),
+        e('div', {style:{display:'flex',gap:10}},
+          e('button', {className:'btn-ghost', onClick:function(){setLogModal(null);}}, 'Cancel'),
+          e('button', {className:'btn-primary', style:{background:logModal.color,flex:1}, onClick:submitLog}, 'Log it')
+        )
+      )
+    ) : null,
+
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Projects'),
+      e('div', {style:{fontSize:13,fontWeight:700,color:PURPLE,background:PURPLE+'12',padding:'5px 12px',borderRadius:12}},
+        loggedCount+'/'+activeProjects.length+' logged today'
+      )
+    ),
+    e('div', {style:{display:'flex',gap:12,overflowX:'auto',paddingBottom:4}},
+      ...activeProjects.map(function(p) {
+        var done = loggedToday(p.id);
+        return e('div', {key:p.id, onClick:function(){ if(!done) openLog(p); }, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:done?'default':'pointer',minWidth:60}},
+          e('div', {className:'habit-circle'+(done?' done':''), style:{borderColor:done?p.color:'transparent'}},
+            p.emoji,
+            done ? e('div', {style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:p.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, '✓') : null
+          ),
+          e('div', {style:{fontSize:10,fontWeight:700,color:done?TEXT:MUTED,textAlign:'center',maxWidth:60,lineHeight:1.2}}, p.name)
+        );
+      })
+    ),
+    e('button', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',paddingTop:10,marginTop:2,fontSize:13,fontWeight:700,color:PURPLE,cursor:'pointer',border:'none',background:'none',width:'100%',fontFamily:'inherit'},onClick:()=>setTab('projects-progress')},
+      e('span',{},'View project progress'), e('span',{},'›')
+    )
+  );
+}
+
 function ProjectsProgressScreen({projectItems, setProjectItems, projectLog, setProjectLog, setTab}) {
   const [adding, setAdding] = useState(false);
-  const [name, setName] = useState(''), [emoji, setEmoji] = useState(''), [color, setColor] = useState(PURPLE);
+  const [name, setName] = useState(''), [emoji, setEmoji] = useState(''), [color, setColor] = useState(PURPLE), [desc, setDesc] = useState('');
   const [expanded, setExpanded] = useState({});
+  const [editingTask, setEditingTask] = useState(null);
+  const [newTaskText, setNewTaskText] = useState('');
+  const [editingProject, setEditingProject] = useState(null);
+  const [editName, setEditName] = useState(''), [editEmoji, setEditEmoji] = useState(''), [editColor, setEditColor] = useState('');
+  const [dragId, setDragId] = useState(null);
+  const [overId, setOverId] = useState(null);
+  const cardRefs = React.useRef({});
   const COLORS = [PURPLE,ACCENT,'#FF6B9D','#00E5CC','#FFB347','#FF6B6B','#10B981','#F59E0B'];
   const EMOJIS = ['🏠','🚀','💼','🌱','🎯','📦','🔧','🎨','💡','📋','🏗️','⚙️','🌍','🧩','📈','🤝','🧹'];
+  const STATUSES = ['not-started','active','blocked','done'];
+  const STATUS_LABEL = {'not-started':'Not Started','active':'Active','blocked':'Blocked','done':'Done'};
+  const STATUS_COLOR = {'not-started':MUTED,'active':ACCENT,'blocked':'#F59E0B','done':'#10B981'};
+  const td = today();
 
-  function addProject(){if(!name.trim())return;var p={id:'proj'+Date.now(),name,emoji:emoji||'🎯',color,etc:'',blocker:{type:null,reason:''}};var next=[...projectItems,p];setProjectItems(next);save('projectItems',next);setName('');setEmoji('');setAdding(false);}
+  function addProject(){
+    if(!name.trim())return;
+    var p={id:'proj'+Date.now(),name,emoji:emoji||'🎯',color,desc,status:'active',blocker:'',tasks:[]};
+    var next=[...projectItems,p];setProjectItems(next);save('projectItems',next);
+    setName('');setEmoji('');setDesc('');setAdding(false);
+  }
   function removeProject(id){var next=projectItems.filter(function(p){return p.id!==id;});setProjectItems(next);save('projectItems',next);}
   function updateProject(id, patch) {
     var next = projectItems.map(function(p){ return p.id===id ? Object.assign({},p,patch) : p; });
     setProjectItems(next); save('projectItems', next);
   }
+  function addTask(pid) {
+    if(!newTaskText.trim())return;
+    var task={id:'t'+Date.now(),text:newTaskText.trim(),done:false};
+    var next=projectItems.map(function(p){return p.id===pid?Object.assign({},p,{tasks:[...(p.tasks||[]),task]}):p;});
+    setProjectItems(next);save('projectItems',next);setNewTaskText('');
+  }
+  function toggleTask(pid,tid){
+    var next=projectItems.map(function(p){
+      if(p.id!==pid)return p;
+      return Object.assign({},p,{tasks:(p.tasks||[]).map(function(t){return t.id===tid?Object.assign({},t,{done:!t.done}):t;})});
+    });
+    setProjectItems(next);save('projectItems',next);
+  }
+  function deleteTask(pid,tid){
+    var next=projectItems.map(function(p){
+      if(p.id!==pid)return p;
+      return Object.assign({},p,{tasks:(p.tasks||[]).filter(function(t){return t.id!==tid;})});
+    });
+    setProjectItems(next);save('projectItems',next);
+  }
   function toggleExpand(id){ setExpanded(function(ex){ var n=Object.assign({},ex); n[id]=!n[id]; return n; }); }
+  function startEdit(p){ setEditingProject(p.id); setEditName(p.name); setEditEmoji(p.emoji||'🎯'); setEditColor(p.color||PURPLE); setExpanded(function(ex){ return Object.assign({},ex,{[p.id]:true}); }); }
+  function saveEdit(id){ updateProject(id,{name:editName.trim()||editName,emoji:editEmoji,color:editColor}); setEditingProject(null); }
+  function handleDragTouchStart(id, e) {
+    e.stopPropagation();
+    setDragId(id);
+    setOverId(id);
+  }
+  function handleDragTouchMove(e) {
+    if(!dragId) return;
+    var touch = e.touches[0];
+    var y = touch.clientY;
+    var found = null;
+    activeProjects.forEach(function(p) {
+      var el = cardRefs.current[p.id];
+      if(!el) return;
+      var rect = el.getBoundingClientRect();
+      if(y >= rect.top && y <= rect.bottom) found = p.id;
+    });
+    if(found && found !== overId) setOverId(found);
+  }
+  function handleDragTouchEnd() {
+    if(dragId && overId && dragId !== overId) {
+      var next = projectItems.slice();
+      var fromIdx = next.findIndex(function(p){return p.id===dragId;});
+      var toIdx = next.findIndex(function(p){return p.id===overId;});
+      var moved = next.splice(fromIdx, 1)[0];
+      next.splice(toIdx, 0, moved);
+      setProjectItems(next); save('projectItems', next);
+    }
+    setDragId(null); setOverId(null);
+  }
+
+  function daysSinceLogged(id) {
+    var dates = Object.keys(projectLog).sort().reverse();
+    for(var i=0;i<dates.length;i++){
+      var entry = projectLog[dates[i]][id];
+      if(entry && (entry.note||entry===true)){
+        var diff = Math.floor((new Date(td)-new Date(dates[i]))/86400000);
+        return diff;
+      }
+    }
+    return null;
+  }
+
+  function neglectColor(days) {
+    if(days===null) return '#EF4444';
+    if(days<=2) return '#10B981';
+    if(days<=6) return '#F59E0B';
+    return '#EF4444';
+  }
+  function neglectLabel(days) {
+    if(days===null) return 'Never logged';
+    if(days===0) return 'Today';
+    if(days===1) return 'Yesterday';
+    return days+'d ago';
+  }
+
+  var activeProjects = (projectItems||[]).filter(function(p){return p.status!=='done';});
+  var doneProjects = (projectItems||[]).filter(function(p){return p.status==='done';});
 
   return e('div', {className:'content'},
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}},
@@ -3560,67 +3756,150 @@ function ProjectsProgressScreen({projectItems, setProjectItems, projectLog, setP
       ),
       e('button', {onClick:function(){setAdding(true);}, style:{fontSize:13,fontWeight:700,padding:'8px 16px',borderRadius:12,border:'1.5px solid '+PURPLE,background:'transparent',color:PURPLE,cursor:'pointer',fontFamily:'inherit'}}, '+ Add')
     ),
-    ...projectItems.map(function(p) {
+
+    // Dashboard cards
+    e('div', {onTouchMove:handleDragTouchMove, onTouchEnd:handleDragTouchEnd},
+    ...activeProjects.map(function(p) {
       var isOpen = !!expanded[p.id];
-      var blocker = p.blocker || {type:null,reason:''};
-      var hasBlocker = !!blocker.type;
-      var hasETC = !!(p.etc && p.etc.trim());
-      return e('div', {key:p.id, className:'card', style:{marginBottom:10,padding:0,overflow:'hidden'}},
-        // Header row — tap to expand
+      var days = daysSinceLogged(p.id);
+      var nc = neglectColor(days);
+      var nextTask = (p.tasks||[]).find(function(t){return !t.done;});
+      var lastLog = null;
+      var dates = Object.keys(projectLog).sort().reverse();
+      for(var i=0;i<dates.length;i++){
+        var entry = projectLog[dates[i]][p.id];
+        if(entry && entry.note){lastLog=entry.note;break;}
+      }
+      var isDragging = dragId===p.id;
+      var isOver = overId===p.id && dragId && dragId!==p.id;
+      return e('div', {key:p.id, ref:function(el){cardRefs.current[p.id]=el;}, className:'card', style:{marginBottom:10,padding:0,overflow:'hidden',borderLeft:'4px solid '+p.color,opacity:isDragging?0.4:1,boxShadow:isOver?'0 0 0 2px '+ACCENT+', 0 4px 16px rgba(0,198,255,0.15)':undefined,transition:'opacity 0.15s, box-shadow 0.15s'}},
+        // Header
         e('div', {onClick:function(){toggleExpand(p.id);}, style:{display:'flex',alignItems:'center',gap:12,padding:'14px 16px',cursor:'pointer'}},
-          e('div', {style:{width:44,height:44,borderRadius:'50%',background:p.color+'18',border:'2px solid '+p.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}, p.emoji),
-          e('div', {style:{flex:1}},
-            e('div', {style:{fontSize:15,fontWeight:700,color:p.color}}, p.name),
-            e('div', {style:{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}},
-              hasETC ? e('span', {style:{fontSize:11,fontWeight:600,color:MUTED,background:CARD2,padding:'2px 8px',borderRadius:6}}, '⏱ '+p.etc) : null,
-              blocker.type==='time' ? e('span', {style:{fontSize:11,fontWeight:700,color:'#F59E0B',background:'#F59E0B15',padding:'2px 8px',borderRadius:6}}, '⏰ Blocked: Time') : null,
-              blocker.type==='text' && blocker.reason ? e('span', {style:{fontSize:11,fontWeight:600,color:'#FF6B9D',background:'#FF6B9D12',padding:'2px 8px',borderRadius:6}}, '🚧 '+blocker.reason) : null
+          e('div', {style:{width:42,height:42,borderRadius:'50%',background:p.color+'18',border:'2px solid '+p.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}, p.emoji),
+          e('div', {style:{flex:1,minWidth:0}},
+            e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
+              e('div', {style:{fontSize:15,fontWeight:700,color:TEXT}}, p.name),
+              e('span', {style:{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:6,background:STATUS_COLOR[p.status||'active']+'18',color:STATUS_COLOR[p.status||'active']}}, STATUS_LABEL[p.status||'active'])
+            ),
+            e('div', {style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+              e('span', {style:{fontSize:11,fontWeight:700,color:nc}}, '⏱ '+neglectLabel(days)),
+              p.etc ? e('span', {style:{fontSize:11,fontWeight:700,color:MUTED,background:CARD2,padding:'1px 7px',borderRadius:6}},
+                ({15:'15m',30:'30m',45:'45m',60:'1h',90:'1.5h',120:'2h',180:'3h',240:'½d',480:'full day',999:'multi-day'})[p.etc]||p.etc+'m'
+              ) : null,
+              nextTask ? e('span', {style:{fontSize:11,color:MUTED,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:140}}, '→ '+nextTask.text) : null
             )
           ),
-          e('span', {style:{fontSize:16,color:MUTED,marginLeft:4}}, isOpen ? '▲' : '▼')
+          e('div', {style:{display:'flex',alignItems:'center',gap:4}},
+            e('div', {
+              onTouchStart:function(ev){handleDragTouchStart(p.id,ev);},
+              style:{fontSize:18,color:MUTED,padding:'4px 6px',cursor:'grab',lineHeight:1,touchAction:'none',userSelect:'none'}
+            }, '☰'),
+            e('button', {onClick:function(ev){ev.stopPropagation(); startEdit(p);}, style:{background:'none',border:'none',fontSize:16,cursor:'pointer',color:MUTED,padding:'4px',lineHeight:1}}, '✏️'),
+            e('span', {style:{fontSize:16,color:MUTED}}, isOpen?'▲':'▼')
+          )
         ),
-        // Expanded detail panel
-        isOpen ? e('div', {style:{padding:'0 16px 16px',borderTop:'1px solid '+BORDER}},
-          // ETC
-          e('div', {style:{marginTop:14,marginBottom:14}},
-            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '⏱ Estimated Completion Time'),
-            e('input', {className:'input', style:{marginBottom:0}, placeholder:'e.g. 2 hours, 3 sessions, ~1 week', value:p.etc||'',
-              onInput:function(ev){updateProject(p.id,{etc:ev.target.value});}
-            })
-          ),
-          // Blocker
-          e('div', {},
-            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '🚧 Blocker'),
-            e('div', {style:{display:'flex',gap:8,marginBottom:10}},
-              e('button', {onClick:function(){updateProject(p.id,{blocker:{type: blocker.type==='time' ? null : 'time', reason:''}});},
-                style:{flex:1,padding:'10px 8px',borderRadius:10,border:'1.5px solid '+(blocker.type==='time'?'#F59E0B':BORDER),background:blocker.type==='time'?'#F59E0B15':CARD2,color:blocker.type==='time'?'#F59E0B':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}},
-                '⏰ Time'
-              ),
-              e('button', {onClick:function(){updateProject(p.id,{blocker:{type: blocker.type==='text' ? null : 'text', reason:blocker.reason||''}});},
-                style:{flex:1,padding:'10px 8px',borderRadius:10,border:'1.5px solid '+(blocker.type==='text'?'#FF6B9D':BORDER),background:blocker.type==='text'?'#FF6B9D12':CARD2,color:blocker.type==='text'?'#FF6B9D':MUTED,fontWeight:700,fontSize:13,cursor:'pointer',fontFamily:'inherit'}},
-                '✏️ Custom'
+        // Last log note
+        lastLog ? e('div', {style:{padding:'0 16px 10px',fontSize:12,color:MUTED,fontStyle:'italic',borderBottom:'1px solid '+BORDER}}, '"'+lastLog+'"') : null,
+        // Expanded panel
+        isOpen ? e('div', {style:{padding:'12px 16px 16px',borderTop:lastLog?'none':'1px solid '+BORDER}},
+          // Inline edit form
+          editingProject===p.id ? e('div', {style:{marginBottom:16,padding:14,background:CARD2,borderRadius:12}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Edit Project'),
+            e('input', {className:'input', style:{marginBottom:10}, placeholder:'Project name...', value:editName, onInput:function(ev){setEditName(ev.target.value);}}),
+            e('div', {style:{marginBottom:10}},
+              e('div', {style:{fontSize:11,color:MUTED,fontWeight:700,marginBottom:8}}, 'EMOJI'),
+              e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
+                ...EMOJIS.map(function(em){return e('button',{key:em,onClick:function(){setEditEmoji(em);},style:{width:36,height:36,borderRadius:8,fontSize:18,border:'1.5px solid '+(editEmoji===em?PURPLE:BORDER),background:editEmoji===em?PURPLE+'12':CARD2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},em);})
               )
             ),
-            blocker.type==='time' ? e('div', {style:{padding:'10px 14px',background:'#F59E0B10',border:'1.5px solid #F59E0B30',borderRadius:10,fontSize:13,color:'#92400E',fontWeight:600}},
-              '⏰ This project just needs a slot on your calendar.'
-            ) : null,
-            blocker.type==='text' ? e('textarea', {
-              className:'input', placeholder:'What\'s blocking you?',
-              value:blocker.reason||'',
-              rows:3,
-              style:{resize:'none',marginBottom:0},
-              onInput:function(ev){updateProject(p.id,{blocker:{type:'text',reason:ev.target.value}});}
-            }) : null
+            e('div', {style:{marginBottom:12}},
+              e('div', {style:{fontSize:11,color:MUTED,fontWeight:700,marginBottom:8}}, 'COLOUR'),
+              e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
+                ...COLORS.map(function(c){return e('div',{key:c,onClick:function(){setEditColor(c);},style:{width:28,height:28,borderRadius:'50%',background:c,cursor:'pointer',border:editColor===c?'3px solid #1A1833':'3px solid transparent',boxShadow:editColor===c?'0 0 0 2px '+c:'none'}});})
+              )
+            ),
+            e('div', {style:{display:'flex',gap:8}},
+              e('button', {className:'btn-ghost', onClick:function(){setEditingProject(null);}}, 'Cancel'),
+              e('button', {className:'btn-primary', style:{background:editColor}, onClick:function(){saveEdit(p.id);}}, 'Save')
+            )
+          ) : null,
+          // Status picker
+          e('div', {style:{marginBottom:14}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Status'),
+            e('div', {style:{display:'flex',gap:6,flexWrap:'wrap'}},
+              ...STATUSES.map(function(s){
+                var active = (p.status||'active')===s;
+                return e('button', {key:s, onClick:function(){updateProject(p.id,{status:s});},
+                  style:{padding:'6px 12px',borderRadius:10,border:'1.5px solid '+(active?STATUS_COLOR[s]:BORDER),background:active?STATUS_COLOR[s]+'18':CARD2,color:active?STATUS_COLOR[s]:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}},
+                  STATUS_LABEL[s]);
+              })
+            )
           ),
-          e('div', {style:{marginTop:14,display:'flex',justifyContent:'flex-end'}},
+          // Blocker note (if blocked)
+          (p.status==='blocked') ? e('div', {style:{marginBottom:14}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '🚧 What\'s blocking you?'),
+            e('textarea', {className:'input',placeholder:'Describe the blocker...',value:p.blocker||'',rows:2,style:{resize:'none',marginBottom:0},
+              onInput:function(ev){updateProject(p.id,{blocker:ev.target.value});}})
+          ) : null,
+          // Description
+          e('div', {style:{marginBottom:14}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Description'),
+            e('textarea', {className:'input',placeholder:'What is this project about?',value:p.desc||'',rows:2,style:{resize:'none',marginBottom:0},
+              onInput:function(ev){updateProject(p.id,{desc:ev.target.value});}})
+          ),
+          // Estimated time to completion
+          e('div', {style:{marginBottom:14}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '⏱ Est. Time to Completion'),
+            e('select', {className:'input',style:{marginBottom:0},value:p.etc||'',
+              onChange:function(ev){updateProject(p.id,{etc:ev.target.value?parseInt(ev.target.value):null});}},
+              e('option',{value:''},'— Not set —'),
+              ...[{label:'15 min',value:15},{label:'30 min',value:30},{label:'45 min',value:45},{label:'1 hour',value:60},{label:'1.5 hrs',value:90},{label:'2 hrs',value:120},{label:'3 hrs',value:180},{label:'Half day',value:240},{label:'Full day',value:480},{label:'Multi-day',value:999}].map(function(o){
+                return e('option',{key:o.value,value:o.value},o.label);
+              })
+            )
+          ),
+          // Next actions / tasks
+          e('div', {style:{marginBottom:14}},
+            e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Next Actions'),
+            ...(p.tasks||[]).map(function(t){
+              return e('div', {key:t.id, style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid '+BORDER}},
+                e('div', {onClick:function(){toggleTask(p.id,t.id);}, style:{width:20,height:20,borderRadius:'50%',flexShrink:0,border:'2px solid '+(t.done?p.color:BORDER),background:t.done?p.color:'transparent',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontSize:11,cursor:'pointer'}}, t.done?'✓':''),
+                e('span', {style:{flex:1,fontSize:14,color:t.done?MUTED:TEXT,textDecoration:t.done?'line-through':'none'}}, t.text),
+                e('button', {onClick:function(){deleteTask(p.id,t.id);}, style:{background:'none',border:'none',color:'#C0C0D0',cursor:'pointer',fontSize:16,padding:'0 4px'}}, '×')
+              );
+            }),
+            editingTask===p.id ? e('div', {style:{display:'flex',gap:8,marginTop:8}},
+              e('input', {className:'input',style:{flex:1,marginBottom:0},placeholder:'New action...',value:newTaskText,onInput:function(ev){setNewTaskText(ev.target.value);},
+                onKeyDown:function(ev){if(ev.key==='Enter'){addTask(p.id);}}}),
+              e('button', {onClick:function(){addTask(p.id);}, style:{padding:'0 14px',borderRadius:10,border:'none',background:p.color,color:'white',fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:13}}, 'Add'),
+              e('button', {onClick:function(){setEditingTask(null);setNewTaskText('');}, style:{padding:'0 10px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',color:MUTED,fontWeight:700,cursor:'pointer',fontFamily:'inherit',fontSize:13}}, '✕')
+            ) : e('button', {onClick:function(){setEditingTask(p.id);setNewTaskText('');}, style:{display:'flex',alignItems:'center',marginTop:8,fontSize:13,fontWeight:700,color:ACCENT,cursor:'pointer',border:'none',background:'none',fontFamily:'inherit'}}, '+ Add action')
+          ),
+          e('div', {style:{display:'flex',justifyContent:'flex-end'}},
             e('button', {onClick:function(){removeProject(p.id);}, style:{background:'rgba(255,107,157,0.1)',border:'1.5px solid #FF6B9D',color:'#FF6B9D',borderRadius:10,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Remove Project')
           )
         ) : null
       );
-    }),
-    adding ? e('div', {className:'card'},
+    })),
+
+    // Done projects (collapsed section)
+    doneProjects.length > 0 ? e('div', {style:{marginTop:8}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:8}}, '✓ Completed ('+doneProjects.length+')'),
+      ...doneProjects.map(function(p){
+        return e('div', {key:p.id, className:'card', style:{marginBottom:8,padding:'12px 16px',display:'flex',alignItems:'center',gap:10,opacity:0.7}},
+          e('div', {style:{fontSize:20}}, p.emoji),
+          e('div', {style:{flex:1,fontSize:14,fontWeight:600,color:MUTED,textDecoration:'line-through'}}, p.name),
+          e('button', {onClick:function(){updateProject(p.id,{status:'active'});}, style:{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:8,border:'1.5px solid '+ACCENT,background:'transparent',color:ACCENT,cursor:'pointer',fontFamily:'inherit'}}, 'Reopen'),
+          e('button', {onClick:function(){removeProject(p.id);}, style:{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:8,border:'1.5px solid #FF6B9D',background:'transparent',color:'#FF6B9D',cursor:'pointer',fontFamily:'inherit'}}, '✕')
+        );
+      })
+    ) : null,
+
+    // Add new project form
+    adding ? e('div', {className:'card', style:{marginTop:8}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'New Project'),
       e('input', {className:'input', placeholder:'Project name...', value:name, onInput:function(ev){setName(ev.target.value);}}),
+      e('textarea', {className:'input', placeholder:'Description (optional)', value:desc, rows:2, style:{resize:'none'}, onInput:function(ev){setDesc(ev.target.value);}}),
       e('div', {style:{marginBottom:10}},
         e('div', {style:{fontSize:11,color:MUTED,fontWeight:700,marginBottom:8}}, 'PICK AN EMOJI'),
         e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
@@ -3634,10 +3913,10 @@ function ProjectsProgressScreen({projectItems, setProjectItems, projectLog, setP
         )
       ),
       e('div', {style:{display:'flex',gap:10}},
-        e('button', {className:'btn-ghost', onClick:function(){setAdding(false);setName('');setEmoji('');}}, 'Cancel'),
+        e('button', {className:'btn-ghost', onClick:function(){setAdding(false);setName('');setEmoji('');setDesc('');}}, 'Cancel'),
         e('button', {className:'btn-primary', style:{background:PURPLE}, onClick:addProject}, 'Add Project')
       )
-    ) : e('button', {style:{width:'100%',padding:16,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:MUTED,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',minHeight:52}, onClick:function(){setAdding(true);}}, '+ Add New Project')
+    ) : e('button', {style:{width:'100%',padding:16,borderRadius:14,border:'1.5px dashed '+BORDER,background:'transparent',color:MUTED,fontSize:15,fontWeight:600,cursor:'pointer',fontFamily:'inherit',minHeight:52,marginTop:8}, onClick:function(){setAdding(true);}}, '+ Add New Project')
   );
 }
 
@@ -11818,7 +12097,7 @@ function App() {
     switch(tab) {
       case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
-      case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab});
+      case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab,projectItems});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
