@@ -667,6 +667,23 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
       return {id:'sched-'+s.schedId, name:s.label, category:'Scheduled Block', time:minToTimeStr(s.minute), durationMin:s.durationMin};
     });
 
+    var flowLogL = load('flowLog') || [];
+    var fmtClock = function(d){ return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); };
+    var flowHistory = flowLogL.filter(function(s){ return s.date === dayDate; }).map(function(s){
+      var start = new Date(s.startTime);
+      var end = s.endTime ? new Date(s.endTime) : null;
+      var durationMin = Math.round(((end ? end.getTime() : Date.now()) - start.getTime()) / 60000);
+      var peakIntensity = (s.checkIns && s.checkIns.length > 0) ? Math.max.apply(null, s.checkIns.map(function(c){ return c.intensity; })) : null;
+      return {
+        start: fmtClock(start),
+        end: end ? fmtClock(end) : null,
+        ongoing: !end,
+        durationMin: durationMin,
+        peakIntensity: peakIntensity,
+        quality: s.endQuality || null,
+      };
+    });
+
     return {
       date: dayDate,
       currentTime: minToTimeStr(Math.max(START_MIN, Math.min(END_MIN, currentMinute))),
@@ -681,7 +698,8 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         morningRoutineDone: !!mDoneMin,
         cpapLastNight: !!cpapLogL[yesterdayKey],
         jobApplicationDoneToday: (jobLogL[dayDate] || 0) > 0,
-      }
+      },
+      flowHistory: flowHistory
     };
   }
 

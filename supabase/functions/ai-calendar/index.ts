@@ -14,7 +14,9 @@ CONTEXT ON LEWIS:
 - Also running "the Moonshot Project," his life's work — ambitious but must not crowd out job search or non-negotiables
 - Wants an AI that spots patterns and flags when ambition outruns the day
 
-YOUR JOB: Given a snapshot of Lewis's day (locked items, calendar events, flexible priorities, and what changed), propose a revised schedule for the rest of the day.
+YOUR JOB: Given a snapshot of Lewis's day (locked items, calendar events, flexible priorities, today's flow-state sessions, and what changed), propose a revised schedule for the rest of the day.
+
+Use FLOW STATE HISTORY (if present) to judge his actual focus pattern today — a long, high-intensity session means he's locked in and demanding work should follow that same rhythm; a short or interrupted one means focus is fragile right now and you should favor lighter, lower-stakes flexible items next rather than stacking another demanding block immediately.
 
 HARD RULES:
 1. Items marked "locked" (routines, CPAP, non-negotiables, calendar events) are FIXED. Never move, resize, or remove them. You may only flag if one is at risk (e.g. still not done and time is running out).
@@ -59,6 +61,13 @@ function buildReschedulePrompt(bundle: any, userNote: string): string {
 
   const nonNeg = bundle.nonNegotiables || {}
 
+  const flowLines = (bundle.flowHistory || []).map((f: any) => {
+    const parts = [`${f.start}${f.end ? ' - ' + f.end : ' (still ongoing)'}`, `${f.durationMin}min`]
+    if (f.peakIntensity) parts.push(`peak intensity ${f.peakIntensity}/5`)
+    if (f.quality) parts.push(`ended quality ${f.quality}/5`)
+    return `- ${parts.join(', ')}`
+  }).join('\n') || 'No flow sessions logged today'
+
   return `TODAY: ${bundle.date || 'unknown'}
 CURRENT TIME: ${bundle.currentTime || 'unknown'}
 
@@ -66,6 +75,9 @@ NON-NEGOTIABLE STATUS:
 - Morning routine: ${nonNeg.morningRoutineDone ? 'done' : 'NOT done'}
 - CPAP last night: ${nonNeg.cpapLastNight ? 'logged' : 'NOT logged'}
 - Job application today: ${nonNeg.jobApplicationDoneToday ? 'done' : 'NOT done'}
+
+FLOW STATE TODAY:
+${flowLines}
 
 LOCKED (fixed — do not move):
 ${lockedLines}
