@@ -200,7 +200,7 @@ Work through this in order. Check off items as they are completed.
 - [x] **Evening routine + CPAP reminder** — Wind-down checklist. CPAP goes on as a hard step — foundational to 5am wake goal.
 
 ### 🔔 NOTIFICATIONS & INTELLIGENCE
-- [ ] **Push notifications** — Aggressive, frequent, visual. Requires Supabase backend. Morning alarm, habit nudges, momentum warnings.
+- [x] **Push notifications** — Live via Supabase (`pg_cron` + `send-push` edge function): morning alarm (5am ET), midday check-in (12pm ET), job application nudge (3pm ET), evening routine (9pm ET), and a daily momentum check (7pm ET, via `check-momentum`) that flags stale habits/projects using data synced through `hq_data`.
 - [ ] **Blocker trend analysis** — Data is already being logged when morning routine steps are skipped. Dashboard view to surface what keeps blocking you.
 
 ### 📧 EMAIL → HQ
