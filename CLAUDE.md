@@ -172,10 +172,10 @@ Work through this in order. Check off items as they are completed.
 
 ### 💪 FITNESS
 - [x] **Muscle group balance tracker** — Log workouts by body part, flag imbalances (e.g. "6 back sessions, 0 chest this month")
-- [ ] **Daily macro + calorie logger** — Log meals, track calories, protein, carbs, fat. Daily totals vs targets. Poor man's Carb Manager.
-- [ ] **Weekly food pipeline** — Three recurring checkpoints: Plan day, Shop day, Prep day. The logistics system that makes the diet actually work.
-- [ ] **Progress photo check-in** — Weekly photo log stored on device. Visual record of body composition over time.
-- [ ] **AI fitness coach** — Reads workout balance + food logs + current weight + goal, then gives a written weekly analysis: what to do more of, what to cut, on-track date.
+- [x] **Daily macro + calorie logger** — More → Macros. Log meals, track calories, protein, carbs, fat vs. editable daily targets.
+- [x] **Weekly food pipeline** — More → Food Pipeline. Plan/Shop/Prep checkpoints tracked per ISO week with streak history.
+- [x] **Progress photo check-in** — More → Progress Photos. Weekly photo log, client-side compressed, stored on device with notes.
+- [x] **AI fitness coach** — Fitness → 🤖 Coach tab. Reads workout balance + macro logs + weight/goal via the `ai-coach` edge function and returns a written analysis. Built and wired up, but Lewis hasn't completed the one-time onboarding flow yet — first visit to the Coach tab starts a 7-step setup (training days, session length, injuries, etc.) before analysis is available.
 
 ### 📅 CALENDAR & SCHEDULE
 
