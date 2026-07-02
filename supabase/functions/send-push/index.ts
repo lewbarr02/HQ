@@ -32,6 +32,12 @@ const NOTIFICATION_SCHEDULES = {
     tag: 'hq-habits',
     requireInteraction: false,
   },
+  job_nudge: {
+    title: '💼 Job search check-in',
+    body: 'Have you applied today? Keep the streak alive — the Moonshot can wait 10 minutes.',
+    tag: 'hq-job-nudge',
+    requireInteraction: true,
+  },
   test: {
     title: '✅ HQ Notifications work!',
     body: "You'll get morning, midday, and evening nudges from now on.",
