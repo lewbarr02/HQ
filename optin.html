@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HQ SMS Alerts — Sign Up</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 24px; color: #1A1833; line-height: 1.6; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { font-size: 14px; color: #666; margin-bottom: 24px; }
+  label { font-size: 13px; font-weight: 700; display: block; margin-bottom: 6px; }
+  input[type=tel] { width: 100%; padding: 12px; font-size: 15px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; margin-bottom: 20px; }
+  .consent { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 20px; }
+  .consent input { margin-top: 3px; }
+  .consent p { font-size: 13px; color: #444; margin: 0; }
+  .fine { font-size: 12px; color: #666; margin-bottom: 6px; }
+  a { color: #00C6FF; }
+  button { width: 100%; padding: 14px; font-size: 15px; font-weight: 700; border: none; border-radius: 10px; background: #1A1833; color: #fff; cursor: pointer; }
+  button:disabled { background: #ccc; cursor: not-allowed; }
+  #confirm { display: none; margin-top: 16px; padding: 14px; background: #ECFDF5; border: 1px solid #10B981; border-radius: 8px; font-size: 14px; color: #065F46; }
+</style>
+</head>
+<body>
+<h1>HQ SMS Reminders</h1>
+<p class="sub">HQ is a personal productivity app. Sign up below to receive automated reminder texts.</p>
+
+<form id="optinForm">
+  <label for="phone">Mobile Phone Number*</label>
+  <input type="tel" id="phone" placeholder="(555) 123-4567" required>
+
+  <div class="consent">
+    <input type="checkbox" id="consent" required>
+    <p>Yes, I would like to receive automated SMS reminders from HQ, including morning/midday/evening routine reminders, habit nudges, and job-search reminders. I understand I will receive up to 10 messages per day.</p>
+  </div>
+
+  <p class="fine"><strong>Message Frequency:</strong> Up to 10 messages per day.</p>
+  <p class="fine"><strong>Standard Rates:</strong> Message and data rates may apply depending on your mobile carrier plan.</p>
+  <p class="fine"><strong>Help &amp; Stop:</strong> Reply HELP for help or STOP to cancel at any time.</p>
+  <p class="fine">By providing your phone number and checking the box above, you agree to receive automated text messages from HQ. Consent is not required to use the HQ application.</p>
+  <p class="fine"><a href="terms.html">Terms of Service</a> | <a href="privacy.html">Privacy Policy</a></p>
+
+  <button type="submit" id="submitBtn">Yes, sign me up!</button>
+</form>
+
+<div id="confirm">✅ Thanks! You're signed up to receive HQ SMS reminders. Reply STOP at any time to opt out.</div>
+
+<script>
+document.getElementById('optinForm').addEventListener('submit', function(ev){
+  ev.preventDefault();
+  document.getElementById('optinForm').style.display = 'none';
+  document.getElementById('confirm').style.display = 'block';
+});
+</script>
+</body>
+</html>
