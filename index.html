@@ -507,12 +507,20 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
   const [editActionId, setEditActionId] = useState(null);
   const [actionEditMode, setActionEditMode] = useState(false);
-  const [actionItemsOpen, setActionItemsOpen] = useState(() => load('dayActionItemsOpen') !== false);
+  const [buildMode, setBuildMode] = useState(() => load('dayBuildMode') === true);
   const [calEvents, setCalEvents] = useState([]);
   const [calSyncMsg, setCalSyncMsg] = useState('');
   const [scheduled, setScheduled] = useState(() => loadScheduledForDate(td));
   const [undoSchedule, setUndoSchedule] = useState(null);
   const undoTimerRef = useRef(null);
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleNote, setRescheduleNote] = useState('');
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
+  const [rescheduleResult, setRescheduleResult] = useState(null);
+  const [rescheduleError, setRescheduleError] = useState('');
+  const [appliedSuggestions, setAppliedSuggestions] = useState({});
+  var CALENDAR_URL = 'https://bfgybytjjubdnciraksj.supabase.co/functions/v1/ai-calendar';
+  var CALENDAR_AUTH = 'Bearer sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4';
 
   // Reload scheduled + action items when date changes
   useEffect(function() {
@@ -523,7 +531,6 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   const [dragItem, setDragItem] = useState(null);
   const dragItemRef = useRef(null);
   const [dragOverMinute, setDragOverMinute] = useState(null);
-  const [splitView, setSplitView] = useState(() => load('daySplitView') !== false);
   const [savedTemplates, setSavedTemplates] = useState(() => load('dayTemplates') || []);
   const [showCustomModal, setShowCustomModal] = useState(false);
   function openCustomModal() { dragItemRef.current = null; setDragItem(null); setGhostPos(null); setShowCustomModal(true); }
@@ -635,6 +642,85 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   var eDoneMin = eDone ? parseTimeToMin(eDone) : null;
 
   var todayPriorities = dayDate === td ? (priorities || []).filter(p => p.time) : [];
+
+  // ── AI day bundle + reschedule ──────────────────────────────────────────
+  function buildDayBundle() {
+    var jobLogL = load('jobLog') || {};
+    var cpapLogL = load('cpapLog') || {};
+    var yd = new Date(dayDate + 'T12:00:00'); yd.setDate(yd.getDate() - 1);
+    var yesterdayKey = yd.toISOString().slice(0,10);
+
+    var locked = [];
+    if (mStartMin) locked.push({label:'☀️ Morning Routine', start:mStart, end:mDone||null, done:!!mDoneMin});
+    if (eStartMin) locked.push({label:'🌙 Evening Routine', start:eStart, end:eDone||null, done:!!eDoneMin});
+    scheduled.filter(function(s){ return s.id && s.id.startsWith('routine-'); }).forEach(function(s){
+      locked.push({label:s.label, start:minToTimeStr(s.minute), end:minToTimeStr(s.minute + s.durationMin), done:true});
+    });
+
+    var flexPriorities = (priorities || []).filter(function(p){ return !p.done; }).map(function(p){
+      return {id:'priority-'+p.id, name:p.name, category:p.cat||null, time:p.time||null, durationMin:45};
+    });
+    var flexActionItems = (actionItems || []).filter(function(a){ return a.tier === 'primary' && a.state !== 'done'; }).map(function(a){
+      return {id:'action-'+a.id, name:a.name, category: a.timeOfDay === 'am' ? 'Must Happen AM' : 'Must Happen PM', time:null, durationMin:30};
+    });
+    var flexScheduled = scheduled.filter(function(s){ return !(s.id && s.id.startsWith('routine-')); }).map(function(s){
+      return {id:'sched-'+s.schedId, name:s.label, category:'Scheduled Block', time:minToTimeStr(s.minute), durationMin:s.durationMin};
+    });
+
+    return {
+      date: dayDate,
+      currentTime: minToTimeStr(Math.max(START_MIN, Math.min(END_MIN, currentMinute))),
+      locked: locked,
+      calendarEvents: calEvents.filter(function(ev){ return !ev.allDay; }).map(function(ev){
+        var s = new Date(ev.start), en = new Date(ev.end);
+        var fmt = function(d){ return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); };
+        return {title: ev.title, start: fmt(s), end: fmt(en)};
+      }),
+      flexibleItems: flexPriorities.concat(flexActionItems).concat(flexScheduled),
+      nonNegotiables: {
+        morningRoutineDone: !!mDoneMin,
+        cpapLastNight: !!cpapLogL[yesterdayKey],
+        jobApplicationDoneToday: (jobLogL[dayDate] || 0) > 0,
+      }
+    };
+  }
+
+  async function runReschedule() {
+    setRescheduleLoading(true);
+    setRescheduleError('');
+    setRescheduleResult(null);
+    setAppliedSuggestions({});
+    try {
+      var bundle = buildDayBundle();
+      var resp = await fetch(CALENDAR_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'Authorization':CALENDAR_AUTH},
+        body: JSON.stringify({type:'reschedule', dayBundle:bundle, userNote:rescheduleNote})
+      });
+      var data = await resp.json();
+      if (data.error) {
+        setRescheduleError(typeof data.error === 'string' ? data.error : JSON.stringify(data.error));
+      } else if (data.parsed) {
+        setRescheduleResult(data.parsed);
+      } else {
+        setRescheduleError('Could not read a suggestion back. Try again.');
+      }
+    } catch (err) {
+      setRescheduleError(String(err));
+    }
+    setRescheduleLoading(false);
+  }
+
+  function applyRescheduleSuggestion(sugg) {
+    var minute = parseTimeToMin(sugg.suggestedTime);
+    if (minute == null) return;
+    var clamped = Math.max(START_MIN, Math.min(END_MIN - 15, minute));
+    var newBlock = {schedId:'ai-'+Date.now()+'-'+Math.random().toString(36).slice(2,6), id:sugg.id||('ai-'+sugg.name), label:sugg.name, color:PURPLE, durationMin:sugg.durationMin||30, minute:clamped};
+    var next = scheduled.concat([newBlock]);
+    setScheduled(next);
+    saveScheduledForDate(dayDate, next);
+    setAppliedSuggestions(function(cur){ return Object.assign({}, cur, {[sugg.id]: true}); });
+  }
 
   var hours = [];
   for (var h = 5; h <= 24; h++) hours.push(h === 24 ? 0 : h);
@@ -809,33 +895,27 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     );
   }
 
-  var priorityBarEl = e('div', {style:{paddingBottom: actionItemsOpen ? 10 : 4, borderBottom:'1px solid '+BORDER}},
+  var priorityBarEl = !buildMode ? null : e('div', {style:{paddingBottom: 10, borderBottom:'1px solid '+BORDER}},
     // Header row
-    e('div', {style:{display:'flex',alignItems:'center',gap:6,marginBottom: actionItemsOpen ? 8 : 0}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:6,marginBottom: 8}},
       e('div', {style:{fontSize:11,fontWeight:800,letterSpacing:'0.08em',textTransform:'uppercase',color:TEXT,flex:1}}, 'Action Items'),
-      e('button', {
-        onClick: function(){ var next = !actionItemsOpen; setActionItemsOpen(next); save('dayActionItemsOpen', next); },
-        style:{display:'flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:20,border:'1.5px solid '+BORDER,background: actionItemsOpen ? ACCENT+'10' : '#F0F2F8',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color: actionItemsOpen ? ACCENT : MUTED,flexShrink:0}
-      }, actionItemsOpen ? '▾ Hide' : '▸ Show'),
-      actionItemsOpen && actionItems.length > 0 ? e('button', {
+      actionItems.length > 0 ? e('button', {
         onClick: resetActionItems,
         title:'Reset all to unplanned',
         style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid #EF444450',background:'#EF44440D',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color:'#EF4444',flexShrink:0}
       }, '↺ Reset') : null,
-      actionItemsOpen ? e('button', {
+      e('button', {
         onClick: function(){ setActionEditMode(function(m){ return !m; }); },
         style:{padding:'3px 9px',borderRadius:20,border:'1.5px solid '+(actionEditMode?PURPLE+'80':BORDER),background:actionEditMode?PURPLE+'15':'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:10,fontWeight:700,color:actionEditMode?PURPLE:MUTED,flexShrink:0}
-      }, actionEditMode ? 'Done Editing' : '✏️ Edit') : null
+      }, actionEditMode ? 'Done Editing' : '✏️ Edit')
     ),
-    // Collapsible body
-    actionItemsOpen ? e('div', {},
+    // Body
+    e('div', {},
       TierRow(aiPrimaryAM, 'Must Happen', 'AM', 'primary', 'am', false),
-      aiPrimaryPM.length > 0 || true
-        ? TierRow(aiPrimaryPM, 'Must Happen', 'PM', 'primary', 'pm', false)
-        : null,
+      TierRow(aiPrimaryPM, 'Must Happen', 'PM', 'primary', 'pm', false),
       e('div', {style:{height:1,background:BORDER,margin:'6px 0 8px'}}),
       TierRow(aiSecondary, 'Like to Happen', '', 'secondary', 'am', secondaryDimmed)
-    ) : null
+    )
   );
 
   // Ghost overlay for touch drag
@@ -1018,12 +1098,16 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         return e('button', {key:v, onClick:function(){ setCalView(v); save('dayCalView',v); },
           style:{padding:'5px 8px',border:'none',borderLeft: v==='day'?'none':'1px solid '+BORDER,background:active?ACCENT:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:active?'white':MUTED,minWidth:32}
         }, label);
-      }),
-      e('button', {
-        onClick: function(){ var next = !splitView; setSplitView(next); save('daySplitView', next); },
-        style:{padding:'5px 8px',border:'none',borderLeft:'1px solid '+BORDER,background:splitView&&calView==='day'?PURPLE:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:13,color:splitView&&calView==='day'?'white':MUTED,title:'Split view'}
-      }, '⊞')
+      })
     );
+  }
+
+  function BuildModeToggle() {
+    return e('button', {
+      onClick: function(){ var next = !buildMode; setBuildMode(next); save('dayBuildMode', next); },
+      title: buildMode ? 'Exit Build-a-Day mode' : 'Enter Build-a-Day mode',
+      style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid '+(buildMode?PURPLE:BORDER),background:buildMode?PURPLE:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:buildMode?'white':MUTED,flexShrink:0,marginRight:4}
+    }, '🏗️', buildMode ? ' Exit' : ' Build-a-Day');
   }
 
   // Single-column timeline panel (shared by both views)
@@ -1082,6 +1166,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             title: 'Clear timeline',
             style:{display:'flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:8,border:'1.5px solid #EF444440',background:'transparent',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:'#EF4444',flexShrink:0,marginRight:4}
           }, '🗑 Clear'),
+          BuildModeToggle({}),
           ViewToggle({})
         ),
         priorityBarEl
@@ -1344,7 +1429,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     );
   }
 
-  if (!splitView) {
+  if (!buildMode) {
     return e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}},
       GhostOverlay,
       UndoToast,
@@ -1422,6 +1507,12 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
         }
 
         return [
+          // AI reschedule trigger (today only)
+          dayDate === td ? e('button', {key:'ai-reschedule', onClick:function(){ setShowReschedule(true); }, style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'10px 12px',borderRadius:10,border:'none',background:PURPLE,cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:700,color:'white',marginBottom:10}},
+            e('span', {style:{fontSize:14}}, '🤖'),
+            'Reschedule My Day'
+          ) : null,
+
           // Custom block creator
           e('button', {key:'add-custom', onClick:()=>openCustomModal(), style:{width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:6,padding:'9px 12px',borderRadius:10,border:'1.5px dashed '+ACCENT+'60',background:ACCENT+'08',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:700,color:ACCENT,marginBottom:16}},
             e('span', {style:{fontSize:15}}, '+'),
@@ -1706,6 +1797,62 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             setCustomForm({label:'',color:'#10B981',durationMin:30,emoji:''});
             closeCustomModal();
           }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:PURPLE,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'#fff',cursor:'pointer'}}, '+ Place Now')
+        )
+      )
+    ) : null,
+
+    // AI Reschedule modal
+    showReschedule ? e('div', {onClick:function(){ if (!rescheduleLoading) setShowReschedule(false); }, style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
+      e('div', {onClick:ev=>ev.stopPropagation(), style:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 24px 36px',width:'100%',maxWidth:480,boxShadow:'0 -8px 40px rgba(0,0,0,0.18)',maxHeight:'85vh',overflowY:'auto'}},
+        e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
+          e('div', {style:{fontSize:17,fontWeight:800,color:TEXT,flex:1}}, '🤖 Reschedule My Day'),
+          e('button', {onClick:function(){ setShowReschedule(false); }, style:{background:'none',border:'none',fontSize:20,color:MUTED,cursor:'pointer',padding:0}}, '×')
+        ),
+
+        !rescheduleResult ? e('div', {},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:6}}, 'WHAT CHANGED?'),
+          e('textarea', {value:rescheduleNote, onInput:ev=>setRescheduleNote(ev.target.value), placeholder:'e.g. gym got cancelled, meeting moved to 2pm…', rows:3, autoFocus:true,
+            style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box',resize:'vertical',marginBottom:14}}),
+          rescheduleError ? e('div', {style:{fontSize:12,color:'#EF4444',marginBottom:12,fontWeight:600}}, '⚠️ ' + rescheduleError) : null,
+          e('button', {onClick:runReschedule, disabled:rescheduleLoading,
+            style:{width:'100%',padding:'12px',borderRadius:10,border:'none',background:rescheduleLoading?MUTED:PURPLE,fontFamily:'inherit',fontSize:14,fontWeight:700,color:'white',cursor:rescheduleLoading?'default':'pointer'}
+          }, rescheduleLoading ? 'Thinking…' : 'Get Suggestions')
+        ) : e('div', {},
+          e('div', {style:{fontSize:13,lineHeight:1.6,color:TEXT,marginBottom:14,padding:'10px 12px',background:PURPLE+'10',borderRadius:10}}, rescheduleResult.summary),
+
+          (rescheduleResult.suggestions||[]).length > 0 ? e('div', {style:{marginBottom:14}},
+            e('div', {style:{fontSize:11,fontWeight:800,letterSpacing:'0.07em',textTransform:'uppercase',color:MUTED,marginBottom:8}}, 'Suggestions'),
+            ...(rescheduleResult.suggestions||[]).map(function(sugg, si){
+              var applied = !!appliedSuggestions[sugg.id];
+              return e('div', {key:'sugg-'+si, style:{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 12px',borderRadius:10,border:'1.5px solid '+BORDER,marginBottom:8}},
+                e('div', {style:{flex:1}},
+                  e('div', {style:{display:'flex',alignItems:'center',gap:6,marginBottom:2,flexWrap:'wrap'}},
+                    e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, sugg.name),
+                    e('div', {style:{fontSize:11,fontWeight:700,color:PURPLE}}, sugg.suggestedTime)
+                  ),
+                  sugg.reasoning ? e('div', {style:{fontSize:12,color:MUTED,lineHeight:1.4}}, sugg.reasoning) : null
+                ),
+                e('button', {onClick:function(){ applyRescheduleSuggestion(sugg); }, disabled:applied,
+                  style:{flexShrink:0,padding:'6px 12px',borderRadius:20,border:'none',background:applied?'#10B981':ACCENT,color:'white',fontFamily:'inherit',fontSize:11,fontWeight:700,cursor:applied?'default':'pointer'}
+                }, applied ? '✓ Added' : 'Apply')
+              );
+            })
+          ) : null,
+
+          (rescheduleResult.atRisk||[]).length > 0 ? e('div', {style:{marginBottom:14}},
+            e('div', {style:{fontSize:11,fontWeight:800,letterSpacing:'0.07em',textTransform:'uppercase',color:'#EF4444',marginBottom:8}}, '⚠️ At Risk'),
+            ...(rescheduleResult.atRisk||[]).map(function(r, ri){
+              var text = typeof r === 'string' ? r : ((r.item ? r.item + ' — ' : '') + (r.reason||''));
+              return e('div', {key:'risk-'+ri, style:{fontSize:12,color:'#EF4444',marginBottom:4,lineHeight:1.4}}, '• ' + text);
+            })
+          ) : null,
+
+          rescheduleResult.notes ? e('div', {style:{fontSize:12,color:MUTED,lineHeight:1.5,marginBottom:14,fontStyle:'italic'}}, rescheduleResult.notes) : null,
+
+          e('div', {style:{display:'flex',gap:8}},
+            e('button', {onClick:function(){ setRescheduleResult(null); setRescheduleNote(''); }, style:{flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:13,fontWeight:700,color:MUTED,cursor:'pointer'}}, 'Try Again'),
+            e('button', {onClick:function(){ setShowReschedule(false); setRescheduleResult(null); setRescheduleNote(''); }, style:{flex:1,padding:'10px',borderRadius:10,border:'none',background:PURPLE,fontFamily:'inherit',fontSize:13,fontWeight:700,color:'white',cursor:'pointer'}}, 'Done')
+          )
         )
       )
     ) : null,
