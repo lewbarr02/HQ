@@ -11143,6 +11143,22 @@ function MacroScreen({ setTab }) {
   );
 }
 
+var NUDGE_DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function fmtNudgeDays(days) {
+  var d = (days||[]).slice().sort();
+  if (d.length === 7) return 'Daily';
+  if (d.length === 5 && d.join(',') === '1,2,3,4,5') return 'Weekdays';
+  if (d.length === 2 && d.join(',') === '0,6') return 'Weekends';
+  return d.map(function(i){ return NUDGE_DAY_LABELS[i]; }).join(', ') || 'Never';
+}
+function fmtNudgeTime(hhmm) {
+  var parts = (hhmm||'00:00').split(':');
+  var h = parseInt(parts[0], 10), m = parts[1];
+  var ap = h >= 12 ? 'PM' : 'AM';
+  var h12 = h % 12 || 12;
+  return h12 + ':' + m + ' ' + ap;
+}
+
 function NotificationsScreen({ setTab }) {
   var [status, setStatus] = useState(function(){
     if (!('Notification' in window)) return 'unsupported';
@@ -11153,6 +11169,70 @@ function NotificationsScreen({ setTab }) {
   var [testLoading, setTestLoading] = useState(false);
   var [smsLoading, setSmsLoading] = useState(false);
   var [msg, setMsg] = useState('');
+
+  var [nudges, setNudges] = useState([]);
+  var [nudgesLoading, setNudgesLoading] = useState(true);
+  var [showNudgeModal, setShowNudgeModal] = useState(false);
+  var [editingNudgeId, setEditingNudgeId] = useState(null);
+  var [nudgeForm, setNudgeForm] = useState({emoji:'🔔', title:'', body:'', time:'09:00', days:[0,1,2,3,4,5,6], requireInteraction:false});
+  var [nudgeSaving, setNudgeSaving] = useState(false);
+
+  function loadNudges() {
+    setNudgesLoading(true);
+    _SB.from('nudges').select('*').eq('user_id','lewis').order('time').then(function(res){
+      setNudges(res.data || []);
+      setNudgesLoading(false);
+    });
+  }
+  useEffect(function(){ loadNudges(); }, []);
+
+  function openAddNudge() {
+    setEditingNudgeId(null);
+    setNudgeForm({emoji:'🔔', title:'', body:'', time:'09:00', days:[0,1,2,3,4,5,6], requireInteraction:false});
+    setShowNudgeModal(true);
+  }
+  function openEditNudge(n) {
+    setEditingNudgeId(n.id);
+    setNudgeForm({emoji:n.emoji||'🔔', title:n.title, body:n.body, time:n.time, days:n.days||[], requireInteraction:!!n.require_interaction});
+    setShowNudgeModal(true);
+  }
+  function toggleNudgeDay(d) {
+    setNudgeForm(function(f){
+      var has = f.days.includes(d);
+      var next = has ? f.days.filter(function(x){return x!==d;}) : f.days.concat([d]);
+      return Object.assign({}, f, {days: next});
+    });
+  }
+  async function saveNudge() {
+    if (!nudgeForm.title.trim() || !nudgeForm.body.trim() || nudgeForm.days.length === 0) return;
+    setNudgeSaving(true);
+    var row = {
+      user_id: 'lewis',
+      emoji: nudgeForm.emoji || '🔔',
+      title: nudgeForm.title.trim(),
+      body: nudgeForm.body.trim(),
+      time: nudgeForm.time,
+      days: nudgeForm.days,
+      require_interaction: nudgeForm.requireInteraction,
+    };
+    if (editingNudgeId) {
+      await _SB.from('nudges').update(row).eq('id', editingNudgeId);
+    } else {
+      await _SB.from('nudges').insert(row);
+    }
+    setNudgeSaving(false);
+    setShowNudgeModal(false);
+    loadNudges();
+  }
+  async function deleteNudge(id) {
+    if (!window.confirm('Delete this nudge?')) return;
+    await _SB.from('nudges').delete().eq('id', id);
+    loadNudges();
+  }
+  async function toggleNudgeActive(n) {
+    await _SB.from('nudges').update({active: !n.active}).eq('id', n.id);
+    loadNudges();
+  }
 
   useEffect(function(){
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -11220,12 +11300,6 @@ function NotificationsScreen({ setTab }) {
     setSmsLoading(false);
   }
 
-  var SCHEDULES = [
-    {time:'5:00 AM',  emoji:'🌅', label:'Morning alarm',   desc:'Wake up + start your morning routine'},
-    {time:'12:00 PM', emoji:'☀️', label:'Midday check-in', desc:'Pulse check — how\'s the day going?'},
-    {time:'9:00 PM',  emoji:'🌙', label:'Evening routine', desc:'Wind down + CPAP reminder'},
-  ];
-
   return e('div', {className:'content'},
     e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:20}},
       e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
@@ -11254,19 +11328,41 @@ function NotificationsScreen({ setTab }) {
       msg ? e('div', {style:{marginTop:14,fontSize:13,color:msg.startsWith('✅')?'#10B981':'#FF6B6B',fontWeight:600,lineHeight:1.5}}, msg) : null
     ),
 
-    // Schedule
+    // Nudges list
     e('div', {className:'card', style:{marginBottom:16}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:14}}, 'Daily Schedule'),
-      ...SCHEDULES.map(function(s, i){
-        return e('div', {key:s.time, style:{display:'flex',alignItems:'center',gap:14,paddingBottom: i<2?14:0,marginBottom: i<2?14:0,borderBottom: i<2?'1px solid rgba(100,80,220,0.07)':'none'}},
-          e('div', {style:{fontSize:28,width:36,textAlign:'center',flexShrink:0}}, s.emoji),
-          e('div', {style:{flex:1}},
-            e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, s.time+' — '+s.label),
-            e('div', {style:{fontSize:12,color:MUTED,marginTop:2}}, s.desc)
+      e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:14}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,flex:1}}, 'Your Nudges'),
+        e('button', {onClick:openAddNudge, style:{padding:'5px 12px',borderRadius:20,border:'1.5px solid '+ACCENT+'50',background:ACCENT+'0D',cursor:'pointer',fontFamily:'inherit',fontSize:11,fontWeight:700,color:ACCENT}}, '+ Add Nudge')
+      ),
+      nudgesLoading ? e('div', {style:{fontSize:12,color:MUTED,textAlign:'center',padding:'10px 0'}}, 'Loading…') :
+      nudges.length === 0 ? e('div', {style:{fontSize:12,color:MUTED,fontStyle:'italic',textAlign:'center',padding:'10px 0'}}, 'No nudges yet — tap Add Nudge to create one.') :
+      nudges.map(function(n, i){
+        return e('div', {key:n.id, style:{display:'flex',alignItems:'center',gap:12,paddingBottom: i<nudges.length-1?14:0,marginBottom: i<nudges.length-1?14:0,borderBottom: i<nudges.length-1?'1px solid rgba(100,80,220,0.07)':'none',opacity:n.active?1:0.45}},
+          e('div', {style:{fontSize:26,width:32,textAlign:'center',flexShrink:0}}, n.emoji||'🔔'),
+          e('div', {style:{flex:1,minWidth:0}},
+            e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, fmtNudgeTime(n.time)+' — '+n.title),
+            e('div', {style:{fontSize:12,color:MUTED,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, n.body),
+            e('div', {style:{fontSize:10,color:ACCENT,fontWeight:700,marginTop:3}}, fmtNudgeDays(n.days))
           ),
-          subscribed ? e('div', {style:{width:8,height:8,borderRadius:'50%',background:'#10B981',flexShrink:0}}) : null
+          e('div', {style:{display:'flex',alignItems:'center',gap:6,flexShrink:0}},
+            e('button', {onClick:function(){toggleNudgeActive(n);}, title:n.active?'Turn off':'Turn on', style:{width:10,height:10,borderRadius:'50%',background:n.active?'#10B981':'#D1D5DB',border:'none',cursor:'pointer',padding:0}}),
+            e('button', {onClick:function(){openEditNudge(n);}, style:{background:'none',border:'none',cursor:'pointer',fontSize:14,padding:'2px 4px'}}, '✏️'),
+            e('button', {onClick:function(){deleteNudge(n.id);}, style:{background:'none',border:'none',cursor:'pointer',fontSize:14,padding:'2px 4px',color:'#EF4444'}}, '✕')
+          )
         );
       })
+    ),
+
+    // Smart nudge (automatic, not user-editable text)
+    e('div', {className:'card', style:{marginBottom:16}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Smart Nudge'),
+      e('div', {style:{display:'flex',alignItems:'center',gap:14}},
+        e('div', {style:{fontSize:28,width:36,textAlign:'center',flexShrink:0}}, '😴'),
+        e('div', {style:{flex:1}},
+          e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, '7:00 PM — Momentum check'),
+          e('div', {style:{fontSize:12,color:MUTED,marginTop:2}}, 'Auto-generated daily from your habit + project data — flags whatever\'s gone stale. Not editable here since the message changes every time.')
+        )
+      )
     ),
 
     // Test buttons
@@ -11286,7 +11382,75 @@ function NotificationsScreen({ setTab }) {
       e('div', {style:{fontSize:12,color:MUTED,lineHeight:1.6}}, 'Install HQ to your home screen (Share → Add to Home Screen on iOS, or the install prompt on Android/Chrome). Notifications work more reliably from an installed PWA.')
     ),
 
-    e('div', {style:{height:20}})
+    e('div', {style:{height:20}}),
+
+    // Add/Edit nudge modal
+    showNudgeModal ? e('div', {onClick:function(){ if(!nudgeSaving) setShowNudgeModal(false); }, style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center'}},
+      e('div', {onClick:ev=>ev.stopPropagation(), style:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 24px 36px',width:'100%',maxWidth:480,boxShadow:'0 -8px 40px rgba(0,0,0,0.18)',maxHeight:'85vh',overflowY:'auto'}},
+        e('div', {style:{fontSize:17,fontWeight:800,color:TEXT,marginBottom:20}}, editingNudgeId ? 'Edit Nudge' : 'Add Nudge'),
+
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:8}}, 'ICON ' + (nudgeForm.emoji ? '— ' + nudgeForm.emoji : '')),
+          e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
+            ...['🔔','🌅','☀️','🌙','💼','📋','💊','🏋️','📚','🧘','💧','🧹','🚗','💰','🎯','⏰','🚀','😴'].map(function(em){
+              var active = nudgeForm.emoji === em;
+              return e('button', {key:em, onClick:function(){ setNudgeForm(function(f){ return {...f, emoji: em}; }); },
+                style:{width:36,height:36,borderRadius:10,border:'2px solid '+(active?ACCENT:'transparent'),
+                  background:active?ACCENT+'18':'#F8FAFC',fontSize:18,cursor:'pointer',
+                  display:'flex',alignItems:'center',justifyContent:'center'}
+              }, em);
+            })
+          )
+        ),
+
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:6}}, 'TITLE'),
+          e('input', {value:nudgeForm.title, onInput:ev=>setNudgeForm(f=>({...f,title:ev.target.value})), placeholder:'e.g. Drink water', autoFocus:true,
+            style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
+        ),
+
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:6}}, 'MESSAGE'),
+          e('textarea', {value:nudgeForm.body, onInput:ev=>setNudgeForm(f=>({...f,body:ev.target.value})), placeholder:'What should the notification say?', rows:2,
+            style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box',resize:'vertical'}})
+        ),
+
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:6}}, 'TIME (Eastern)'),
+          e('input', {type:'time', value:nudgeForm.time, onInput:ev=>setNudgeForm(f=>({...f,time:ev.target.value})),
+            style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
+        ),
+
+        e('div', {style:{marginBottom:14}},
+          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:8}}, 'DAYS'),
+          e('div', {style:{display:'flex',gap:6,flexWrap:'wrap'}},
+            ...NUDGE_DAY_LABELS.map(function(lbl, i){
+              var active = nudgeForm.days.includes(i);
+              return e('button', {key:i, onClick:function(){toggleNudgeDay(i);},
+                style:{width:40,height:36,borderRadius:10,border:'1.5px solid '+(active?ACCENT:BORDER),
+                  background:active?ACCENT+'15':'#F8FAFC',color:active?ACCENT:MUTED,fontWeight:700,fontSize:12,cursor:'pointer',fontFamily:'inherit'}
+              }, lbl);
+            })
+          )
+        ),
+
+        e('div', {style:{marginBottom:20,display:'flex',alignItems:'center',gap:10}},
+          e('button', {onClick:function(){ setNudgeForm(f=>({...f,requireInteraction:!f.requireInteraction})); },
+            style:{width:40,height:24,borderRadius:20,border:'none',background:nudgeForm.requireInteraction?ACCENT:'#D1D5DB',position:'relative',cursor:'pointer',flexShrink:0,padding:0}},
+            e('div', {style:{width:18,height:18,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:nudgeForm.requireInteraction?19:3,transition:'left 0.15s'}})
+          ),
+          e('div', {style:{fontSize:12,color:MUTED}}, 'Stay on screen until tapped (for things you must not miss)')
+        ),
+
+        e('div', {style:{display:'flex',gap:8}},
+          editingNudgeId ? e('button', {onClick:function(){ setShowNudgeModal(false); deleteNudge(editingNudgeId); }, style:{padding:'12px',borderRadius:10,border:'1.5px solid #EF444450',background:'#EF44440D',fontFamily:'inherit',fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer'}}, 'Delete') : null,
+          e('button', {onClick:function(){ setShowNudgeModal(false); }, style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:13,fontWeight:700,color:MUTED,cursor:'pointer'}}, 'Cancel'),
+          e('button', {onClick:saveNudge, disabled:nudgeSaving || !nudgeForm.title.trim() || !nudgeForm.body.trim() || nudgeForm.days.length===0,
+            style:{flex:2,padding:'12px',borderRadius:10,border:'none',background:PURPLE,fontFamily:'inherit',fontSize:13,fontWeight:700,color:'white',cursor:'pointer',opacity:(nudgeSaving||!nudgeForm.title.trim()||!nudgeForm.body.trim()||nudgeForm.days.length===0)?0.5:1}
+          }, nudgeSaving ? 'Saving…' : 'Save Nudge')
+        )
+      )
+    ) : null
   );
 }
 

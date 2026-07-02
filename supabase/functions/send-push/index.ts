@@ -80,7 +80,7 @@ serve(async (req) => {
         title: custom.title,
         body: custom.body || "Time's up. What did you get done?",
         tag: custom.tag || 'hq-hardstop',
-        requireInteraction: true,
+        requireInteraction: custom.requireInteraction !== undefined ? !!custom.requireInteraction : true,
       }
     } else {
       notifData = NOTIFICATION_SCHEDULES[type as keyof typeof NOTIFICATION_SCHEDULES] || NOTIFICATION_SCHEDULES.test
