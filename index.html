@@ -173,7 +173,7 @@ async function subscribeToPush() {
     p256dh: subJson.keys.p256dh,
     auth: subJson.keys.auth,
     updated_at: new Date().toISOString(),
-  }, {onConflict: 'user_id'});
+  }, {onConflict: 'user_id,endpoint'});
   return {ok:true};
 }
 
@@ -181,8 +181,11 @@ async function unsubscribeFromPush() {
   if (!('serviceWorker' in navigator)) return;
   var reg = await navigator.serviceWorker.ready;
   var sub = await reg.pushManager.getSubscription();
-  if (sub) await sub.unsubscribe();
-  await _SB.from('push_subscriptions').delete().eq('user_id','lewis');
+  if (sub) {
+    var subJson = sub.toJSON();
+    await sub.unsubscribe();
+    await _SB.from('push_subscriptions').delete().eq('user_id','lewis').eq('endpoint', subJson.endpoint);
+  }
 }
 
 function save(k,v){
