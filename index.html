@@ -9846,6 +9846,7 @@ function InboxScreen({ setTab }) {
   const [scanError, setScanError] = useState(null);
   const [results, setResults] = useState(null); // {summary, needsAction:[], fyi:[]}
   const [addedIds, setAddedIds] = useState({});
+  const [openedIds, setOpenedIds] = useState({});
 
   const INBOX_CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D',Finance:'#10B981',Shopping:'#F59E0B',Email:'#8E8EAA'};
 
@@ -9929,10 +9930,13 @@ function InboxScreen({ setTab }) {
     results ? e('div', null,
       results.summary ? e('div', {className:'card', style:{marginBottom:16,fontSize:14,color:TEXT,lineHeight:1.5}}, results.summary) : null,
 
-      e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:10}}, 'NEEDS ACTION (' + (results.needsAction||[]).length + ')'),
-      (results.needsAction||[]).length === 0 ? e('div', {className:'card', style:{textAlign:'center',padding:24,color:MUTED,marginBottom:16}}, 'Nothing urgent 🎉') :
-      e('div', {style:{marginBottom:16}},
-        ...(results.needsAction||[]).map(function(item){
+      (function(){
+        const visibleNeedsAction = (results.needsAction||[]).filter(function(item){ return !openedIds[item.id]; });
+        return e('div', null,
+          e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:10}}, 'NEEDS ACTION (' + visibleNeedsAction.length + ')'),
+          visibleNeedsAction.length === 0 ? e('div', {className:'card', style:{textAlign:'center',padding:24,color:MUTED,marginBottom:16}}, 'Nothing urgent 🎉') :
+          e('div', {style:{marginBottom:16}},
+            ...visibleNeedsAction.map(function(item){
           const catColor = INBOX_CAT_COLORS[item.category] || '#00C6FF';
           const added = !!addedIds[item.id];
           return e('div', {key:item.id, className:'card', style:{padding:'12px 16px',marginBottom:8}},
@@ -9948,6 +9952,7 @@ function InboxScreen({ setTab }) {
                     href: 'https://mail.google.com/mail/?authuser=' + encodeURIComponent(item.source) + '#all/' + item.id,
                     target: '_blank',
                     rel: 'noopener noreferrer',
+                    onClick: ()=>setOpenedIds(Object.assign({}, openedIds, { [item.id]: true })),
                     style:{marginLeft:'auto',fontSize:12,fontWeight:700,color:ACCENT,textDecoration:'none',whiteSpace:'nowrap'}
                   }, '↗ Open email') : null,
                   e('button', {
@@ -9959,8 +9964,10 @@ function InboxScreen({ setTab }) {
               )
             )
           );
-        })
-      ),
+            })
+          )
+        );
+      })(),
 
       e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:10}}, 'FYI (' + (results.fyi||[]).length + ')'),
       ...(results.fyi||[]).map(function(item){
