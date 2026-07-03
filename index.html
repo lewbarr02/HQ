@@ -9607,14 +9607,17 @@ function InboxScreen({ setTab }) {
       accounts.length === 0 ? e('div', {style:{fontSize:13,color:MUTED,marginBottom:12}}, 'No inboxes connected yet.') :
       e('div', {style:{marginBottom:12}},
         ...accounts.map(function(a){
-          return e('div', {key:a.email, style:{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid rgba(100,80,220,0.08)'}},
-            e('div', {style:{width:8,height:8,borderRadius:'50%',background:'#10B981',flexShrink:0}}),
-            e('div', {style:{fontSize:13,fontWeight:600,color:TEXT,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, a.email),
-            e('button', {onClick:()=>disconnectAccount(a.email), style:{background:'none',border:'none',color:'#EF4444',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Disconnect')
+          return e('div', {key:a.email, style:{padding:'8px 0',borderBottom:'1px solid rgba(100,80,220,0.08)'}},
+            e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+              e('div', {style:{width:8,height:8,borderRadius:'50%',background: a.error ? '#F59E0B' : '#10B981',flexShrink:0}}),
+              e('div', {style:{fontSize:13,fontWeight:600,color:TEXT,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, a.email),
+              e('button', {onClick:()=>disconnectAccount(a.email), style:{background:'none',border:'none',color:'#EF4444',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Disconnect')
+            ),
+            a.error ? e('div', {style:{fontSize:11,color:'#F59E0B',marginTop:4,paddingLeft:16}}, '⚠ Couldn\'t verify: ' + a.error) : null
           );
         })
       ),
-      e('button', {onClick:gmailStartOAuth, className:'btn-ghost'}, '+ Connect another inbox'),
+      e('button', {onClick:gmailStartOAuth, className:'btn-ghost'}, accounts.length === 0 ? '+ Connect an inbox' : '+ Connect another inbox'),
       accounts.length === 0 ? e('div', {style:{fontSize:11,color:MUTED,marginTop:10}}, 'You\'ll be redirected to Google to authorize read-only access, once per inbox.') : null
     ),
 
@@ -12515,12 +12518,21 @@ function App() {
         };
         return fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
           headers: { 'Authorization': 'Bearer ' + d.access_token },
-        }).then(function(r){ return r.json(); }).then(function(profile){
-          newAccount.email = profile.emailAddress || 'Connected inbox';
-        }).catch(function(){
-          newAccount.email = 'Connected inbox';
+        }).then(function(profResp){
+          return profResp.json().then(function(profile){ return { ok: profResp.ok, profile: profile }; });
+        }).then(function(result){
+          if (result.ok && result.profile && result.profile.emailAddress) {
+            newAccount.email = result.profile.emailAddress;
+          } else {
+            newAccount.email = 'Unverified inbox (' + new Date().toLocaleTimeString() + ')';
+            newAccount.error = (result.profile && result.profile.error && result.profile.error.message) || 'Unknown error verifying account';
+          }
+        }).catch(function(ex){
+          newAccount.email = 'Unverified inbox (' + new Date().toLocaleTimeString() + ')';
+          newAccount.error = 'Network error: ' + ex.message;
         }).then(function(){
-          var list = loadGmailAccounts().filter(function(a){ return a.email !== newAccount.email; });
+          var list = loadGmailAccounts();
+          if (!newAccount.error) list = list.filter(function(a){ return a.email !== newAccount.email; });
           list.push(newAccount);
           saveGmailAccounts(list);
           setTab('inbox');
