@@ -8545,24 +8545,58 @@ function glCoursePar(courseKey, holes) {
   return c.total;
 }
 
+// Official Triad Tour scoring
+var GL_PTS = { '9':{1:50,2:35,3:25}, '18':{1:150,2:100,3:75} };
+var GL_BONUS_PAR=3, GL_BONUS_BIRDIE=10, GL_BONUS_LOW9=10, GL_BONUS_LOW18=20, GL_BONUS_MAJOR_WIN=25;
+
 function glComputeStats(rounds) {
   var stats = {};
-  GOLF_PLAYERS_DEF.forEach(function(p){ stats[p.key]={wins:0,second:0,third:0,points:0,rounds:[],currentStreak:0,bestStreak:0}; });
+  GOLF_PLAYERS_DEF.forEach(function(p){ stats[p.key]={wins:0,second:0,third:0,points:0,bonusPoints:0,rounds:[],currentStreak:0,bestStreak:0}; });
   var sorted = (rounds||[]).slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
+  // Track running season lows per player per format to detect new lows
+  var seasonLow = {};
+  GOLF_PLAYERS_DEF.forEach(function(p){ seasonLow[p.key]={'9':null,'18':null}; });
+
   sorted.forEach(function(rnd){
     var par = glCoursePar(rnd.course, rnd.holes||'full');
+    var format = (rnd.holes==='full') ? '18' : '9';
+    var ptTable = GL_PTS[format];
     var scored = GOLF_PLAYERS_DEF.map(function(p){ var s=rnd.scores&&rnd.scores[p.key]; return (s!==''&&s!=null)?{key:p.key,score:Number(s)}:null; }).filter(Boolean);
     if(scored.length < 2) return;
     scored.sort(function(a,b){ return a.score-b.score; });
-    var minScore = scored[0].score;
-    var tiedWinners = scored.filter(function(x){ return x.score===minScore; });
-    scored.forEach(function(p,idx){
-      stats[p.key].rounds.push({score:p.score, par:par, date:rnd.date, course:rnd.course});
-      if(p.score===minScore){ if(tiedWinners.length===1){stats[p.key].wins++;stats[p.key].points+=3;}else{stats[p.key].points+=2;} }
-      else if(idx===tiedWinners.length){ stats[p.key].second++;stats[p.key].points+=1; }
-      else{ stats[p.key].third++; }
+    var tiedWinners = scored.filter(function(x){ return x.score===scored[0].score; });
+    var isMajor = format==='18';
+
+    scored.forEach(function(p){
+      // Placement rank (1-indexed, ties share rank)
+      var rank = scored.filter(function(x){ return x.score < p.score; }).length + 1;
+      var placePts = ptTable[rank] || 0;
+      var bonus = 0;
+
+      // Par / birdie bonus
+      var diff = p.score - par;
+      if(diff === 0) bonus += GL_BONUS_PAR;
+      else if(diff < 0) bonus += GL_BONUS_BIRDIE;
+
+      // New season low bonus (only if beats a previously set low, not first round)
+      var curLow = seasonLow[p.key][format];
+      if(curLow !== null && p.score < curLow) bonus += isMajor ? GL_BONUS_LOW18 : GL_BONUS_LOW9;
+      if(curLow === null || p.score < curLow) seasonLow[p.key][format] = p.score;
+
+      // Major championship win bonus
+      if(isMajor && rank===1 && tiedWinners.length===1) bonus += GL_BONUS_MAJOR_WIN;
+
+      if(rank===1){ if(tiedWinners.length===1) stats[p.key].wins++; }
+      else if(rank===2) stats[p.key].second++;
+      else if(rank===3) stats[p.key].third++;
+
+      stats[p.key].points += placePts + bonus;
+      stats[p.key].bonusPoints += bonus;
+      stats[p.key].rounds.push({score:p.score, par:par, date:rnd.date, course:rnd.course, placePts:placePts, bonus:bonus, rank:rank});
     });
   });
+
+  // Win streaks
   GOLF_PLAYERS_DEF.forEach(function(p){
     var best=0,temp=0,curr=0;
     sorted.forEach(function(rnd){
@@ -8649,7 +8683,7 @@ function glExportPNG(golfRounds) {
       ctx.font='22px sans-serif'; ctx.fillText(medals[idx],34,rowY+38);
       ctx.fillStyle='white'; ctx.font='bold 18px -apple-system,system-ui,sans-serif';
       ctx.fillText(p.label, 70,rowY+38);
-      var cols=[{label:'PTS',val:String(s.points)},{label:'WINS',val:String(s.wins)},{label:'STREAK',val:s.currentStreak>0?s.currentStreak+' str':'—'},{label:'HDCP',val:glHandicap(p.key,rounds)||'—'}];
+      var cols=[{label:'PTS',val:String(s.points)},{label:'BONUS',val:s.bonusPoints>0?'+'+s.bonusPoints:'—'},{label:'WINS',val:String(s.wins)},{label:'HDCP',val:glHandicap(p.key,rounds)||'—'}];
       cols.forEach(function(col,ci){
         var cx=230+ci*88;
         ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='9px -apple-system,system-ui,sans-serif';
