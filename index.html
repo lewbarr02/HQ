@@ -9022,6 +9022,7 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
   var [logPars,setLogPars]=React.useState({lewis:'',dad:'',will:''});
   var [logBirdies,setLogBirdies]=React.useState({lewis:'',dad:'',will:''});
   var [deleteConfirm,setDeleteConfirm]=React.useState(null);
+  var [editingRoundId,setEditingRoundId]=React.useState(null);
 
   var rounds=golfRounds||[];
   var stats=glComputeStats(rounds);
@@ -9033,11 +9034,11 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
     var hasScore=GOLF_PLAYERS_DEF.some(function(p){return logScores[p.key]!=='';});
     if(!hasScore)return;
     var rndPar=glCoursePar(logCourse,logHoles);
-    var newRound={id:'gr'+Date.now(),date:logDate,course:logCourse,holes:logHoles,
+    var updatedRound={id:editingRoundId||('gr'+Date.now()),date:logDate,course:logCourse,holes:logHoles,
       scores:{lewis:logScores.lewis!==''?rndPar+Number(logScores.lewis):null,dad:logScores.dad!==''?rndPar+Number(logScores.dad):null,will:logScores.will!==''?rndPar+Number(logScores.will):null},
       pars:{lewis:logPars.lewis!==''?Number(logPars.lewis):0,dad:logPars.dad!==''?Number(logPars.dad):0,will:logPars.will!==''?Number(logPars.will):0},
       birdies:{lewis:logBirdies.lewis!==''?Number(logBirdies.lewis):0,dad:logBirdies.dad!==''?Number(logBirdies.dad):0,will:logBirdies.will!==''?Number(logBirdies.will):0}};
-    var next=[...rounds,newRound].sort(function(a,b){return a.date.localeCompare(b.date);});
+    var next=(editingRoundId ? rounds.map(function(r){return r.id===editingRoundId?updatedRound:r;}) : [...rounds,updatedRound]).sort(function(a,b){return a.date.localeCompare(b.date);});
     setGolfRounds(next); save('golfRounds',next);
     // Auto-check Exercise habit when logging a round for today
     if(logDate===today()){
@@ -9050,7 +9051,7 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
         }
       }
     }
-    setLogScores({lewis:'',dad:'',will:''}); setLogPars({lewis:'',dad:'',will:''}); setLogBirdies({lewis:'',dad:'',will:''}); setActiveTab('dashboard');
+    setLogScores({lewis:'',dad:'',will:''}); setLogPars({lewis:'',dad:'',will:''}); setLogBirdies({lewis:'',dad:'',will:''}); setEditingRoundId(null); setActiveTab('dashboard');
   }
 
   function deleteRound(id){
@@ -9283,8 +9284,9 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
         )
       ),
       e('button',{onClick:saveRound,style:{width:'100%',padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+GL+','+GL2+')',border:'none',color:'white',fontSize:16,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+GL+'40'}},
-        '+ Save Round'
-      )
+        editingRoundId ? '✏️  Update Round' : '+ Save Round'
+      ),
+      editingRoundId ? e('button',{onClick:function(){setEditingRoundId(null);setLogScores({lewis:'',dad:'',will:''});setLogPars({lewis:'',dad:'',will:''});setLogBirdies({lewis:'',dad:'',will:''});setActiveTab('history');},style:{width:'100%',marginTop:10,padding:'12px',borderRadius:16,background:'none',border:'1.5px solid rgba(100,80,220,0.2)',color:MUTED,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Edit') : null
     );
   }
 
@@ -9301,7 +9303,21 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
               e('div',{style:{fontWeight:700,fontSize:14,color:TEXT}},GOLF_COURSES_DEF[rnd.course].name),
               e('div',{style:{fontSize:11,color:MUTED}},rnd.date+(rnd.holes!=='full'?' • '+(rnd.holes==='front9'?'Front 9':'Back 9'):''))
             ),
-            e('button',{onClick:function(){setDeleteConfirm(rnd.id);},style:{background:'none',border:'none',cursor:'pointer',fontSize:16,color:MUTED,padding:4}},'🗑️')
+            e('div',{style:{display:'flex',gap:4}},
+              e('button',{onClick:function(){
+                var rpar=glCoursePar(rnd.course,rnd.holes||'full');
+                setLogDate(rnd.date); setLogCourse(rnd.course); setLogHoles(rnd.holes||'full');
+                setLogScores({
+                  lewis:rnd.scores&&rnd.scores.lewis!=null?String(Number(rnd.scores.lewis)-rpar):'',
+                  dad:rnd.scores&&rnd.scores.dad!=null?String(Number(rnd.scores.dad)-rpar):'',
+                  will:rnd.scores&&rnd.scores.will!=null?String(Number(rnd.scores.will)-rpar):''
+                });
+                setLogPars({lewis:String((rnd.pars&&rnd.pars.lewis)||0),dad:String((rnd.pars&&rnd.pars.dad)||0),will:String((rnd.pars&&rnd.pars.will)||0)});
+                setLogBirdies({lewis:String((rnd.birdies&&rnd.birdies.lewis)||0),dad:String((rnd.birdies&&rnd.birdies.dad)||0),will:String((rnd.birdies&&rnd.birdies.will)||0)});
+                setEditingRoundId(rnd.id); setActiveTab('log');
+              },style:{background:'none',border:'none',cursor:'pointer',fontSize:15,color:MUTED,padding:4}},'✏️'),
+              e('button',{onClick:function(){setDeleteConfirm(rnd.id);},style:{background:'none',border:'none',cursor:'pointer',fontSize:16,color:MUTED,padding:4}},'🗑️')
+            )
           ),
           e('div',{style:{display:'flex',gap:8}},
             sc.map(function(p,i){
