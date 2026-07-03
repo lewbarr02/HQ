@@ -81,6 +81,7 @@ const VAPID_PUBLIC_KEY = 'BPHwTkV4M4QJJFLH9s32fuIjWZSTbhUVoUYUQK5OnkNBR6b89GxTP6
 // ── Google Calendar OAuth ──────────────────────────────────────────────────
 const GOOGLE_CLIENT_ID = '694107816016-fei91g54rfhk4ovr4rqpcjgtfjshl1sf.apps.googleusercontent.com';
 const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const SUPABASE_FN = 'https://bfgybytjjubdnciraksj.supabase.co/functions/v1';
 const SUPABASE_ANON = 'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4';
 
@@ -144,6 +145,80 @@ function gcalStartOAuth() {
     '&access_type=offline' +
     '&prompt=consent';
   window.location.href = url;
+}
+
+// ── Gmail multi-inbox OAuth ─────────────────────────────────────────────────
+function loadGmailAccounts() {
+  try { return JSON.parse(localStorage.getItem('hq_gmailAccounts') || '[]'); } catch (ex) { return []; }
+}
+function saveGmailAccounts(list) { localStorage.setItem('hq_gmailAccounts', JSON.stringify(list)); }
+
+function gmailStartOAuth() {
+  var redirect = window.location.origin + '/';
+  var url = 'https://accounts.google.com/o/oauth2/v2/auth' +
+    '?client_id=' + encodeURIComponent(GOOGLE_CLIENT_ID) +
+    '&redirect_uri=' + encodeURIComponent(redirect) +
+    '&response_type=code' +
+    '&scope=' + encodeURIComponent(GMAIL_SCOPE) +
+    '&access_type=offline' +
+    '&prompt=consent' +
+    '&state=gmail_connect';
+  window.location.href = url;
+}
+
+async function gmailGetAccessToken(account) {
+  if (account.expiry && Date.now() > account.expiry - 5 * 60 * 1000) {
+    if (!account.refresh_token) return null;
+    try {
+      var r = await fetch(SUPABASE_FN + '/google-oauth', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+        body: JSON.stringify({action:'refresh', refresh_token: account.refresh_token}),
+      });
+      var d = await r.json();
+      if (!d.access_token) return null;
+      account.access_token = d.access_token;
+      account.expiry = Date.now() + (d.expires_in || 3600) * 1000;
+      var list = loadGmailAccounts().map(function(a){ return a.email === account.email ? account : a; });
+      saveGmailAccounts(list);
+    } catch (ex) { return null; }
+  }
+  return account.access_token;
+}
+
+async function gmailFetchRecent(account) {
+  var token = await gmailGetAccessToken(account);
+  if (!token) return { error: 'no_token', emails: [] };
+  try {
+    var listResp = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15&q=' + encodeURIComponent('in:inbox newer_than:2d'),
+      { headers: { 'Authorization': 'Bearer ' + token }, cache: 'no-store' }
+    );
+    if (!listResp.ok) return { error: 'http_' + listResp.status, emails: [] };
+    var listData = await listResp.json();
+    var ids = (listData.messages || []).map(function(m){ return m.id; });
+    var emails = [];
+    for (var i = 0; i < ids.length; i++) {
+      var mr = await fetch(
+        'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + ids[i] +
+        '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date',
+        { headers: { 'Authorization': 'Bearer ' + token }, cache: 'no-store' }
+      );
+      if (!mr.ok) continue;
+      var md = await mr.json();
+      var headers = (md.payload && md.payload.headers) || [];
+      var getH = function(name) { var h = headers.find(function(x){ return x.name === name; }); return h ? h.value : ''; };
+      emails.push({
+        id: md.id,
+        from: getH('From'),
+        subject: getH('Subject'),
+        snippet: md.snippet || '',
+        date: getH('Date'),
+        source: account.email,
+      });
+    }
+    return { error: null, emails: emails };
+  } catch (ex) { return { error: 'exception: ' + ex.message, emails: [] }; }
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -9466,6 +9541,130 @@ function CalendarScreen({ calendarConnected, setCalendarConnected, setTab }) {
   );
 }
 
+function InboxScreen({ setTab }) {
+  const [accounts, setAccounts] = useState(() => loadGmailAccounts());
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState(null);
+  const [results, setResults] = useState(null); // {summary, needsAction:[], fyi:[]}
+  const [addedIds, setAddedIds] = useState({});
+
+  const INBOX_CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D',Finance:'#10B981',Shopping:'#F59E0B',Email:'#8E8EAA'};
+
+  function disconnectAccount(email) {
+    const next = accounts.filter(function(a){ return a.email !== email; });
+    setAccounts(next);
+    saveGmailAccounts(next);
+  }
+
+  async function scanInbox() {
+    if (accounts.length === 0) return;
+    setScanning(true);
+    setScanError(null);
+    setResults(null);
+    try {
+      const fetches = await Promise.all(accounts.map(function(a){ return gmailFetchRecent(a); }));
+      const allEmails = [];
+      const errors = [];
+      fetches.forEach(function(f, i){
+        if (f.error) errors.push(accounts[i].email + ': ' + f.error);
+        allEmails.push(...f.emails);
+      });
+      if (allEmails.length === 0) {
+        setScanError(errors.length ? errors.join(' / ') : 'No recent emails found');
+        setScanning(false);
+        return;
+      }
+      const r = await fetch(SUPABASE_FN + '/ai-inbox', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+        body: JSON.stringify({ emails: allEmails }),
+      });
+      const d = await r.json();
+      if (d.error || !d.parsed) { setScanError(d.error || 'Could not parse response'); setScanning(false); return; }
+      setResults(d.parsed);
+    } catch (ex) {
+      setScanError('exception: ' + ex.message);
+    }
+    setScanning(false);
+  }
+
+  function addAsPriority(item) {
+    const cat = INBOX_CAT_COLORS[item.category] ? item.category : 'Email';
+    const newP = { id: Date.now().toString() + '-' + item.id, name: item.subject || item.from, cat: cat, time: '', done: false, color: INBOX_CAT_COLORS[cat] || '#00C6FF', source: item.from || null };
+    const current = load('priorities') || [];
+    save('priorities', [...current, newP]);
+    setAddedIds(Object.assign({}, addedIds, { [item.id]: true }));
+  }
+
+  return e('div', {className:'content'},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:20}},
+      e('button', {onClick:()=>setTab('today'), style:{background:'none',border:'none',cursor:'pointer',fontSize:20,color:MUTED,padding:'0 4px 0 0'}}, '‹'),
+      e('div', {style:{fontSize:20,fontWeight:800,color:TEXT}}, '📧 Inbox')
+    ),
+
+    e('div', {className:'card', style:{marginBottom:16}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Connected Inboxes'),
+      accounts.length === 0 ? e('div', {style:{fontSize:13,color:MUTED,marginBottom:12}}, 'No inboxes connected yet.') :
+      e('div', {style:{marginBottom:12}},
+        ...accounts.map(function(a){
+          return e('div', {key:a.email, style:{display:'flex',alignItems:'center',gap:8,padding:'8px 0',borderBottom:'1px solid rgba(100,80,220,0.08)'}},
+            e('div', {style:{width:8,height:8,borderRadius:'50%',background:'#10B981',flexShrink:0}}),
+            e('div', {style:{fontSize:13,fontWeight:600,color:TEXT,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, a.email),
+            e('button', {onClick:()=>disconnectAccount(a.email), style:{background:'none',border:'none',color:'#EF4444',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Disconnect')
+          );
+        })
+      ),
+      e('button', {onClick:gmailStartOAuth, className:'btn-ghost'}, '+ Connect another inbox'),
+      accounts.length === 0 ? e('div', {style:{fontSize:11,color:MUTED,marginTop:10}}, 'You\'ll be redirected to Google to authorize read-only access, once per inbox.') : null
+    ),
+
+    accounts.length > 0 ? e('button', {onClick:scanInbox, className:'btn-primary', disabled:scanning, style:{marginBottom:16}},
+      scanning ? 'Scanning…' : '🤖 Scan Inbox'
+    ) : null,
+
+    scanError ? e('div', {className:'card', style:{marginBottom:16,color:'#EF4444',fontSize:13}}, scanError) : null,
+
+    results ? e('div', null,
+      results.summary ? e('div', {className:'card', style:{marginBottom:16,fontSize:14,color:TEXT,lineHeight:1.5}}, results.summary) : null,
+
+      e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:10}}, 'NEEDS ACTION (' + (results.needsAction||[]).length + ')'),
+      (results.needsAction||[]).length === 0 ? e('div', {className:'card', style:{textAlign:'center',padding:24,color:MUTED,marginBottom:16}}, 'Nothing urgent 🎉') :
+      e('div', {style:{marginBottom:16}},
+        ...(results.needsAction||[]).map(function(item){
+          const catColor = INBOX_CAT_COLORS[item.category] || '#00C6FF';
+          const added = !!addedIds[item.id];
+          return e('div', {key:item.id, className:'card', style:{padding:'12px 16px',marginBottom:8}},
+            e('div', {style:{display:'flex',alignItems:'flex-start',gap:10}},
+              e('div', {style:{width:4,alignSelf:'stretch',borderRadius:2,background:catColor,flexShrink:0}}),
+              e('div', {style:{flex:1,minWidth:0}},
+                e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, item.subject || '(no subject)'),
+                e('div', {style:{fontSize:12,color:MUTED,marginTop:2}}, item.from + (item.source ? ' · ' + item.source : '')),
+                e('div', {style:{fontSize:12,color:TEXT,marginTop:6,lineHeight:1.4}}, item.reasoning),
+                e('div', {style:{display:'flex',alignItems:'center',gap:8,marginTop:10}},
+                  e('span', {className:'tag active', style:{background:catColor,fontSize:11,padding:'4px 12px'}}, item.category || 'Email'),
+                  e('button', {
+                    onClick:()=>addAsPriority(item),
+                    disabled:added,
+                    style:{marginLeft:'auto',background: added ? 'none' : ACCENT,border: added ? '1.5px solid rgba(100,80,220,0.18)' : 'none',borderRadius:8,color: added ? MUTED : '#1A1833',padding:'6px 14px',fontSize:12,fontWeight:700,cursor: added ? 'default' : 'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}
+                  }, added ? '✓ Added' : '+ Add as Priority')
+                )
+              )
+            )
+          );
+        })
+      ),
+
+      e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:10}}, 'FYI (' + (results.fyi||[]).length + ')'),
+      ...(results.fyi||[]).map(function(item){
+        return e('div', {key:item.id, style:{padding:'8px 4px',borderBottom:'1px solid rgba(100,80,220,0.08)',display:'flex',gap:8,alignItems:'center'}},
+          e('div', {style:{fontSize:13,color:TEXT,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, item.subject || '(no subject)'),
+          e('div', {style:{fontSize:11,color:MUTED,flexShrink:0}}, item.source)
+        );
+      })
+    ) : null
+  );
+}
+
 function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLog }) {
   var _wipCheck = (function(){ try{ return !!JSON.parse(localStorage.getItem('hq_wipWorkout')||'null'); }catch(e){ return false; } })();
   const [view, setView] = useState(_wipCheck ? 'execute' : 'log'); // log | history | coach | execute
@@ -12297,24 +12496,54 @@ function App() {
     // Handle Google OAuth redirect
     var params = new URLSearchParams(window.location.search);
     var oauthCode = params.get('code');
-    if (oauthCode) {
-      window.history.replaceState({}, '', window.location.pathname);
+    var oauthState = params.get('state');
+    if (!oauthCode) return;
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (oauthState === 'gmail_connect') {
       fetch(SUPABASE_FN + '/google-oauth', {
         method: 'POST',
         headers: {'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
         body: JSON.stringify({action:'exchange', code: oauthCode, redirect_uri: window.location.origin + '/'}),
       }).then(function(r){ return r.json(); }).then(function(d){
-        if (d.access_token) {
-          localStorage.setItem('hq_calTokens', JSON.stringify({
-            access_token: d.access_token,
-            refresh_token: d.refresh_token || null,
-            expiry: Date.now() + (d.expires_in || 3600) * 1000,
-          }));
-          setCalendarConnected(true);
-          setTab('day');
-        }
+        if (!d.access_token) return;
+        var newAccount = {
+          email: null,
+          access_token: d.access_token,
+          refresh_token: d.refresh_token || null,
+          expiry: Date.now() + (d.expires_in || 3600) * 1000,
+        };
+        return fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
+          headers: { 'Authorization': 'Bearer ' + d.access_token },
+        }).then(function(r){ return r.json(); }).then(function(profile){
+          newAccount.email = profile.emailAddress || 'Connected inbox';
+        }).catch(function(){
+          newAccount.email = 'Connected inbox';
+        }).then(function(){
+          var list = loadGmailAccounts().filter(function(a){ return a.email !== newAccount.email; });
+          list.push(newAccount);
+          saveGmailAccounts(list);
+          setTab('inbox');
+        });
       }).catch(function(){});
+      return;
     }
+
+    fetch(SUPABASE_FN + '/google-oauth', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON},
+      body: JSON.stringify({action:'exchange', code: oauthCode, redirect_uri: window.location.origin + '/'}),
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.access_token) {
+        localStorage.setItem('hq_calTokens', JSON.stringify({
+          access_token: d.access_token,
+          refresh_token: d.refresh_token || null,
+          expiry: Date.now() + (d.expires_in || 3600) * 1000,
+        }));
+        setCalendarConnected(true);
+        setTab('day');
+      }
+    }).catch(function(){});
   }, []);
 
   useEffect(() => {
@@ -12410,6 +12639,7 @@ function App() {
     {id:'hqbacklog',icon:'🛠️',label:'HQ Backlog'},
     {id:'areas',icon:'⊞',label:'Areas'},
     {id:'calendar',icon:'📅',label:'Google Calendar'},
+    {id:'inbox',icon:'📧',label:'Email Inbox'},
     {id:'fitness',icon:'💪',label:'Fitness'},
     {id:'datenights',icon:'💑',label:'Date Nights'},
     {id:'macros',icon:'🥗',label:'Macros'},
@@ -12437,6 +12667,7 @@ function App() {
       case 'goals': return e(GoalsScreen, {goals,setGoals,projects,setProjects,setTab,backlog,setBacklog});
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
+      case 'inbox': return e(InboxScreen, {setTab});
       case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog,habits,habitLog,setHabitLog});
       case 'golf-league': return e(GolfLeagueScreen, {golfRounds,setGolfRounds,setTab,habits,habitLog,setHabitLog});
       case 'datenights': return e(DateNightsScreen, {dateNights,setDateNights,setTab});
