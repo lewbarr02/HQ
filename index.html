@@ -9945,7 +9945,7 @@ function InboxScreen({ setTab }) {
                 e('div', {style:{display:'flex',alignItems:'center',gap:8,marginTop:10}},
                   e('span', {className:'tag active', style:{background:catColor,fontSize:11,padding:'4px 12px'}}, item.category || 'Email'),
                   item.source ? e('a', {
-                    href: 'https://mail.google.com/mail/u/' + encodeURIComponent(item.source) + '/#all/' + item.id,
+                    href: 'https://mail.google.com/mail/?authuser=' + encodeURIComponent(item.source) + '#all/' + item.id,
                     target: '_blank',
                     rel: 'noopener noreferrer',
                     style:{marginLeft:'auto',fontSize:12,fontWeight:700,color:ACCENT,textDecoration:'none',whiteSpace:'nowrap'}
