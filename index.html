@@ -8798,6 +8798,128 @@ function GolfLeagueCard({golfRounds, setTab}) {
   );
 }
 
+function GolfBonusTracker({rounds}) {
+  var sorted = rounds.slice().sort(function(a,b){return a.date.localeCompare(b.date);});
+  var colors = {lewis:'#00C6FF', dad:'#F59E0B', will:'#10B981'};
+
+  // Season totals per player
+  var totals = {};
+  GOLF_PLAYERS_DEF.forEach(function(p){ totals[p.key]={pars:0,birdies:0,bonusPts:0}; });
+  sorted.forEach(function(rnd){
+    GOLF_PLAYERS_DEF.forEach(function(p){
+      var np=(rnd.pars&&rnd.pars[p.key])||0;
+      var nb=(rnd.birdies&&rnd.birdies[p.key])||0;
+      totals[p.key].pars+=Number(np);
+      totals[p.key].birdies+=Number(nb);
+      totals[p.key].bonusPts+=Number(np)*GL_BONUS_PAR+Number(nb)*GL_BONUS_BIRDIE;
+    });
+  });
+
+  // Per-round history per player
+  var canvasRef = React.useRef(null);
+  React.useEffect(function(){
+    var canvas=canvasRef.current; if(!canvas||!sorted.length) return;
+    var dpr=window.devicePixelRatio||1;
+    var W=canvas.offsetWidth, H=160;
+    canvas.width=W*dpr; canvas.height=H*dpr;
+    var ctx=canvas.getContext('2d'); ctx.scale(dpr,dpr);
+    var pad={t:12,r:16,b:28,l:36};
+    var cw=W-pad.l-pad.r, ch=H-pad.t-pad.b;
+    var n=sorted.length;
+    var groupW=cw/n;
+    var barW=Math.min(18,(groupW/GOLF_PLAYERS_DEF.length)-4);
+    var maxVal=1;
+    sorted.forEach(function(rnd){
+      GOLF_PLAYERS_DEF.forEach(function(p){
+        var nb=(rnd.birdies&&rnd.birdies[p.key])||0;
+        var np=(rnd.pars&&rnd.pars[p.key])||0;
+        maxVal=Math.max(maxVal,Number(nb)+Number(np));
+      });
+    });
+    // Grid
+    ctx.strokeStyle='rgba(100,80,220,0.07)'; ctx.lineWidth=1;
+    for(var g=0;g<=maxVal;g++){
+      var gy=pad.t+ch-(g/maxVal)*ch;
+      ctx.beginPath(); ctx.moveTo(pad.l,gy); ctx.lineTo(W-pad.r,gy); ctx.stroke();
+      ctx.fillStyle='#8E8EAA'; ctx.font='9px -apple-system,sans-serif'; ctx.textAlign='right';
+      ctx.fillText(g,pad.l-4,gy+3);
+    }
+    // X labels
+    sorted.forEach(function(rnd,i){
+      var cx=pad.l+(i+0.5)*groupW;
+      ctx.fillStyle='#8E8EAA'; ctx.font='9px -apple-system,sans-serif'; ctx.textAlign='center';
+      ctx.fillText(GOLF_COURSES_DEF[rnd.course].short.slice(0,7),cx,H-8);
+    });
+    // Bars: stacked pars (lighter) + birdies (solid) per player
+    sorted.forEach(function(rnd,i){
+      GOLF_PLAYERS_DEF.forEach(function(p,pi){
+        var col=colors[p.key];
+        var nb=Number((rnd.birdies&&rnd.birdies[p.key])||0);
+        var np=Number((rnd.pars&&rnd.pars[p.key])||0);
+        var totalH=maxVal>0?((nb+np)/maxVal)*ch:0;
+        var birdieH=maxVal>0?(nb/maxVal)*ch:0;
+        var parH=totalH-birdieH;
+        var offset=(pi-(GOLF_PLAYERS_DEF.length-1)/2)*(barW+3);
+        var bx=pad.l+(i+0.5)*groupW+offset-barW/2;
+        var by=pad.t+ch-totalH;
+        if(np>0){
+          ctx.fillStyle=col+'55';
+          ctx.beginPath();
+          ctx.roundRect ? ctx.roundRect(bx,by,barW,parH,2) : ctx.rect(bx,by,barW,parH);
+          ctx.fill();
+        }
+        if(nb>0){
+          ctx.fillStyle=col;
+          ctx.beginPath();
+          var birdieY=pad.t+ch-birdieH;
+          ctx.roundRect ? ctx.roundRect(bx,birdieY,barW,birdieH,2) : ctx.rect(bx,birdieY,barW,birdieH);
+          ctx.fill();
+        }
+      });
+    });
+  },[rounds]);
+
+  return e('div',{style:{marginBottom:24}},
+    e('div',{style:{fontSize:11,fontWeight:700,letterSpacing:1.2,color:'#8E8EAA',textTransform:'uppercase',marginBottom:10}},'Pars & Birdies'),
+    e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:16,padding:'14px 16px'}},
+      // Season totals row
+      e('div',{style:{display:'flex',gap:8,marginBottom:16}},
+        GOLF_PLAYERS_DEF.map(function(p){
+          var t=totals[p.key];
+          return e('div',{key:p.key,style:{flex:1,background:'#F8F9FF',borderRadius:12,padding:'10px 8px',textAlign:'center',borderTop:'3px solid '+colors[p.key]}},
+            e('div',{style:{fontSize:13,fontWeight:800,color:colors[p.key]}},p.label),
+            e('div',{style:{display:'flex',justifyContent:'center',gap:10,marginTop:6}},
+              e('div',{},
+                e('div',{style:{fontSize:16,fontWeight:900,color:'#1A1833'}},t.pars),
+                e('div',{style:{fontSize:9,color:'#8E8EAA',fontWeight:700}},'PARS')
+              ),
+              e('div',{style:{fontSize:16,color:'#8E8EAA'}},'·'),
+              e('div',{},
+                e('div',{style:{fontSize:16,fontWeight:900,color:colors[p.key]}},t.birdies),
+                e('div',{style:{fontSize:9,color:'#8E8EAA',fontWeight:700}},'BIRDIES')
+              )
+            ),
+            t.bonusPts>0?e('div',{style:{fontSize:10,fontWeight:700,color:'#22C55E',marginTop:4}},'+'+t.bonusPts+' bonus pts'):null
+          );
+        })
+      ),
+      // Legend
+      e('div',{style:{display:'flex',gap:16,marginBottom:8}},
+        e('div',{style:{display:'flex',alignItems:'center',gap:5}},
+          e('div',{style:{width:12,height:10,borderRadius:2,background:'rgba(100,100,200,0.3)'}}),
+          e('span',{style:{fontSize:10,color:'#8E8EAA',fontWeight:600}},'Pars')
+        ),
+        e('div',{style:{display:'flex',alignItems:'center',gap:5}},
+          e('div',{style:{width:12,height:10,borderRadius:2,background:'#1A1833'}}),
+          e('span',{style:{fontSize:10,color:'#8E8EAA',fontWeight:600}},'Birdies (solid)')
+        )
+      ),
+      // Bar chart
+      rounds.length>=1 ? e('canvas',{ref:canvasRef,style:{width:'100%',display:'block'}}) : e('div',{style:{textAlign:'center',color:'#8E8EAA',fontSize:13,padding:'20px 0'}},'Log rounds with par/birdie data to see chart')
+    )
+  );
+}
+
 function GolfTrendChart({rounds}) {
   var canvasRef = React.useRef(null);
   var sorted = rounds.slice().sort(function(a,b){return a.date.localeCompare(b.date);});
@@ -9070,6 +9192,9 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
 
       // Handicap Trendline
       rounds.length >= 2 ? e(GolfTrendChart, {rounds:rounds, key:'trend'+rounds.length}) : null,
+
+      // Pars & Birdies tracker
+      e(GolfBonusTracker, {rounds:rounds, key:'bonus'+rounds.length}),
 
       // Best Round Records
       e('div',{style:{marginBottom:24}},
