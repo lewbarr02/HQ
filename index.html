@@ -8573,10 +8573,10 @@ function glComputeStats(rounds) {
       var placePts = ptTable[rank] || 0;
       var bonus = 0;
 
-      // Par / birdie bonus
-      var diff = p.score - par;
-      if(diff === 0) bonus += GL_BONUS_PAR;
-      else if(diff < 0) bonus += GL_BONUS_BIRDIE;
+      // Manual par / birdie bonus
+      var numPars = (rnd.pars && rnd.pars[p.key]) ? Number(rnd.pars[p.key]) : 0;
+      var numBirdies = (rnd.birdies && rnd.birdies[p.key]) ? Number(rnd.birdies[p.key]) : 0;
+      bonus += numPars * GL_BONUS_PAR + numBirdies * GL_BONUS_BIRDIE;
 
       // New season low bonus (only if beats a previously set low, not first round)
       var curLow = seasonLow[p.key][format];
@@ -8805,6 +8805,8 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
   var [logHoles,setLogHoles]=React.useState('full');
   var [logDate,setLogDate]=React.useState(today());
   var [logScores,setLogScores]=React.useState({lewis:'',dad:'',will:''});
+  var [logPars,setLogPars]=React.useState({lewis:'',dad:'',will:''});
+  var [logBirdies,setLogBirdies]=React.useState({lewis:'',dad:'',will:''});
   var [deleteConfirm,setDeleteConfirm]=React.useState(null);
 
   var rounds=golfRounds||[];
@@ -8816,7 +8818,10 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
   function saveRound(){
     var hasScore=GOLF_PLAYERS_DEF.some(function(p){return logScores[p.key]!=='';});
     if(!hasScore)return;
-    var newRound={id:'gr'+Date.now(),date:logDate,course:logCourse,holes:logHoles,scores:{lewis:logScores.lewis!==''?Number(logScores.lewis):null,dad:logScores.dad!==''?Number(logScores.dad):null,will:logScores.will!==''?Number(logScores.will):null}};
+    var newRound={id:'gr'+Date.now(),date:logDate,course:logCourse,holes:logHoles,
+      scores:{lewis:logScores.lewis!==''?Number(logScores.lewis):null,dad:logScores.dad!==''?Number(logScores.dad):null,will:logScores.will!==''?Number(logScores.will):null},
+      pars:{lewis:logPars.lewis!==''?Number(logPars.lewis):0,dad:logPars.dad!==''?Number(logPars.dad):0,will:logPars.will!==''?Number(logPars.will):0},
+      birdies:{lewis:logBirdies.lewis!==''?Number(logBirdies.lewis):0,dad:logBirdies.dad!==''?Number(logBirdies.dad):0,will:logBirdies.will!==''?Number(logBirdies.will):0}};
     var next=[...rounds,newRound].sort(function(a,b){return a.date.localeCompare(b.date);});
     setGolfRounds(next); save('golfRounds',next);
     // Auto-check Exercise habit when logging a round for today
@@ -8830,7 +8835,7 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
         }
       }
     }
-    setLogScores({lewis:'',dad:'',will:''}); setActiveTab('dashboard');
+    setLogScores({lewis:'',dad:'',will:''}); setLogPars({lewis:'',dad:'',will:''}); setLogBirdies({lewis:'',dad:'',will:''}); setActiveTab('dashboard');
   }
 
   function deleteRound(id){
@@ -9027,15 +9032,30 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
         )
       ),
       e('div',{style:{background:'white',border:'1px solid rgba(100,80,220,0.1)',borderRadius:18,padding:16,marginBottom:20}},
-        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:12}},'Scores  (Par '+par+')'),
-        e('div',{style:{display:'flex',flexDirection:'column',gap:10}},
+        e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:12}},'Scores & Bonuses  (Par '+par+')'),
+        e('div',{style:{display:'flex',flexDirection:'column',gap:14}},
           GOLF_PLAYERS_DEF.map(function(p){
             var val=logScores[p.key];
             var diff=val!==''?Number(val)-par:null;
-            return e('div',{key:p.key,style:{display:'flex',alignItems:'center',gap:12}},
-              e('div',{style:{width:60,fontWeight:700,fontSize:14,color:p.color}},p.label),
-              e('input',{type:'number',inputMode:'numeric',placeholder:'—',value:val,onChange:function(ev){var nxt=Object.assign({},logScores);nxt[p.key]=ev.target.value;setLogScores(nxt);},style:{flex:1,border:'1.5px solid rgba(100,80,220,0.2)',borderRadius:10,padding:'10px 12px',fontSize:18,fontWeight:700,fontFamily:'inherit',outline:'none',textAlign:'center',color:TEXT}}),
-              diff!=null?e('div',{style:{width:40,fontSize:13,fontWeight:700,color:diff>0?'#EF4444':diff<0?GL:MUTED,textAlign:'right'}},diff>0?'+'+diff:diff===0?'E':diff):e('div',{style:{width:40}})
+            var pv=logPars[p.key]; var bv=logBirdies[p.key];
+            var bonusPreview=(pv!==''?Number(pv)*GL_BONUS_PAR:0)+(bv!==''?Number(bv)*GL_BONUS_BIRDIE:0);
+            return e('div',{key:p.key,style:{borderBottom:'1px solid rgba(100,80,220,0.08)',paddingBottom:12}},
+              e('div',{style:{display:'flex',alignItems:'center',gap:12,marginBottom:6}},
+                e('div',{style:{width:56,fontWeight:700,fontSize:14,color:p.color}},p.label),
+                e('input',{type:'number',inputMode:'numeric',placeholder:'Score',value:val,onChange:function(ev){var nxt=Object.assign({},logScores);nxt[p.key]=ev.target.value;setLogScores(nxt);},style:{flex:1,border:'1.5px solid rgba(100,80,220,0.2)',borderRadius:10,padding:'8px 10px',fontSize:18,fontWeight:700,fontFamily:'inherit',outline:'none',textAlign:'center',color:TEXT}}),
+                diff!=null?e('div',{style:{width:36,fontSize:13,fontWeight:700,color:diff>0?'#EF4444':diff<0?GL:MUTED,textAlign:'right'}},diff>0?'+'+diff:diff===0?'E':diff):e('div',{style:{width:36}})
+              ),
+              e('div',{style:{display:'flex',gap:8,paddingLeft:64}},
+                e('div',{style:{flex:1}},
+                  e('div',{style:{fontSize:10,fontWeight:600,color:MUTED,marginBottom:3}},'PARS (+'+GL_BONUS_PAR+' each)'),
+                  e('input',{type:'number',inputMode:'numeric',min:'0',placeholder:'0',value:pv,onChange:function(ev){var nxt=Object.assign({},logPars);nxt[p.key]=ev.target.value;setLogPars(nxt);},style:{width:'100%',border:'1.5px solid rgba(100,80,220,0.15)',borderRadius:8,padding:'6px 8px',fontSize:14,fontWeight:700,fontFamily:'inherit',outline:'none',textAlign:'center',color:TEXT,boxSizing:'border-box'}})
+                ),
+                e('div',{style:{flex:1}},
+                  e('div',{style:{fontSize:10,fontWeight:600,color:MUTED,marginBottom:3}},'BIRDIES (+'+GL_BONUS_BIRDIE+' each)'),
+                  e('input',{type:'number',inputMode:'numeric',min:'0',placeholder:'0',value:bv,onChange:function(ev){var nxt=Object.assign({},logBirdies);nxt[p.key]=ev.target.value;setLogBirdies(nxt);},style:{width:'100%',border:'1.5px solid rgba(100,80,220,0.15)',borderRadius:8,padding:'6px 8px',fontSize:14,fontWeight:700,fontFamily:'inherit',outline:'none',textAlign:'center',color:TEXT,boxSizing:'border-box'}})
+                ),
+                bonusPreview>0?e('div',{style:{display:'flex',alignItems:'flex-end',paddingBottom:2,fontSize:12,fontWeight:700,color:GL}},(bonusPreview>0?'+':'')+bonusPreview+' pts'):null
+              )
             );
           })
         )
@@ -9064,10 +9084,17 @@ function GolfLeagueScreen({golfRounds, setGolfRounds, setTab, habits, habitLog, 
           e('div',{style:{display:'flex',gap:8}},
             sc.map(function(p,i){
               var diff=p.score-rpar;
+              var numPars=(rnd.pars&&rnd.pars[p.key])||0;
+              var numBirdies=(rnd.birdies&&rnd.birdies[p.key])||0;
+              var bonusTotal=numPars*GL_BONUS_PAR+numBirdies*GL_BONUS_BIRDIE;
               return e('div',{key:p.key,style:{flex:1,textAlign:'center',padding:'8px 4px',borderRadius:10,background:i===0?p.color+'15':'#F8F9FF',border:i===0?'1.5px solid '+p.color+'40':'1px solid rgba(100,80,220,0.06)'}},
                 e('div',{style:{fontSize:16,fontWeight:800,color:i===0?p.color:TEXT}},p.score),
                 e('div',{style:{fontSize:11,fontWeight:600,color:i===0?p.color:MUTED}},p.label),
-                e('div',{style:{fontSize:10,color:diff>0?'#EF4444':diff<0?GL:MUTED}},diff>0?'+'+diff:diff===0?'E':diff)
+                e('div',{style:{fontSize:10,color:diff>0?'#EF4444':diff<0?GL:MUTED}},diff>0?'+'+diff:diff===0?'E':diff),
+                (numPars>0||numBirdies>0)?e('div',{style:{fontSize:9,color:MUTED,marginTop:2}},
+                  [numPars>0?numPars+'🟡':null,numBirdies>0?numBirdies+'🐦':null].filter(Boolean).join(' ')
+                  +(bonusTotal>0?' +'+bonusTotal:'')
+                ):null
               );
             })
           ),
