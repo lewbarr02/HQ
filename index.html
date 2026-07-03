@@ -9846,9 +9846,19 @@ function InboxScreen({ setTab }) {
   const [scanError, setScanError] = useState(null);
   const [results, setResults] = useState(null); // {summary, needsAction:[], fyi:[]}
   const [addedIds, setAddedIds] = useState({});
-  const [openedIds, setOpenedIds] = useState({});
+  const [openedIds, setOpenedIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('hq_inboxOpenedIds') || '[]'); } catch (ex) { return []; }
+  });
 
   const INBOX_CAT_COLORS = {Work:PURPLE,Health:ACCENT,'Personal Growth':'#00E5CC',Learning:'#FFB347',Personal:'#FF6B9D',Finance:'#10B981',Shopping:'#F59E0B',Email:'#8E8EAA'};
+
+  function markOpened(id) {
+    if (openedIds.includes(id)) return;
+    var next = openedIds.concat([id]);
+    if (next.length > 500) next = next.slice(next.length - 500);
+    setOpenedIds(next);
+    localStorage.setItem('hq_inboxOpenedIds', JSON.stringify(next));
+  }
 
   function disconnectAccount(email) {
     const next = accounts.filter(function(a){ return a.email !== email; });
@@ -9931,7 +9941,7 @@ function InboxScreen({ setTab }) {
       results.summary ? e('div', {className:'card', style:{marginBottom:16,fontSize:14,color:TEXT,lineHeight:1.5}}, results.summary) : null,
 
       (function(){
-        const visibleNeedsAction = (results.needsAction||[]).filter(function(item){ return !openedIds[item.id]; });
+        const visibleNeedsAction = (results.needsAction||[]).filter(function(item){ return !openedIds.includes(item.id); });
         return e('div', null,
           e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,letterSpacing:'0.05em',marginBottom:10}}, 'NEEDS ACTION (' + visibleNeedsAction.length + ')'),
           visibleNeedsAction.length === 0 ? e('div', {className:'card', style:{textAlign:'center',padding:24,color:MUTED,marginBottom:16}}, 'Nothing urgent 🎉') :
@@ -9952,7 +9962,7 @@ function InboxScreen({ setTab }) {
                     href: 'https://mail.google.com/mail/?authuser=' + encodeURIComponent(item.source) + '#all/' + item.id,
                     target: '_blank',
                     rel: 'noopener noreferrer',
-                    onClick: ()=>setOpenedIds(Object.assign({}, openedIds, { [item.id]: true })),
+                    onClick: ()=>markOpened(item.id),
                     style:{marginLeft:'auto',fontSize:12,fontWeight:700,color:ACCENT,textDecoration:'none',whiteSpace:'nowrap'}
                   }, '↗ Open email') : null,
                   e('button', {
