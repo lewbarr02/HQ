@@ -9588,7 +9588,7 @@ function InboxScreen({ setTab }) {
     setScanning(false);
   }
 
-  function addAsPriority(item) {
+  function addToTodo(item) {
     const cat = INBOX_CAT_COLORS[item.category] ? item.category : 'Email';
     const newP = { id: Date.now().toString() + '-' + item.id, name: item.subject || item.from, cat: cat, time: '', done: false, color: INBOX_CAT_COLORS[cat] || '#00C6FF', source: item.from || null };
     const current = load('priorities') || [];
@@ -9646,10 +9646,10 @@ function InboxScreen({ setTab }) {
                 e('div', {style:{display:'flex',alignItems:'center',gap:8,marginTop:10}},
                   e('span', {className:'tag active', style:{background:catColor,fontSize:11,padding:'4px 12px'}}, item.category || 'Email'),
                   e('button', {
-                    onClick:()=>addAsPriority(item),
+                    onClick:()=>addToTodo(item),
                     disabled:added,
                     style:{marginLeft:'auto',background: added ? 'none' : ACCENT,border: added ? '1.5px solid rgba(100,80,220,0.18)' : 'none',borderRadius:8,color: added ? MUTED : '#1A1833',padding:'6px 14px',fontSize:12,fontWeight:700,cursor: added ? 'default' : 'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}
-                  }, added ? '✓ Added' : '+ Add as Priority')
+                  }, added ? '✓ Added' : '+ Add to To-Do')
                 )
               )
             )
