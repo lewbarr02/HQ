@@ -9944,10 +9944,16 @@ function InboxScreen({ setTab }) {
                 e('div', {style:{fontSize:12,color:TEXT,marginTop:6,lineHeight:1.4}}, item.reasoning),
                 e('div', {style:{display:'flex',alignItems:'center',gap:8,marginTop:10}},
                   e('span', {className:'tag active', style:{background:catColor,fontSize:11,padding:'4px 12px'}}, item.category || 'Email'),
+                  item.source ? e('a', {
+                    href: 'https://mail.google.com/mail/u/' + encodeURIComponent(item.source) + '/#all/' + item.id,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    style:{marginLeft:'auto',fontSize:12,fontWeight:700,color:ACCENT,textDecoration:'none',whiteSpace:'nowrap'}
+                  }, '↗ Open email') : null,
                   e('button', {
                     onClick:()=>addToTodo(item),
                     disabled:added,
-                    style:{marginLeft:'auto',background: added ? 'none' : ACCENT,border: added ? '1.5px solid rgba(100,80,220,0.18)' : 'none',borderRadius:8,color: added ? MUTED : '#1A1833',padding:'6px 14px',fontSize:12,fontWeight:700,cursor: added ? 'default' : 'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}
+                    style:{background: added ? 'none' : ACCENT,border: added ? '1.5px solid rgba(100,80,220,0.18)' : 'none',borderRadius:8,color: added ? MUTED : '#1A1833',padding:'6px 14px',fontSize:12,fontWeight:700,cursor: added ? 'default' : 'pointer',fontFamily:'inherit',whiteSpace:'nowrap',marginLeft: item.source ? 8 : 'auto'}
                   }, added ? '✓ Added' : '+ Add to To-Do')
                 )
               )
