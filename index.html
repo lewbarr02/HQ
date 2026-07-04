@@ -534,7 +534,7 @@ function Sidebar({tab, setTab, moreOpen, setMoreOpen, NAV, dateStr, groceries, p
   );
 }
 
-function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, setEveningPhase, setTab, projectItems}) {
+function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, setEveningPhase, setTab, projectItems, customRoutines}) {
   const td = today();
   const now = new Date();
   const currentMinute = now.getHours() * 60 + now.getMinutes();
@@ -862,10 +862,15 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
   // Left panel draggable items
   var routineItems = [
-    {id:'routine-morning', label:'☀️ Morning Routine', color: '#EF4444', durationMin: 30},
-    {id:'routine-midday',  label:'🌤️ Midday Routine',  color: '#EF4444', durationMin: 15},
-    {id:'routine-evening', label:'🌙 Evening Routine',  color: '#EF4444', durationMin: 30},
-  ];
+    {id:'routine-morning',     label:'☀️ Morning Routine',      color: '#EF4444', durationMin: 30},
+    {id:'routine-midday',      label:'🌤️ Midday Routine',       color: '#EF4444', durationMin: 15},
+    {id:'routine-evening',     label:'🌙 Evening Routine',      color: '#EF4444', durationMin: 30},
+    {id:'routine-postworkout', label:'🏋️ Post Workout Routine', color: '#EF4444', durationMin: 15},
+    {id:'routine-cleaning',    label:'🧹 Cleaning Routine',     color: '#EF4444', durationMin: 30},
+    {id:'routine-golf',        label:'⛳ Golf Wind Down',        color: '#EF4444', durationMin: 15},
+  ].concat((customRoutines || []).map(function(r) {
+    return {id:'routine-custom-'+r.id, label:(r.emoji||'⭐')+' '+r.name, color: '#EF4444', durationMin: 20};
+  }));
   var habitItems = (habits || []).map(function(h) {
     return {id:'habit-'+h.id, label: h.name, color: h.color || ACCENT, durationMin: 15};
   });
@@ -13049,7 +13054,7 @@ function App() {
     switch(tab) {
       case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
-      case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab,projectItems});
+      case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab,projectItems,customRoutines});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
