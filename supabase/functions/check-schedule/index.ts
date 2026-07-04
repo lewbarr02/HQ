@@ -10,17 +10,21 @@ const SUPABASE_URL = 'https://bfgybytjjubdnciraksj.supabase.co'
 const FALLBACK_KEY = 'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'
 const WARN_MINUTES_BEFORE_END = 10
 
-function nowInET(): { hhmm: string; dateKey: string } {
-  const now = new Date()
+function etParts(d: Date): { hhmm: string; dateKey: string } {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     hour12: false,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit',
-  }).formatToParts(now)
+  }).formatToParts(d)
   const get = (t: string) => parts.find(p => p.type === t)?.value || ''
   const hour = get('hour') === '24' ? '00' : get('hour')
   return { hhmm: `${hour}:${get('minute')}`, dateKey: `${get('year')}-${get('month')}-${get('day')}` }
+}
+function etMinutesOfDay(d: Date): number {
+  const { hhmm } = etParts(d)
+  const [h, m] = hhmm.split(':').map(Number)
+  return h * 60 + m
 }
 
 // Parses "2:30 PM" style strings (same format the app's priorities/timeline use)
@@ -54,13 +58,13 @@ serve(async (req) => {
     const sb = createClient(SUPABASE_URL, supabaseKey)
 
     const { data, error } = await sb.from('hq_data').select('key,value').eq('user_id', 'lewis')
-      .in('key', ['scheduledLog', 'priorities', 'scheduleWarningsSent'])
+      .in('key', ['scheduledLog', 'priorities', 'scheduleWarningsSent', 'calEventsCache'])
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders })
 
     const dataMap: Record<string, any> = {}
     for (const row of data || []) dataMap[row.key] = row.value
 
-    const { hhmm, dateKey } = nowInET()
+    const { hhmm, dateKey } = etParts(new Date())
     const [curH, curM] = hhmm.split(':').map(Number)
     const curMinutes = curH * 60 + curM
 
@@ -82,7 +86,22 @@ serve(async (req) => {
       })
       .filter(Boolean) as Block[]
 
-    const allBlocks = todaysScheduled.concat(todaysPriorities).sort((a, b) => a.startMin - b.startMin)
+    // Calendar events are cached client-side (hq_data.calEventsCache) since the
+    // OAuth refresh flow lives in the browser, not here. Only trust the cache if
+    // it was actually written today.
+    const calCache = dataMap.calEventsCache
+    const todaysCalEvents: Block[] = (calCache && calCache.date === dateKey ? calCache.events || [] : [])
+      .filter((ev: any) => !ev.allDay)
+      .map((ev: any) => {
+        const startD = new Date(ev.start)
+        const endD = new Date(ev.end)
+        const startMin = etMinutesOfDay(startD)
+        let endMin = etMinutesOfDay(endD)
+        if (endMin <= startMin) endMin += 1440 // crosses midnight
+        return { id: 'cal-' + ev.id, label: '📅 ' + ev.title, startMin, endMin }
+      })
+
+    const allBlocks = todaysScheduled.concat(todaysPriorities).concat(todaysCalEvents).sort((a, b) => a.startMin - b.startMin)
 
     const warningsSentAll = dataMap.scheduleWarningsSent || {}
     const warningsSentToday = new Set<string>(warningsSentAll[dateKey] || [])

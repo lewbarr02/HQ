@@ -661,6 +661,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   function doCalSync(showMsg) {
     gcalFetchToday().then(function(res) {
       setCalEvents(res.events);
+      if (!res.error) save('calEventsCache', {date: today(), events: res.events});
       if (showMsg) setCalSyncMsg(res.error ? '⚠️ ' + res.error : '✓ ' + res.events.length + ' event(s)');
     });
   }
