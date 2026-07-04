@@ -30,8 +30,8 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}))
-    const { type = 'test' } = body
-    const message = SMS_SCHEDULES[type] || SMS_SCHEDULES.test
+    const { type = 'test', message: customMessage } = body
+    const message = customMessage || SMS_SCHEDULES[type] || SMS_SCHEDULES.test
 
     const params = new URLSearchParams({ To: toNumber, From: fromNumber, Body: message })
     const resp = await fetch(

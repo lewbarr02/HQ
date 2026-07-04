@@ -65,8 +65,19 @@ serve(async (req) => {
         }),
       })
       const pushResult = await pushResp.json()
+
+      let smsResult = null
+      if (n.require_interaction) {
+        const smsResp = await fetch(SUPABASE_URL + '/functions/v1/send-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + FALLBACK_KEY },
+          body: JSON.stringify({ message: (n.emoji ? n.emoji + ' ' : '') + n.title + ' — ' + n.body }),
+        })
+        smsResult = await smsResp.json().catch(() => null)
+      }
+
       await sb.from('nudges').update({ last_sent_date: dateKey }).eq('id', n.id)
-      results.push({ id: n.id, title: n.title, pushResult })
+      results.push({ id: n.id, title: n.title, pushResult, smsResult })
     }
 
     return new Response(JSON.stringify({ checked: (nudges || []).length, sent: results.length, results, etTime: hhmm, etDow: dow }), {
