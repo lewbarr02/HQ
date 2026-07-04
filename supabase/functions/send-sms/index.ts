@@ -18,12 +18,12 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const accountSid      = Deno.env.get('TWILIO_ACCOUNT_SID')
-    const authToken       = Deno.env.get('TWILIO_AUTH_TOKEN')
-    const messagingService = Deno.env.get('TWILIO_MESSAGING_SERVICE_SID') // MGfd214a87bddd045876536f956daec0b7
-    const toNumber        = Deno.env.get('TWILIO_TO_NUMBER')   // Lewis's cell
+    const accountSid = Deno.env.get('TWILIO_ACCOUNT_SID')
+    const authToken  = Deno.env.get('TWILIO_AUTH_TOKEN')
+    const fromNumber = Deno.env.get('TWILIO_FROM_NUMBER') // toll-free number, e.g. +18885551234
+    const toNumber   = Deno.env.get('TWILIO_TO_NUMBER')   // Lewis's cell
 
-    if (!accountSid || !authToken || !messagingService || !toNumber) {
+    if (!accountSid || !authToken || !fromNumber || !toNumber) {
       return new Response(JSON.stringify({ error: 'Twilio env vars not configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -33,7 +33,7 @@ serve(async (req) => {
     const { type = 'test' } = body
     const message = SMS_SCHEDULES[type] || SMS_SCHEDULES.test
 
-    const params = new URLSearchParams({ To: toNumber, MessagingServiceSid: messagingService, Body: message })
+    const params = new URLSearchParams({ To: toNumber, From: fromNumber, Body: message })
     const resp = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
       {
