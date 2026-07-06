@@ -11954,10 +11954,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setProteinForm(null);
     }
 
-    // Workouts — Apple Watch (most recent 3; full list + upload lives in the Watch tab)
-    var recentWorkouts = (watchLog||[]).slice().sort(function(a,b){return a.date<b.date?1:-1;}).slice(0,3);
-    var ACCENT_WATCH = '#30D158';
-
     function ring(pct, size, stroke, color) {
       var r=(size-stroke)/2, c=2*Math.PI*r, clamped=Math.max(0,Math.min(1,pct));
       return e('svg',{width:size,height:size,viewBox:'0 0 '+size+' '+size,style:{transform:'rotate(-90deg)',flexShrink:0}},
@@ -12147,37 +12143,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             )
           )
         ) : null
-      ),
-
-      // 6. Workouts — Apple Watch
-      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
-        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
-          e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}},'⌚ Workouts — Apple Watch'),
-          e('button',{onClick:function(){setView('watch');},style:{background:'none',border:'none',color:ACCENT,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'View All')
-        ),
-        recentWorkouts.length ? e('div',{style:{display:'flex',gap:10,overflowX:'auto',paddingBottom:4}},
-          ...recentWorkouts.map(function(w){
-            return e('div',{key:w.id,style:{background:'#F8FAFC',borderRadius:12,padding:'12px',minWidth:140,flexShrink:0}},
-              e('div',{style:{fontSize:11,color:MUTED,marginBottom:4}}, w.date||''),
-              e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:6}}, w.workoutType||'Workout'),
-              w.activeCalories?e('div',{style:{fontSize:11,fontWeight:700,color:ACCENT_WATCH}}, w.activeCalories+' active cal'):null,
-              w.avgHeartRate?e('div',{style:{fontSize:11,color:'#EF4444'}}, w.avgHeartRate+' bpm avg'):null
-            );
-          }),
-          e('div',{key:'upload',onClick:function(){setView('watch');},style:{
-            minWidth:140,flexShrink:0,borderRadius:12,border:'1.5px dashed '+BORDER,background:CARD2,
-            display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,cursor:'pointer',padding:'12px'
-          }},
-            e('span',{style:{fontSize:20,color:MUTED}}, '📤'),
-            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,textAlign:'center'}}, 'Upload Screenshot'),
-            e('div',{style:{fontSize:9,color:MUTED}}, 'PNG or JPG')
-          )
-        ) : e('div',{key:'upload-empty',onClick:function(){setView('watch');},style:{
-            borderRadius:12,border:'1.5px dashed '+BORDER,background:CARD2,textAlign:'center',padding:'20px',cursor:'pointer'
-          }},
-            e('div',{style:{fontSize:24,marginBottom:6}}, '📤'),
-            e('div',{style:{fontSize:12,fontWeight:700,color:MUTED}}, 'Upload Screenshot (PNG or JPG)')
-          )
       )
     );
   }
