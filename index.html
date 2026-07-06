@@ -364,7 +364,7 @@ async function syncFromSupabase(){
 }
 
 async function pushAllToSupabase(){
-  var keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','ideaLog','dateNights','homeItems','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog','currentProgram','macroLog','macroTargets','foodPipeline','photoIndex','pwItems','pwLog'];
+  var keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','carWashLog','carWashItems','ideaLog','dateNights','homeItems','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog','currentProgram','macroLog','macroTargets','foodPipeline','photoIndex','pwItems','pwLog'];
   var rows=keys.map(k=>{var v=load(k);return v!==null?{user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()}:null;}).filter(Boolean);
   if(rows.length===0)return;
   var {error}=await _SB.from('hq_data').upsert(rows,{onConflict:'user_id,key'});
@@ -868,6 +868,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     {id:'routine-postworkout', label:'🏋️ Post Workout Routine', color: '#EF4444', durationMin: 15},
     {id:'routine-cleaning',    label:'🧹 Cleaning Routine',     color: '#EF4444', durationMin: 30},
     {id:'routine-golf',        label:'⛳ Golf Wind Down',        color: '#EF4444', durationMin: 15},
+    {id:'routine-carwash',     label:'🚗 Car Wash Routine',     color: '#EF4444', durationMin: 45},
   ].concat((customRoutines || []).map(function(r) {
     return {id:'routine-custom-'+r.id, label:(r.emoji||'⭐')+' '+r.name, color: '#EF4444', durationMin: 20};
   }));
@@ -3122,7 +3123,7 @@ function TimeBlockBanner({priorities}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, carWashLog, setCarWashPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -3335,6 +3336,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
               {key:'postworkout', emoji:'🏋️', label:'Post WO', done:!!(pwLog&&pwLog[td+'_done']),       onClick:function(){setPostWorkoutPhase&&setPostWorkoutPhase('greeting');}, onHistory:function(){setPostWorkoutPhase&&setPostWorkoutPhase('history');}, hasHistory:true},
               {key:'cleaning', emoji:'🧹', label:'Cleaning', done:!!(cleaningLog&&cleaningLog[td+'_done']), onClick:function(){setCleaningPhase&&setCleaningPhase('greeting');}, onHistory:function(){setCleaningPhase&&setCleaningPhase('history');}, hasHistory:true},
               {key:'golf', emoji:'⛳', label:'Golf WD', done:!!(golfLog&&golfLog[td+'_done']), onClick:function(){setGolfPhase&&setGolfPhase('greeting');}, onHistory:function(){setGolfPhase&&setGolfPhase('history');}, hasHistory:true},
+              {key:'carwash', emoji:'🚗', label:'Car Wash', done:!!(carWashLog&&carWashLog[td+'_done']), onClick:function(){setCarWashPhase&&setCarWashPhase('greeting');}, onHistory:function(){setCarWashPhase&&setCarWashPhase('history');}, hasHistory:true},
             ];
             var customDefs = (customRoutines||[]).map(function(r){
               var rLog = (customRoutineLogs&&customRoutineLogs[r.id]) || {};
@@ -8585,6 +8587,287 @@ function GolfHistory({onBack, golfLog}) {
   );
 }
 
+// ─── CAR WASH ROUTINE ─────────────────────────────────────────────────────────
+var CW = '#0EA5E9'; var CW2 = '#0284C7';
+
+var DEFAULT_CARWASH_HABITS = [
+  {id:'cw1', name:'Vacuum Interior', emoji:'🧹'},
+  {id:'cw2', name:'Wash Exterior', emoji:'🚿'},
+  {id:'cw3', name:'Clean Windows', emoji:'🪟'},
+  {id:'cw4', name:'Wipe Down Dash', emoji:'🧽'},
+  {id:'cw5', name:'Empty Trash', emoji:'🗑️'},
+  {id:'cw6', name:'Tire Shine', emoji:'🛞'},
+  {id:'cw7', name:'Air Freshener', emoji:'🌸'},
+];
+
+function calcCarWashStreak(cwLog) {
+  var streak = 0;
+  var d = new Date();
+  for(var i=0;i<365;i++){
+    var dk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(i===0 && !cwLog[dk+'_done']){ d.setDate(d.getDate()-1); continue; }
+    if(cwLog[dk+'_done'] && !cwLog[dk+'_test']) streak++;
+    else break;
+    d.setDate(d.getDate()-1);
+  }
+  return streak;
+}
+
+function calcCarWashTime(cwLog, date) {
+  var s = cwLog[date+'_start'], e2 = cwLog[date+'_done'];
+  if(!s||!e2) return null;
+  var parse = function(t){ var p=t.match(/(\d+):(\d+)\s*(AM|PM)/i); if(!p) return null; var h=parseInt(p[1])%12+(p[3].toUpperCase()==='PM'?12:0); return h*60+parseInt(p[2]); };
+  var st=parse(s), en=parse(e2);
+  if(st==null||en==null) return null;
+  return en>=st ? en-st : en+24*60-st;
+}
+
+function CarWashGreeting({onStart}) {
+  var [show, setShow] = React.useState(false);
+  React.useEffect(function(){ setTimeout(function(){ setShow(true); }, 100); }, []);
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,'+CW+'18,#fff 60%)',padding:'32px 24px',textAlign:'center',paddingTop:'env(safe-area-inset-top)'}},
+    e('div', {style:{fontSize:72,marginBottom:24,opacity:show?1:0,transition:'opacity 0.6s ease,transform 0.6s ease',transform:show?'translateY(0)':'translateY(20px)'}}, '🚗'),
+    e('div', {style:{fontSize:28,fontWeight:800,color:TEXT,marginBottom:8,opacity:show?1:0,transition:'opacity 0.5s ease 0.2s'}}, 'Car Wash'),
+    e('div', {style:{fontSize:15,color:MUTED,marginBottom:40,opacity:show?1:0,transition:'opacity 0.5s ease 0.3s'}}, 'Keep it shining like new.'),
+    e('button', {
+      onClick:onStart,
+      style:{padding:'18px 48px',borderRadius:18,background:'linear-gradient(135deg,'+CW+','+CW2+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+CW+'40',opacity:show?1:0,transition:'opacity 0.5s ease 0.4s'}
+    }, "Let's go →")
+  );
+}
+
+function CarWashChecklist({onComplete, onSkipToDashboard, cwLog, setCwLog, cwItems, setCwItems}) {
+  var td = today();
+  var done = (cwLog && cwLog[td]) ? cwLog[td] : {};
+  var [editMode, setEditMode] = React.useState(false);
+  var [editingItem, setEditingItem] = React.useState(null);
+  var [editName, setEditName] = React.useState('');
+  var [editEmoji, setEditEmoji] = React.useState('');
+  var [newLabel, setNewLabel] = React.useState('');
+  var [newEmoji, setNewEmoji] = React.useState('');
+
+  var QUICK_EMOJIS = ['🚗','🧼','🚿','🧽','🪟','🗑️','🛞','🌸','💧','🧴','✨','🔧','🚙','🧹'];
+
+  function toggle(id) {
+    var next = {...done, [id]: !done[id]};
+    var newLog = {...cwLog, [td]: next};
+    if(!cwLog[td+'_start']) newLog[td+'_start'] = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    setCwLog(newLog); save('carWashLog', newLog);
+  }
+
+  function addItem() {
+    var lbl = newLabel.trim();
+    if(!lbl) return;
+    var next = [...cwItems, {id:'cw'+Date.now(), name:lbl, emoji:newEmoji||'🚗'}];
+    setCwItems(next); save('carWashItems', next);
+    setNewLabel(''); setNewEmoji('');
+  }
+
+  function removeItem(id) {
+    var next = cwItems.filter(function(it){ return it.id !== id; });
+    setCwItems(next); save('carWashItems', next);
+  }
+
+  function startEditItem(item) {
+    setEditingItem(item.id); setEditName(item.name); setEditEmoji(item.emoji);
+  }
+  function saveEditItem(id) {
+    var next = cwItems.map(function(it){ return it.id===id ? {id:it.id, name:editName.trim()||it.name, emoji:editEmoji||it.emoji} : it; });
+    setCwItems(next); save('carWashItems', next);
+    setEditingItem(null);
+  }
+
+  var cds = useDragSort(cwItems, function(next){ setCwItems(next); save('carWashItems', next); });
+
+  function finish(partial) {
+    var doneTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    var newLog = {...cwLog, [td+'_done']: doneTime};
+    if(partial) newLog[td+'_partial'] = true;
+    setCwLog(newLog); save('carWashLog', newLog);
+    addPassiveWin('Completed car wash routine');
+    onComplete();
+  }
+
+  var total = cwItems.length;
+  var doneCount = cwItems.filter(function(it){ return done[it.id]; }).length;
+  var allDone = doneCount === total;
+
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
+    e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'20px 20px 8px'}},
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🚗 Car Wash'),
+        e('div', {style:{fontSize:12,color:MUTED}}, doneCount+'/'+total+' done')
+      ),
+      e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
+        e('button', {onClick:function(){ setEditMode(!editMode); setEditingItem(null); }, style:{fontSize:12,fontWeight:700,color:CW,background:CW+'15',border:'none',borderRadius:10,padding:'6px 12px',cursor:'pointer',fontFamily:'inherit'}}, editMode?'Done Editing':'Edit'),
+        e('button', {onClick:onSkipToDashboard, style:{fontSize:12,fontWeight:700,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Skip')
+      )
+    ),
+    e('div', {style:{flex:1,overflowY:'auto',padding:'8px 20px 20px'}},
+      editMode ? e('div', {style:{marginBottom:16}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:10}}, 'Edit Routine Items'),
+        e('div', {style:{display:'flex',gap:8,marginBottom:10}},
+          e('input', {className:'input', style:{width:54,marginBottom:0,textAlign:'center',fontSize:18,padding:'8px'}, placeholder:'😀', value:newEmoji, onInput:function(ev){setNewEmoji(ev.target.value);}}),
+          e('input', {className:'input', style:{flex:1,marginBottom:0}, placeholder:'Add item…', value:newLabel, onInput:function(ev){setNewLabel(ev.target.value);}, onKeyDown:function(ev){if(ev.key==='Enter')addItem();}}),
+          e('button', {onClick:addItem, style:{padding:'0 14px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+CW+','+CW2+')',color:'white',fontWeight:700,cursor:'pointer',fontFamily:'inherit',minHeight:48,flexShrink:0}}, '+')
+        ),
+        e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
+          ...QUICK_EMOJIS.map(function(em){
+            return e('button',{key:em,onClick:function(){setNewEmoji(em);},style:{width:36,height:36,borderRadius:8,fontSize:18,border:'1.5px solid '+BORDER,background:newEmoji===em?CW+'15':CARD2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},em);
+          })
+        )
+      ) : null,
+      ...cwItems.map(function(item, idx){
+        var isDone = !!done[item.id];
+        var isEditingThis = editMode && editingItem === item.id;
+        if(isEditingThis) {
+          return e('div', {key:item.id, style:{marginBottom:8,background:'#fff',borderRadius:16,padding:'14px',boxShadow:'0 0 0 2px '+CW+'40'}},
+            e('div', {style:{display:'flex',gap:8,marginBottom:10}},
+              e('input', {className:'input', style:{width:54,marginBottom:0,textAlign:'center',fontSize:18,padding:'8px'}, value:editEmoji, onInput:function(ev){setEditEmoji(ev.target.value);}}),
+              e('input', {className:'input', style:{flex:1,marginBottom:0,fontSize:15}, value:editName, onInput:function(ev){setEditName(ev.target.value);}, onKeyDown:function(ev){if(ev.key==='Enter')saveEditItem(item.id);}})
+            ),
+            e('div', {style:{display:'flex',flexWrap:'wrap',gap:5,marginBottom:10}},
+              ...QUICK_EMOJIS.map(function(em){
+                return e('button',{key:em,onClick:function(){setEditEmoji(em);},style:{width:34,height:34,borderRadius:8,fontSize:17,border:'1.5px solid '+BORDER,background:editEmoji===em?CW+'15':CARD2,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}},em);
+              })
+            ),
+            e('div', {style:{display:'flex',gap:8}},
+              e('button', {onClick:function(){setEditingItem(null);}, style:{flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+BORDER,background:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',color:MUTED}}, 'Cancel'),
+              e('button', {onClick:function(){saveEditItem(item.id);}, style:{flex:2,padding:'10px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+CW+','+CW2+')',color:'#fff',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
+            )
+          );
+        }
+        return e('div', {key:item.id, ref:cds.rowRef(idx), style:{display:'flex',alignItems:'center',gap:10,padding:'14px 16px',background:'#fff',borderRadius:16,marginBottom:8,border:'1px solid '+(isDone?CW+'40':BORDER),opacity:cds.dragIdx===idx?0.4:1,borderTop:cds.overIdx===idx&&cds.dragIdx!==null&&cds.dragIdx!==idx?'2px solid '+CW:'',transition:'all 0.2s'}},
+          editMode ? e('div', {onTouchStart:cds.startDrag(idx), style:{touchAction:'none',cursor:'grab',color:MUTED,fontSize:20,lineHeight:1,flexShrink:0,userSelect:'none'}}, '⠿') : null,
+          !editMode ? e('div', {onClick:function(){ toggle(item.id); }, style:{width:24,height:24,borderRadius:8,border:'2px solid '+(isDone?CW:BORDER),background:isDone?CW:'transparent',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',flexShrink:0,transition:'all 0.2s'}},
+                isDone ? e('div', {style:{color:'white',fontSize:14,fontWeight:800}}, '✓') : null
+              ) : null,
+          e('span', {style:{fontSize:18,flexShrink:0}}, item.emoji),
+          e('div', {onClick:editMode?function(){startEditItem(item);}:function(){ toggle(item.id); }, style:{fontSize:15,fontWeight:600,color:isDone?MUTED:TEXT,textDecoration:isDone?'line-through':'none',cursor:'pointer',flex:1,transition:'all 0.2s'}}, item.name),
+          editMode ? e('span', {style:{fontSize:13,color:MUTED,flexShrink:0}}, '✏️') : null,
+          editMode ? e('button', {onClick:function(){ removeItem(item.id); }, style:{fontSize:16,background:'#FEE2E2',border:'none',borderRadius:8,width:28,height:28,cursor:'pointer',color:'#EF4444',fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}, '−') : null
+        );
+      })
+    ),
+    e('div', {style:{padding:'16px 20px',borderTop:'1px solid '+BORDER,background:'#fff',display:'flex',gap:10}},
+      !allDone && doneCount > 0 ? e('button', {onClick:function(){ finish(true); }, style:{flex:1,padding:'16px',borderRadius:16,background:CARD2,border:'none',fontSize:14,fontWeight:700,cursor:'pointer',color:MUTED,fontFamily:'inherit'}}, 'Mark Partial ('.concat(doneCount,'/',total,')')) : null,
+      e('button', {onClick:function(){ if(allDone) finish(false); }, disabled:!allDone, style:{flex:2,padding:'16px',borderRadius:16,background:allDone?'linear-gradient(135deg,'+CW+','+CW2+')':'#E8E8F0',border:'none',fontSize:15,fontWeight:800,cursor:allDone?'pointer':'default',color:allDone?'white':MUTED,fontFamily:'inherit',transition:'all 0.3s'}}, allDone?'✓ Complete!':'Check all items')
+    )
+  );
+}
+
+function CarWashComplete({onContinue, cwLog, cwItems}) {
+  var td = today();
+  var streak = calcCarWashStreak(cwLog);
+  var mins = calcCarWashTime(cwLog, td);
+  var [show, setShow] = React.useState(false);
+  React.useEffect(function(){ setTimeout(function(){ setShow(true); }, 100); }, []);
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'linear-gradient(160deg,'+CW+'20,#fff 60%)',padding:'32px 24px',textAlign:'center',paddingTop:'env(safe-area-inset-top)'}},
+    e('div', {style:{fontSize:72,marginBottom:16,opacity:show?1:0,transition:'opacity 0.5s ease'}}, '✨'),
+    e('div', {style:{fontSize:26,fontWeight:800,color:TEXT,marginBottom:6,opacity:show?1:0,transition:'opacity 0.5s ease 0.1s'}}, 'Shining like new!'),
+    e('div', {style:{fontSize:15,color:MUTED,marginBottom:32,opacity:show?1:0,transition:'opacity 0.5s ease 0.2s'}}, mins ? 'Done in '+mins+' min' : 'Crushed it'),
+    e('div', {style:{display:'flex',gap:16,marginBottom:40,opacity:show?1:0,transition:'opacity 0.5s ease 0.3s'}},
+      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px 24px',border:'1px solid '+CW+'40',textAlign:'center'}},
+        e('div', {style:{fontSize:28,fontWeight:800,color:CW}}, streak),
+        e('div', {style:{fontSize:10,fontWeight:700,color:MUTED,textTransform:'uppercase',letterSpacing:1}}, 'Streak')
+      )
+    ),
+    e('button', {onClick:onContinue, style:{padding:'18px 48px',borderRadius:18,background:'linear-gradient(135deg,'+CW+','+CW2+')',border:'none',color:'white',fontSize:17,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+CW+'40',opacity:show?1:0,transition:'opacity 0.5s ease 0.4s'}}, 'Back to Dashboard →')
+  );
+}
+
+function CarWashHistory({onBack, cwLog}) {
+  var completedDays = Object.keys(cwLog).filter(function(k){ return k.endsWith('_done'); }).map(function(k){ return k.replace('_done',''); }).filter(function(d){ return !cwLog[d+'_test']; }).sort();
+  var currentStreak = calcCarWashStreak(cwLog);
+  var bestStreak = 0, run = 0;
+  if(completedDays.length) {
+    run = 1; bestStreak = 1;
+    for(var i=1;i<completedDays.length;i++){
+      var prev = new Date(completedDays[i-1]+'T12:00:00'), cur = new Date(completedDays[i]+'T12:00:00');
+      if(Math.round((cur-prev)/86400000)===1){ run++; if(run>bestStreak) bestStreak=run; } else { run=1; }
+    }
+  }
+  var times = completedDays.map(function(d){ return calcCarWashTime(cwLog, d); }).filter(function(t){ return t && t > 0 && t < 600; });
+  var avgTime = times.length ? Math.round(times.reduce(function(a,b){return a+b;},0)/times.length) : null;
+  var fastestTime = times.length ? Math.min.apply(null,times) : null;
+  var dots = [];
+  for(var j=29;j>=0;j--){
+    var dd = new Date(); dd.setDate(dd.getDate()-j);
+    var dk = dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+    dots.push({dk:dk, done:!!cwLog[dk+'_done'] && !cwLog[dk+'_test']});
+  }
+  var rate30 = Math.round(dots.filter(function(d){return d.done;}).length/30*100);
+  var statStyle = {background:'#fff',borderRadius:16,padding:'16px 14px',textAlign:'center',border:'1px solid '+BORDER,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'};
+  var valStyle = {fontSize:28,fontWeight:800,marginBottom:4};
+  var lblStyle = {fontSize:10,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED};
+  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,padding:'20px 20px 8px'}},
+      e('button', {onClick:onBack, style:{background:'none',border:'none',color:MUTED,fontSize:22,cursor:'pointer',padding:4,lineHeight:1}}, '←'),
+      e('div', {},
+        e('div', {style:{fontSize:18,fontWeight:800,color:TEXT}}, '🚗 Car Wash'),
+        e('div', {style:{fontSize:12,color:MUTED}}, 'Historical Performance')
+      )
+    ),
+    e('div', {style:{padding:'12px 20px 32px',display:'flex',flexDirection:'column',gap:16}},
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+CW+'50'}},
+          e('div', {style:{...valStyle,background:'linear-gradient(135deg,'+CW+','+CW2+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}, currentStreak),
+          e('div', {style:lblStyle}, 'Current Streak'),
+          e('div', {style:{fontSize:10,color:CW,marginTop:4}}, currentStreak===1?'day':'days 🔥')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid '+CW+'30'}},
+          e('div', {style:{...valStyle,color:CW}}, bestStreak||'—'),
+          e('div', {style:lblStyle}, 'Best Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, bestStreak>1?bestStreak+' days':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+CW+'40'}},
+          e('div', {style:{...valStyle,color:CW}}, avgTime ? avgTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Avg Completion'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, avgTime?'minutes':'no data yet')
+        ),
+        e('div', {style:{...statStyle,border:'1.5px solid #00C86440'}},
+          e('div', {style:{...valStyle,color:'#00C864'}}, fastestTime ? fastestTime+'m' : '—'),
+          e('div', {style:lblStyle}, 'Fastest Ever'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, fastestTime?'personal best':'—')
+        )
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}},
+        e('div', {style:{...statStyle,border:'1.5px solid '+CW2+'40'}},
+          e('div', {style:{...valStyle,color:CW2}}, completedDays.length ? rate30+'%' : '—'),
+          e('div', {style:lblStyle}, '30-Day Rate'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?dots.filter(function(d){return d.done;}).length+' of 30 days':'no data')
+        ),
+        e('div', {style:{...statStyle}},
+          e('div', {style:{...valStyle,color:CW}}, completedDays.length || '—'),
+          e('div', {style:lblStyle}, 'Total Sessions'),
+          e('div', {style:{fontSize:10,color:MUTED,marginTop:4}}, completedDays.length?'all-time':'no data')
+        )
+      ),
+      e('div', {style:{...statStyle,textAlign:'left'}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.1,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Last 30 Sessions'),
+        e('div', {style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:5}},
+          ...dots.map(function(d,i){
+            return e('div', {key:i, title:d.dk, style:{aspectRatio:'1',borderRadius:5,background:d.done?'linear-gradient(135deg,'+CW+','+CW2+')':'#E8E8F0',boxShadow:d.done?'0 2px 8px '+CW+'40':'none'}});
+          })
+        ),
+        e('div', {style:{display:'flex',gap:16,marginTop:10}},
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'linear-gradient(135deg,'+CW+','+CW2+')'}}),
+            'Completed'
+          ),
+          e('div', {style:{display:'flex',alignItems:'center',gap:5,fontSize:10,color:MUTED}},
+            e('div',{style:{width:10,height:10,borderRadius:3,background:'#E8E8F0'}}),
+            'Missed'
+          )
+        )
+      ),
+      e('button', {onClick:onBack, style:{padding:'16px',borderRadius:16,background:'linear-gradient(135deg,'+CW+','+CW2+')',border:'none',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px '+CW+'40'}}, '← Back to Dashboard')
+    )
+  );
+}
+
 // ─── GOLF LEAGUE ──────────────────────────────────────────────────────────────
 
 var GOLF_COURSES_DEF = {
@@ -12869,6 +13152,9 @@ function App() {
   const [golfLog, setGolfLog] = useState(() => load('golfLog') || {});
   const [golfItems, setGolfItems] = useState(() => load('golfItems') || DEFAULT_GOLF_HABITS);
   const [golfPhase, setGolfPhase] = useState('done');
+  const [carWashLog, setCarWashLog] = useState(() => load('carWashLog') || {});
+  const [carWashItems, setCarWashItems] = useState(() => load('carWashItems') || DEFAULT_CARWASH_HABITS);
+  const [carWashPhase, setCarWashPhase] = useState('done');
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
   const [flowModal, setFlowModal] = useState(false);
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
@@ -12954,7 +13240,7 @@ function App() {
     });
     // Sync DOWN from Supabase on load (Supabase wins if newer than local)
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','dateNights','homeItems','currentProgram','macroLog','macroTargets','foodPipeline','pwItems','pwLog','ideaLog','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog'];
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','carWashLog','carWashItems','dateNights','homeItems','currentProgram','macroLog','macroTargets','foodPipeline','pwItems','pwLog','ideaLog','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog'];
       keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);else if(k==='homeItems')setHomeItems(v);else if(k==='currentProgram')setCurrentProgram(v);else if(k==='macroLog')setMacroLog(v);else if(k==='macroTargets')setTargets(v);else if(k==='foodPipeline')setFoodPipelineData(v);else if(k==='pwItems')setPwItems(v);else if(k==='pwLog')setPwLog(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
@@ -13052,7 +13338,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,carWashLog,setCarWashPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
       case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab,projectItems,customRoutines});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
@@ -13247,6 +13533,27 @@ function App() {
   }
   if(!splash && golfPhase === 'history') {
     return e(GolfHistory, {onBack: function(){setGolfPhase('done');}, golfLog: golfLog});
+  }
+
+  if(!splash && carWashPhase === 'greeting') {
+    return e(CarWashGreeting, {onStart: function(){setCarWashPhase('checklist');}});
+  }
+  if(!splash && carWashPhase === 'checklist') {
+    return e(CarWashChecklist, {
+      onComplete: function(){setCarWashPhase('complete');},
+      onSkipToDashboard: function(){setCarWashPhase('done');},
+      cwLog: carWashLog, setCwLog: setCarWashLog,
+      cwItems: carWashItems, setCwItems: setCarWashItems,
+    });
+  }
+  if(!splash && carWashPhase === 'complete') {
+    return e(CarWashComplete, {
+      onContinue: function(){setCarWashPhase('done');},
+      cwLog: carWashLog, cwItems: carWashItems,
+    });
+  }
+  if(!splash && carWashPhase === 'history') {
+    return e(CarWashHistory, {onBack: function(){setCarWashPhase('done');}, cwLog: carWashLog});
   }
 
   if(!splash && activeCustomRoutine) {
