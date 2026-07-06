@@ -33,11 +33,11 @@ LEWIS'S PROFILE:
 - 43 years old, severe ADHD
 - 5'9", current: 205 lbs / 18% BF, goal: 190 lbs / 12% BF
 - 20+ years training, college football background
-- Trains Mon/Tue/Thu/Fri at a commercial gym (LA Fitness)
+- Trains Mon/Tue/Thu/Fri at LA Fitness and YMCA
 - Left rotator cuff tear — never had surgery. No pain but left shoulder is weaker than right
 - All pressing movements use DUMBBELLS only — no barbell pressing except OHP which is also being transitioned to dumbbell
 - Naturally bottom-heavy — retains leg mass easily, legs are maintenance only
-- Lagging body part: biceps — has never trained them strictly for an extended period
+- Lagging body part: biceps — dedicated strict volume every session
 - No heavy back squats — max 135 lbs by choice. Uses Hex Bar for RDL instead of straight bar
 
 GOAL PHYSIQUE:
@@ -55,13 +55,11 @@ PRIORITY MUSCLE ORDER THIS BLOCK:
 CURRENT PROGRAM:
 Upper/Lower | 4 days | Mon/Tue/Thu/Fri
 
-WEEK 1 BASELINE WEIGHTS (actual logged):
-- Incline DB Press: 55 lbs x 4x8
-- Incline DB Fly: 25 lbs x 3x10
-- Lat Pulldown: 105 lbs x 4x10
-- Single Arm DB Row: 45 lbs x 3x8
-- Barbell Curl: 40 lbs x 3x8
-- Incline DB Curl: 20 lbs x 2x10
+EQUIPMENT NOTES:
+- LA Fitness leg press sled = 103 lbs (not standard 75)
+- LA Fitness hex bar = ~45 lbs
+- YMCA hex bar = ~35 lbs
+- All plate math must account for correct sled/bar weight
 
 PROGRESSIVE OVERLOAD RULES:
 - Hit top of rep range on ALL sets → increase weight next week
@@ -69,13 +67,15 @@ PROGRESSIVE OVERLOAD RULES:
 - Missed reps or form broke down → stay or drop 5 lbs
 - Biceps and lateral delts: increase in 2.5-5 lb increments only
 - Compound movements: 5 lb increments
+- Legs: 10 lb increments
 
 YOUR JOB ON WEEKLY CHECK-IN:
 1. Analyze the workout log data sent — actual weights and reps logged
 2. Apply progressive overload rules to every exercise
 3. Return an updated program JSON with new targetWeights for the coming week
 4. Write a brief coaching note (2-3 sentences) as focusCue
-5. Flag anything that looks off — missed sessions, weight drops, lagging movements
+5. Increment weekNumber by 1
+6. Flag anything that looks off — missed sessions, weight drops, lagging movements
 
 Always return valid JSON in exactly this format:
 { summary, weeklyFocus, updatedProgram: { split, weekNumber, days: [...] }, focusCue }`
@@ -179,9 +179,7 @@ Return ONLY a JSON object (no markdown outside the code block):
 \`\`\``
 }
 
-function buildCheckinPrompt(data: any): string {
-  const nextWeekNumber = ((data.currentProgram?.weekNumber) || 1) + 1
-
+function buildCheckinPrompt(data: any, nextWeekNumber: number): string {
   // Format raw workout log into a structured, per-exercise breakdown
   let rawLogSection = 'No sessions logged this week'
   if (data.workoutLogRaw && Object.keys(data.workoutLogRaw).length > 0) {
@@ -349,7 +347,8 @@ serve(async (req) => {
     if (type === 'weekly-checkin') {
       if (!checkinData) return new Response(JSON.stringify({ error: 'No checkinData' }), { status: 400, headers: corsHeaders })
 
-      const userPrompt = buildCheckinPrompt({ ...checkinData, hasPhoto: !!photo })
+      const nextWeekNumber = ((checkinData.currentProgram?.weekNumber) || 1) + 1
+      const userPrompt = buildCheckinPrompt({ ...checkinData, hasPhoto: !!photo }, nextWeekNumber)
       const contentBlocks: any[] = []
 
       if (photo) {
@@ -378,6 +377,7 @@ serve(async (req) => {
       const rawText = data.content?.[0]?.text || ''
 
       const parsed = extractJSON(rawText)
+      if (parsed?.updatedProgram) parsed.updatedProgram.weekNumber = nextWeekNumber
 
       return new Response(JSON.stringify({ content: rawText, parsed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

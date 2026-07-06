@@ -10382,6 +10382,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [currentProgram, setCurrentProgram] = useState(function(){ return load('currentProgram'); });
   const [programMeta, setProgramMeta] = useState(function(){ return load('programMeta'); });
   const [coachPhase, setCoachPhase] = useState(function(){ return load('coachProfile') ? 'main' : 'onboarding'; });
+  const [coachToast, setCoachToast] = useState(null);
   var _onboardingDraft = load('coachOnboardingDraft');
   const [onboardingStep, setOnboardingStep] = useState(_onboardingDraft ? (_onboardingDraft._step||0) : 0);
   const [onboardingData, setOnboardingData] = useState(_onboardingDraft ? (function(){var d=Object.assign({},_onboardingDraft);delete d._step;return d;})() : {
@@ -11460,6 +11461,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         setCheckinHistory(nh);save('checkinHistory',nh);
         setCheckinResponse(result.parsed||{weeklySnapshot:result.content});
         setCoachPhase('checkinResult');
+        setCoachToast('Program updated for next week');
+        setTimeout(function(){setCoachToast(null);},4000);
       } catch(err){setCheckinError(err.message||'Something went wrong.');}
       setCheckinLoading(false);
     }
@@ -11768,7 +11771,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       renderCoach()
     ),
     // Execute overlay — full-screen, outside scroll container
-    view==='execute' ? renderExecute() : null
+    view==='execute' ? renderExecute() : null,
+    coachToast ? e('div',{style:{position:'fixed',top:20,left:'50%',transform:'translateX(-50%)',zIndex:9999,background:'#1A1833',color:'white',padding:'14px 18px',borderRadius:16,fontSize:14,fontWeight:600,boxShadow:'0 4px 24px rgba(0,0,0,0.3)',maxWidth:'92vw'}},'✅ '+coachToast) : null
   );
 }
 
