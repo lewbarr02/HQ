@@ -10353,10 +10353,32 @@ function computeDaysToGoal(input) {
   var sex = input.sex || 'male';
   var activityMultiplier = input.activityMultiplier || 1.2;
   var todayDate = input.todayDate || today();
+  var assumedWeeklyPct = input.assumedWeeklyPct || 0.01;  // 1% bodyweight/week — standard moderate pace, used until a measured trend exists
+
+  // Fallback projection from known stats alone (no weigh-in history required) — a placeholder
+  // estimate, not a measurement, so callers must label it distinctly from a real trend.
+  function estimateFromAssumedPace(weight, explanation) {
+    if (!weight || !goalWeight) return null;
+    var direction = Math.sign(goalWeight - weight) || 0;
+    if (direction === 0) {
+      return { daysToGoal:0, state:'estimated', trendWeightToday:Math.round(weight*10)/10, dailyRate:0, trendDirection:'flat', explanation:'You\'re already at your goal weight.' };
+    }
+    var weeklyRateLbs = weight * assumedWeeklyPct;
+    var days = Math.abs(goalWeight - weight) / weeklyRateLbs * 7;
+    return {
+      daysToGoal: Math.round(days), state:'estimated', trendWeightToday: Math.round(weight*10)/10,
+      dailyRate: Math.round((weeklyRateLbs/7)*1000)/1000, trendDirection: null,
+      explanation: explanation || ('Estimated at a standard ' + Math.round(assumedWeeklyPct*1000)/10 + '%/week pace — log weigh-ins to replace this with your measured trend.')
+    };
+  }
 
   var dates = Object.keys(weighIns).filter(function(d){ return !isNaN(parseFloat(weighIns[d])); }).sort();
-  if (!goalWeight || dates.length === 0) {
-    return { daysToGoal:null, state:'no-data', trendWeightToday:currentWeightLbs||null, dailyRate:null, trendDirection:null, explanation:'Log a weigh-in to start tracking.' };
+  if (!goalWeight) {
+    return { daysToGoal:null, state:'no-data', trendWeightToday:currentWeightLbs||null, dailyRate:null, trendDirection:null, explanation:'Set a goal weight to start tracking.' };
+  }
+  if (dates.length === 0) {
+    return estimateFromAssumedPace(currentWeightLbs) ||
+      { daysToGoal:null, state:'no-data', trendWeightToday:null, dailyRate:null, trendDirection:null, explanation:'Log a weigh-in to start tracking.' };
   }
 
   // EWMA trend line — filters day-to-day water-weight noise out of the raw scale numbers
@@ -10384,8 +10406,14 @@ function computeDaysToGoal(input) {
   var roundedRate = Math.round(dailyRate*100)/100;
 
   if (dailyRate <= 0) {
+    // Fewer than 14 days of real weigh-ins isn't enough to trust as a genuine stall — bridge
+    // the gap with the assumed-pace estimate instead of stopping the projection cold.
+    if (calibrating) {
+      var bridged = estimateFromAssumedPace(trendToday, 'Estimated at a standard pace while your measured trend calibrates — log a few more weigh-ins to refine it.');
+      if (bridged) { bridged.state = 'calibrating'; return bridged; }
+    }
     return {
-      daysToGoal:null, state: calibrating?'calibrating':'no-trend',
+      daysToGoal:null, state: 'no-trend',
       trendWeightToday: Math.round(trendToday*10)/10, dailyRate: roundedRate,
       trendDirection: dailyRate < -0.01 ? 'slipping' : 'flat',
       explanation: 'Recalculating — no clear trend yet.'
@@ -11896,6 +11924,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var goalStateLabel = goalResult.state==='ok'
       ? (goalResult.trendDirection==='slipping' ? '▲ Slipping' : goalResult.trendDirection==='improving' ? '▼ Improving' : 'On track')
       : goalResult.state==='calibrating' ? 'Calibrating'
+      : goalResult.state==='estimated' ? 'Estimated'
       : goalResult.state==='no-trend' ? 'Recalculating' : 'No data yet';
 
     // Photos — reuses the same photoIndex / hq_photo_<date> storage as Progress Photos
@@ -12017,7 +12046,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
           goalResult.daysToGoal!=null
             ? e('div',{},
-                e('div',{style:{fontSize:40,fontWeight:800,color:'white',lineHeight:1}}, goalResult.daysToGoal),
+                e('div',{style:{fontSize:40,fontWeight:800,color:'white',lineHeight:1}}, (goalResult.state==='estimated'?'~':'')+goalResult.daysToGoal),
                 e('div',{style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:0.5,marginTop:4}}, 'DAYS AWAY FROM YOUR GOAL')
               )
             : e('div',{style:{fontSize:15,fontWeight:700,color:'white',maxWidth:200,lineHeight:1.4}}, goalResult.explanation),
