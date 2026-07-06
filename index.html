@@ -10422,6 +10422,13 @@ function computeDaysToGoal(input) {
   };
 }
 
+var DEFAULT_PROTEIN_STAPLES = [
+  {id:'greekYogurt', label:'Greek Yogurt', emoji:'🥛', proteinPer100g:10, calPer100g:59, servingGrams:200},
+  {id:'iso100', label:'ISO100', emoji:'🥤', proteinPer100g:81, calPer100g:358, servingGrams:61},
+  {id:'eggsWhites', label:'Eggs + Whites', emoji:'🍳', proteinPer100g:20, calPer100g:90, servingGrams:165},
+  {id:'chickenBowl', label:'Chicken Bowl', emoji:'🍗', proteinPer100g:31, calPer100g:165, servingGrams:155},
+];
+
 function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLog, setTab }) {
   var _wipCheck = (function(){ try{ return !!JSON.parse(localStorage.getItem('hq_wipWorkout')||'null'); }catch(e){ return false; } })();
   const [view, setView] = useState(_wipCheck ? 'execute' : 'progress'); // log | history | coach | progress | execute
@@ -10467,6 +10474,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [importError, setImportError] = useState(null);
   // ── Program / Onboarding / Check-in state ────────────────────────────────
   const [proteinLog, setProteinLog] = useState(function(){ return load('proteinLog') || {}; });
+  const [proteinStaples, setProteinStaples] = useState(function(){ return load('proteinStaples') || DEFAULT_PROTEIN_STAPLES; });
+  const [editingProtein, setEditingProtein] = useState(false);
+  const [proteinForm, setProteinForm] = useState(null); // {id?, label, emoji, proteinPer100g, calPer100g, servingGrams}
   const [showWeighIn, setShowWeighIn] = useState(false);
   const [weighInDraft, setWeighInDraft] = useState('');
   const [coachProfile, setCoachProfile] = useState(function(){ return load('coachProfile'); });
@@ -11864,6 +11874,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       return acc;
     }, {cal:0,protein:0,carbs:0,fat:0});
 
+    // Checked protein-checklist items add straight into the Calories/Protein rings —
+    // protein grams = proteinPer100g scaled to the item's current serving size
+    function proteinGramsFor(s) { return Math.round((parseFloat(s.proteinPer100g)||0)/100*(parseFloat(s.servingGrams)||0)); }
+    function calGramsFor(s) { return Math.round((parseFloat(s.calPer100g)||0)/100*(parseFloat(s.servingGrams)||0)); }
+    var todayProtein = proteinLog[td] || {};
+    proteinStaples.forEach(function(s){
+      if (todayProtein[s.id]) { macroTotals.protein += proteinGramsFor(s); macroTotals.cal += calGramsFor(s); }
+    });
+
     // Days-to-goal
     var todayActiveCal = (watchLog||[]).filter(function(w){return w.date===td;}).reduce(function(s,w){return s+(w.activeCalories||0);},0);
     var goalResult = computeDaysToGoal({
@@ -11906,18 +11925,33 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     }
 
     // Protein checklist — reuses the .habit-circle pattern from the Home habit tracker
-    var PROTEIN_STAPLES = [
-      {id:'greekYogurt', label:'Greek Yogurt', grams:20, emoji:'🥛'},
-      {id:'iso100', label:'ISO100', grams:50, emoji:'🥤'},
-      {id:'eggsWhites', label:'Eggs + Whites', grams:33, emoji:'🍳'},
-      {id:'chickenBowl', label:'Chicken Bowl', grams:48, emoji:'🍗'},
-    ];
-    var todayProtein = proteinLog[td] || {};
-    var proteinDoneCount = PROTEIN_STAPLES.filter(function(s){return !!todayProtein[s.id];}).length;
+    var proteinDoneCount = proteinStaples.filter(function(s){return !!todayProtein[s.id];}).length;
     function toggleProtein(id) {
       var day = Object.assign({}, todayProtein, {[id]: !todayProtein[id]});
       var next = Object.assign({}, proteinLog, {[td]: day});
       setProteinLog(next); save('proteinLog', next);
+    }
+    function saveStaples(next) { setProteinStaples(next); save('proteinStaples', next); }
+    function openAddStaple() { setProteinForm({label:'', emoji:'🍽️', proteinPer100g:'', calPer100g:'', servingGrams:''}); }
+    function openEditStaple(s) { setProteinForm({id:s.id, label:s.label, emoji:s.emoji, proteinPer100g:String(s.proteinPer100g), calPer100g:String(s.calPer100g), servingGrams:String(s.servingGrams)}); }
+    function deleteStaple(id) {
+      saveStaples(proteinStaples.filter(function(s){return s.id!==id;}));
+      if (todayProtein[id]) toggleProtein(id);
+    }
+    function saveStapleForm() {
+      var f = proteinForm;
+      if (!f.label.trim()) return;
+      var entry = {
+        id: f.id || ('p'+Date.now()),
+        label: f.label.trim(),
+        emoji: f.emoji.trim() || '🍽️',
+        proteinPer100g: parseFloat(f.proteinPer100g)||0,
+        calPer100g: parseFloat(f.calPer100g)||0,
+        servingGrams: parseFloat(f.servingGrams)||0,
+      };
+      var next = f.id ? proteinStaples.map(function(s){return s.id===f.id?entry:s;}) : proteinStaples.concat([entry]);
+      saveStaples(next);
+      setProteinForm(null);
     }
 
     // Workouts — Apple Watch (most recent 3; full list + upload lives in the Watch tab)
@@ -11982,7 +12016,22 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         )
       ),
 
-      // 2. Weight Trend
+      // 2. Days Away From Goal
+      e('div',{style:{background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',borderRadius:16,padding:'18px',boxShadow:'0 8px 24px rgba(123,47,255,0.25)'}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+          goalResult.daysToGoal!=null
+            ? e('div',{},
+                e('div',{style:{fontSize:40,fontWeight:800,color:'white',lineHeight:1}}, goalResult.daysToGoal),
+                e('div',{style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:0.5,marginTop:4}}, 'DAYS AWAY FROM YOUR GOAL')
+              )
+            : e('div',{style:{fontSize:15,fontWeight:700,color:'white',maxWidth:200,lineHeight:1.4}}, goalResult.explanation),
+          e('div',{style:{fontSize:10,fontWeight:800,color:'white',background:'rgba(255,255,255,0.2)',padding:'4px 10px',borderRadius:10,whiteSpace:'nowrap'}}, goalStateLabel)
+        ),
+        onTrackDate ? e('div',{style:{marginTop:10,fontSize:12,color:'rgba(255,255,255,0.85)'}}, 'On track to reach your goal on ', e('b',{},onTrackDate)) : null,
+        goalResult.explanation && goalResult.daysToGoal!=null ? e('div',{style:{marginTop:8,fontSize:11,color:'rgba(255,255,255,0.85)',background:'rgba(0,0,0,0.15)',borderRadius:8,padding:'8px 10px'}}, goalResult.explanation) : null
+      ),
+
+      // 3. Weight Trend
       e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}},
           e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}},'⚖️ Weight Trend — Last 30 Days'),
@@ -11999,21 +12048,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
                 e('button',{onClick:saveWeighIn,style:{padding:'0 18px',borderRadius:12,background:ACCENT,border:'none',color:'#1A1833',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Save')
               )
         )
-      ),
-
-      // 3. Days Away From Goal
-      e('div',{style:{background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',borderRadius:16,padding:'18px',boxShadow:'0 8px 24px rgba(123,47,255,0.25)'}},
-        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
-          goalResult.daysToGoal!=null
-            ? e('div',{},
-                e('div',{style:{fontSize:40,fontWeight:800,color:'white',lineHeight:1}}, goalResult.daysToGoal),
-                e('div',{style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:0.5,marginTop:4}}, 'DAYS AWAY FROM YOUR GOAL')
-              )
-            : e('div',{style:{fontSize:15,fontWeight:700,color:'white',maxWidth:200,lineHeight:1.4}}, goalResult.explanation),
-          e('div',{style:{fontSize:10,fontWeight:800,color:'white',background:'rgba(255,255,255,0.2)',padding:'4px 10px',borderRadius:10,whiteSpace:'nowrap'}}, goalStateLabel)
-        ),
-        onTrackDate ? e('div',{style:{marginTop:10,fontSize:12,color:'rgba(255,255,255,0.85)'}}, 'On track to reach your goal on ', e('b',{},onTrackDate)) : null,
-        goalResult.explanation && goalResult.daysToGoal!=null ? e('div',{style:{marginTop:8,fontSize:11,color:'rgba(255,255,255,0.85)',background:'rgba(0,0,0,0.15)',borderRadius:8,padding:'8px 10px'}}, goalResult.explanation) : null
       ),
 
       // 4. Nutrition — Today
@@ -12033,22 +12067,86 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
           e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}},'✅ Protein Checklist'),
-          e('div',{style:{fontSize:11,fontWeight:700,color:'#FFB347',background:'rgba(255,179,71,0.12)',padding:'3px 10px',borderRadius:10}}, proteinDoneCount+'/'+PROTEIN_STAPLES.length)
+          e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+            e('div',{style:{fontSize:11,fontWeight:700,color:'#FFB347',background:'rgba(255,179,71,0.12)',padding:'3px 10px',borderRadius:10}}, proteinDoneCount+'/'+proteinStaples.length),
+            e('button',{onClick:function(){setEditingProtein(!editingProtein);},style:{background:'none',border:'none',color:ACCENT,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, editingProtein?'Done':'✏️ Edit')
+          )
         ),
-        e('div',{style:{display:'flex',gap:14,overflowX:'auto',paddingBottom:4}},
-          ...PROTEIN_STAPLES.map(function(s){
-            var done = !!todayProtein[s.id];
-            var c = done ? '#10B981' : '#EF4444';
-            return e('div',{key:s.id,onClick:function(){toggleProtein(s.id);},style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:64}},
-              e('div',{className:'habit-circle'+(done?' done':''),style:{borderColor:c,background:done?'white':'#FFF5F5'}},
-                e('span',{style:{fontSize:22}}, s.emoji),
-                e('div',{style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:c,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, done?'✓':'!')
+        !editingProtein
+          ? e('div',{style:{display:'flex',gap:14,overflowX:'auto',paddingBottom:4}},
+              ...proteinStaples.map(function(s){
+                var done = !!todayProtein[s.id];
+                var c = done ? '#10B981' : '#EF4444';
+                return e('div',{key:s.id,onClick:function(){toggleProtein(s.id);},style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:64}},
+                  e('div',{className:'habit-circle'+(done?' done':''),style:{borderColor:c,background:done?'white':'#FFF5F5'}},
+                    e('span',{style:{fontSize:22}}, s.emoji),
+                    e('div',{style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:c,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, done?'✓':'!')
+                  ),
+                  e('div',{style:{fontSize:10,fontWeight:700,color:done?TEXT:MUTED,textAlign:'center',lineHeight:1.2}}, s.label),
+                  e('div',{style:{fontSize:9,color:MUTED}}, proteinGramsFor(s)+'g protein')
+                );
+              })
+            )
+          : e('div',{style:{display:'flex',flexDirection:'column',gap:8}},
+              ...proteinStaples.map(function(s){
+                return e('div',{key:s.id,style:{background:'#F8FAFC',borderRadius:12,padding:'10px 12px',display:'flex',alignItems:'center',gap:10}},
+                  e('span',{style:{fontSize:20}}, s.emoji),
+                  e('div',{style:{flex:1,minWidth:0}},
+                    e('div',{style:{fontSize:12,fontWeight:700,color:TEXT}}, s.label),
+                    e('div',{style:{fontSize:10,color:MUTED}}, proteinGramsFor(s)+'g protein · '+calGramsFor(s)+' cal')
+                  ),
+                  e('input',{type:'number',min:0,value:s.servingGrams,
+                    onInput:function(ev){ var v=ev.target.value; saveStaples(proteinStaples.map(function(x){return x.id===s.id?Object.assign({},x,{servingGrams:v===''?'':parseFloat(v)||0}):x;})); },
+                    style:{width:56,padding:'6px',borderRadius:8,border:'1.5px solid '+BORDER,fontSize:12,fontWeight:700,textAlign:'center',fontFamily:'inherit'}
+                  }),
+                  e('span',{style:{fontSize:10,color:MUTED}}, 'g'),
+                  e('button',{onClick:function(){openEditStaple(s);},style:{background:'none',border:'none',color:MUTED,fontSize:14,cursor:'pointer',padding:'2px 4px'}}, '✏️'),
+                  e('button',{onClick:function(){deleteStaple(s.id);},style:{background:'none',border:'none',color:'#FDA29B',fontSize:16,cursor:'pointer',padding:'2px 4px',lineHeight:1}}, '×')
+                );
+              }),
+              e('button',{onClick:openAddStaple,style:{
+                padding:'10px',borderRadius:10,border:'1.5px dashed '+ACCENT+'60',background:ACCENT+'10',color:ACCENT,
+                fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
+              }}, '+ Add food')
+            ),
+        proteinForm ? e('div',{style:{
+          position:'fixed',inset:0,zIndex:100,background:'rgba(0,0,0,0.4)',
+          display:'flex',alignItems:'center',justifyContent:'center',padding:24,
+        }},
+          e('div',{style:{background:'#fff',borderRadius:20,padding:24,width:'100%',maxWidth:340,display:'flex',flexDirection:'column',gap:10}},
+            e('div',{style:{fontSize:16,fontWeight:800,color:TEXT,marginBottom:4}}, proteinForm.id?'Edit food':'Add food'),
+            e('input',{className:'input',style:{marginBottom:0},placeholder:'Food name (e.g. Cottage Cheese)',
+              value:proteinForm.label, autoFocus:true,
+              onInput:function(ev){setProteinForm(Object.assign({},proteinForm,{label:ev.target.value}));}}),
+            e('input',{className:'input',style:{marginBottom:0},placeholder:'Emoji (optional)',
+              value:proteinForm.emoji,
+              onInput:function(ev){setProteinForm(Object.assign({},proteinForm,{emoji:ev.target.value}));}}),
+            e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+              e('div',{},
+                e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,marginBottom:4}}, 'Protein / 100g'),
+                e('input',{type:'number',min:0,className:'input',style:{marginBottom:0},placeholder:'g',
+                  value:proteinForm.proteinPer100g,
+                  onInput:function(ev){setProteinForm(Object.assign({},proteinForm,{proteinPer100g:ev.target.value}));}})
               ),
-              e('div',{style:{fontSize:10,fontWeight:700,color:done?TEXT:MUTED,textAlign:'center',lineHeight:1.2}}, s.label),
-              e('div',{style:{fontSize:9,color:MUTED}}, s.grams+'g')
-            );
-          })
-        )
+              e('div',{},
+                e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,marginBottom:4}}, 'Calories / 100g'),
+                e('input',{type:'number',min:0,className:'input',style:{marginBottom:0},placeholder:'kcal',
+                  value:proteinForm.calPer100g,
+                  onInput:function(ev){setProteinForm(Object.assign({},proteinForm,{calPer100g:ev.target.value}));}})
+              )
+            ),
+            e('div',{},
+              e('div',{style:{fontSize:10,fontWeight:700,color:MUTED,marginBottom:4}}, 'Serving size (g)'),
+              e('input',{type:'number',min:0,className:'input',style:{marginBottom:0},placeholder:'g',
+                value:proteinForm.servingGrams,
+                onInput:function(ev){setProteinForm(Object.assign({},proteinForm,{servingGrams:ev.target.value}));}})
+            ),
+            e('div',{style:{display:'flex',gap:8,marginTop:6}},
+              e('button',{onClick:function(){setProteinForm(null);},style:{flex:1,padding:'12px',borderRadius:12,background:CARD2,border:'none',color:MUTED,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel'),
+              e('button',{onClick:saveStapleForm,style:{flex:2,padding:'12px',borderRadius:12,background:ACCENT,border:'none',color:'#1A1833',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
+            )
+          )
+        ) : null
       ),
 
       // 6. Workouts — Apple Watch
@@ -13511,6 +13609,7 @@ function App() {
   const [cpapLog, setCpapLog] = useState(() => load('cpapLog') || {});
   const [projectData, setProjectData] = useState(() => load('projectData') || {phase:'Marketing Assets', percent:80, lastAction:null});
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
+  const [viewOverride, setViewOverride] = useState(() => load('viewOverride')); // null | 'wide' | 'narrow' — manual iPad/iPhone preview toggle
   const [calendarConnected, setCalendarConnected] = useState(() => !!localStorage.getItem('hq_calTokens'));
 
   useEffect(() => {
@@ -13575,6 +13674,26 @@ function App() {
       }
     }).catch(function(){});
   }, []);
+
+  useEffect(function(){
+    // #root's width is normally driven by a CSS media query on real viewport width, and
+    // #app-inner has a `max-width:100vw !important` safety rule — both need a matching
+    // !important override here, or forcing a layout on a mismatched real device width
+    // (e.g. previewing iPhone width on an iPad) gets fought by those rules.
+    var rootEl = document.getElementById('root');
+    var innerEl = document.getElementById('app-inner');
+    if (!rootEl) return;
+    if (viewOverride === 'wide') {
+      rootEl.style.maxWidth = 'none'; rootEl.style.margin = '0';
+      if (innerEl) innerEl.style.setProperty('max-width', 'none', 'important');
+    } else if (viewOverride === 'narrow') {
+      rootEl.style.maxWidth = '480px'; rootEl.style.margin = '0 auto';
+      if (innerEl) innerEl.style.setProperty('max-width', '480px', 'important');
+    } else {
+      rootEl.style.maxWidth = ''; rootEl.style.margin = '';
+      if (innerEl) innerEl.style.removeProperty('max-width');
+    }
+  }, [viewOverride]);
 
   useEffect(() => {
     function handleResize(){setIsWide(window.innerWidth >= 768);}
@@ -13941,7 +14060,18 @@ function App() {
     )
   ) : null;
 
-  if(isWide) {
+  var effectiveWide = viewOverride ? viewOverride==='wide' : isWide;
+  function toggleViewMode() {
+    var next = effectiveWide ? 'narrow' : 'wide';
+    setViewOverride(next); save('viewOverride', next);
+  }
+  var viewToggleBtn = e('button', {
+    title: effectiveWide ? 'Preview iPhone layout' : 'Preview iPad layout',
+    onClick: toggleViewMode,
+    style:{background:'none',border:'none',cursor:'pointer',fontSize:16,padding:'2px 4px',color:MUTED,lineHeight:1,flexShrink:0}
+  }, effectiveWide ? '📱' : '💻');
+
+  if(effectiveWide) {
     return e('div', {id:'app-inner', style:{height:'100dvh',display:'flex',flexDirection:'row',width:'100%',background:'#F7F8FC',overflow:'hidden',position:'relative'}},
       splash ? e(Splash) : null,
       e(Sidebar, {tab, setTab, moreOpen, setMoreOpen, NAV, dateStr, groceries, priorities: load('priorities')||[]}),
@@ -13954,6 +14084,7 @@ function App() {
               e('div', {style:{fontSize:11,fontWeight:700,color:ACCENT,background:ACCENT+'15',padding:'3px 10px',borderRadius:10}}, 'Wake: '+wakeLog[now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')]) : null,
             calcMorningStreak(routineLog||{}) > 0 ?
               e('div', {style:{fontSize:11,fontWeight:700,color:'#FFB347',background:'#FFB34715',padding:'3px 10px',borderRadius:10}}, '🔥 '+calcMorningStreak(routineLog||{})+'-day streak') : null,
+            viewToggleBtn,
             e('button', {
               title: 'Update app to latest version',
               onClick: async function() {
@@ -13988,6 +14119,7 @@ function App() {
           e('div', {style:{fontSize:13,color:MUTED,fontWeight:600}}, dateStr),
           e('div', {style:{fontSize:9,color:'#ccc'}}, 'v1781033505')
         ),
+        viewToggleBtn,
         e('button', {
           title: 'Update app to latest version',
           onClick: async function() {
