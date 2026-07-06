@@ -10334,9 +10334,97 @@ function InboxScreen({ setTab }) {
   );
 }
 
-function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLog }) {
+// ── Days-to-goal projection: two-layer trend model ──────────────────────────
+// Layer 1 (slow, authoritative): EWMA trend weight from real weigh-ins — recomputed fresh
+// from bodyWeightLog every call, so it always overrides whatever Layer 2 estimated.
+// Layer 2 (fast, reactive): today's calorie balance nudges the projection, but since this
+// function is pure and re-derives everything from scratch each render, Layer 2 can never
+// "stick" past the next real weigh-in — there's nothing to reconcile, it just isn't stored.
+// Pure function — no DOM/React/localStorage access — so it can be unit tested on its own.
+function computeDaysToGoal(input) {
+  var weighIns = input.weighIns || {};              // {date: weightLbs}
+  var goalWeight = parseFloat(input.goalWeight);
+  var todayCaloriesIn = input.todayCaloriesIn || 0;
+  var todayActiveCalories = input.todayActiveCalories || 0;
+  var currentWeightLbs = input.currentWeightLbs;
+  var alpha = input.alpha || 0.12;                  // EWMA smoothing factor (0.1–0.15 suggested)
+  var heightIn = input.heightIn || 69;               // 5'9"
+  var age = input.age || 43;
+  var sex = input.sex || 'male';
+  var activityMultiplier = input.activityMultiplier || 1.2;
+  var todayDate = input.todayDate || today();
+
+  var dates = Object.keys(weighIns).filter(function(d){ return !isNaN(parseFloat(weighIns[d])); }).sort();
+  if (!goalWeight || dates.length === 0) {
+    return { daysToGoal:null, state:'no-data', trendWeightToday:currentWeightLbs||null, dailyRate:null, trendDirection:null, explanation:'Log a weigh-in to start tracking.' };
+  }
+
+  // EWMA trend line — filters day-to-day water-weight noise out of the raw scale numbers
+  var trend = {};
+  dates.forEach(function(d, i){
+    var w = parseFloat(weighIns[d]);
+    trend[d] = i===0 ? w : alpha*w + (1-alpha)*trend[dates[i-1]];
+  });
+  var trendToday = trend[dates[dates.length-1]];
+
+  var msDay = 86400000;
+  var todayMs = new Date(todayDate+'T12:00:00').getTime();
+  var firstMs = new Date(dates[0]+'T12:00:00').getTime();
+  var spanDays = Math.max(1, Math.round((todayMs-firstMs)/msDay));
+  var calibrating = spanDays < 14;
+
+  // Trailing 14-day rate, or a simple full-range slope when calibrating
+  var d14 = dates.filter(function(d){ return (todayMs-new Date(d+'T12:00:00').getTime()) <= 14*msDay; });
+  var rateDate = calibrating ? dates[0] : d14[0];
+  var rateSpanDays = Math.max(1, Math.round((todayMs-new Date(rateDate+'T12:00:00').getTime())/msDay));
+  var rawSlope = (trendToday - trend[rateDate]) / rateSpanDays; // lbs/day, negative while losing weight
+
+  var direction = Math.sign(goalWeight - trendToday) || 0; // -1 need to lose, +1 need to gain
+  var dailyRate = direction * rawSlope;                     // positive = trending correctly toward goal
+  var roundedRate = Math.round(dailyRate*100)/100;
+
+  if (dailyRate <= 0) {
+    return {
+      daysToGoal:null, state: calibrating?'calibrating':'no-trend',
+      trendWeightToday: Math.round(trendToday*10)/10, dailyRate: roundedRate,
+      trendDirection: dailyRate < -0.01 ? 'slipping' : 'flat',
+      explanation: 'Recalculating — no clear trend yet.'
+    };
+  }
+
+  var layer1Days = Math.abs(trendToday - goalWeight) / dailyRate;
+
+  // Layer 2 — reactive same-day nudge from estimated calorie balance (Mifflin-St Jeor BMR)
+  var weightKg = (currentWeightLbs||trendToday) * 0.453592;
+  var heightCm = heightIn * 2.54;
+  var bmr = 10*weightKg + 6.25*heightCm - 5*age + (sex==='male'?5:-161);
+  var estCaloriesOutToday = bmr*activityMultiplier + todayActiveCalories;
+  var actualDeficitToday = estCaloriesOutToday - todayCaloriesIn;
+  var requiredDailyDeficit = direction < 0 ? dailyRate*3500 : -dailyRate*3500;
+  var deficitGap = actualDeficitToday - requiredDailyDeficit; // >0 ahead of pace, <0 behind
+  var dayAdjustment = -deficitGap / 3500;                      // behind pace -> positive days added
+  var adjustedDays = Math.max(0, layer1Days + dayAdjustment);
+
+  var explanation = null;
+  if (dayAdjustment > 0.05) {
+    explanation = 'Calories ran over today — goal date pushed back ' + (Math.round(dayAdjustment*10)/10) + ' day' + (dayAdjustment>=1.05?'s':'') + '.';
+  } else if (dayAdjustment < -0.05) {
+    explanation = 'Ahead of pace today — goal date pulled in ' + (Math.round(-dayAdjustment*10)/10) + ' day' + (-dayAdjustment>=1.05?'s':'') + '.';
+  }
+
+  return {
+    daysToGoal: Math.round(adjustedDays),
+    state: calibrating ? 'calibrating' : 'ok',
+    trendWeightToday: Math.round(trendToday*10)/10,
+    dailyRate: roundedRate,
+    trendDirection: dayAdjustment > 0.05 ? 'slipping' : (dayAdjustment < -0.05 ? 'improving' : 'flat'),
+    explanation: explanation
+  };
+}
+
+function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLog, setTab }) {
   var _wipCheck = (function(){ try{ return !!JSON.parse(localStorage.getItem('hq_wipWorkout')||'null'); }catch(e){ return false; } })();
-  const [view, setView] = useState(_wipCheck ? 'execute' : 'log'); // log | history | coach | execute
+  const [view, setView] = useState(_wipCheck ? 'execute' : 'progress'); // log | history | coach | progress | execute
 
   function autoCheckExercise(date, currentHabitLog) {
     var exHabit = (habits||[]).find(function(h){ return h.name && h.name.toLowerCase()==='exercise'; });
@@ -10378,6 +10466,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState(null);
   // ── Program / Onboarding / Check-in state ────────────────────────────────
+  const [proteinLog, setProteinLog] = useState(function(){ return load('proteinLog') || {}; });
+  const [showWeighIn, setShowWeighIn] = useState(false);
+  const [weighInDraft, setWeighInDraft] = useState('');
   const [coachProfile, setCoachProfile] = useState(function(){ return load('coachProfile'); });
   const [currentProgram, setCurrentProgram] = useState(function(){ return load('currentProgram'); });
   const [programMeta, setProgramMeta] = useState(function(){ return load('programMeta'); });
@@ -11740,6 +11831,259 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     );
   }
 
+  function renderProgress() {
+    var td = today();
+    var goalWeight = parseFloat(coachGoalWeight) || 188;
+
+    // Weight trend — last 30 days from bodyWeightLog (shared with the weekly coach check-in)
+    var cutoff30 = new Date(); cutoff30.setDate(cutoff30.getDate()-30);
+    var weightEntries = Object.entries(bodyWeightLog||{})
+      .filter(function(en){ return new Date(en[0]+'T12:00:00') >= cutoff30; })
+      .sort(function(a,b){ return a[0]<b[0]?-1:1; })
+      .map(function(en){ return {date:en[0], weight:parseFloat(en[1])}; });
+    var latestWeight = weightEntries.length ? weightEntries[weightEntries.length-1].weight : (parseFloat(coachWeight)||null);
+    var firstWeight = weightEntries.length ? weightEntries[0].weight : null;
+    var trendDelta = (latestWeight!=null && firstWeight!=null) ? Math.round((latestWeight-firstWeight)*10)/10 : null;
+
+    function saveWeighIn() {
+      var v = parseFloat(weighInDraft);
+      if(!isNaN(v) && v>0) {
+        var next = Object.assign({}, bodyWeightLog, {[td]: v});
+        setBodyWeightLog(next); save('bodyWeightLog', next);
+      }
+      setShowWeighIn(false); setWeighInDraft('');
+    }
+
+    // Nutrition — today (same macroLog/macroTargets the Macros screen writes to)
+    var macroLogData = load('macroLog') || {};
+    var macroTargets = load('macroTargets') || {cal:2200,protein:180,carbs:200,fat:65};
+    var todayMeals = macroLogData[td] || [];
+    var macroTotals = todayMeals.reduce(function(acc,m){
+      acc.cal += parseFloat(m.cal)||0; acc.protein += parseFloat(m.protein)||0;
+      acc.carbs += parseFloat(m.carbs)||0; acc.fat += parseFloat(m.fat)||0;
+      return acc;
+    }, {cal:0,protein:0,carbs:0,fat:0});
+
+    // Days-to-goal
+    var todayActiveCal = (watchLog||[]).filter(function(w){return w.date===td;}).reduce(function(s,w){return s+(w.activeCalories||0);},0);
+    var goalResult = computeDaysToGoal({
+      weighIns: bodyWeightLog||{}, goalWeight: goalWeight,
+      todayCaloriesIn: macroTotals.cal, todayActiveCalories: todayActiveCal,
+      currentWeightLbs: latestWeight, todayDate: td,
+    });
+    var onTrackDate = goalResult.daysToGoal != null
+      ? new Date(Date.now()+goalResult.daysToGoal*86400000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+      : null;
+    var goalStateLabel = goalResult.state==='ok'
+      ? (goalResult.trendDirection==='slipping' ? '▲ Slipping' : goalResult.trendDirection==='improving' ? '▼ Improving' : 'On track')
+      : goalResult.state==='calibrating' ? 'Calibrating'
+      : goalResult.state==='no-trend' ? 'Recalculating' : 'No data yet';
+
+    // Photos — reuses the same photoIndex / hq_photo_<date> storage as Progress Photos
+    var photoIdx = load('photoIndex') || [];
+    var startingEntry = photoIdx.length ? photoIdx[photoIdx.length-1] : null;
+    var currentEntry = photoIdx.length ? photoIdx[0] : null;
+    var startingPhoto = startingEntry ? localStorage.getItem('hq_photo_'+startingEntry.date) : null;
+    var currentPhoto = currentEntry ? localStorage.getItem('hq_photo_'+currentEntry.date) : null;
+
+    function photoTile(label, dateStr, photoSrc, active, actionLabel, onAction) {
+      return e('div',{style:{display:'flex',flexDirection:'column',gap:8,flex:1}},
+        e('div',{style:{fontSize:9,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase',color:active?ACCENT:MUTED,textAlign:'center'}}, label),
+        e('div',{style:{
+          aspectRatio:'3/4',borderRadius:14,overflow:'hidden',background:CARD2,
+          border: active ? '2px solid '+ACCENT : '1px solid '+BORDER,
+          display:'flex',alignItems:'center',justifyContent:'center'
+        }},
+          photoSrc ? e('img',{src:photoSrc,style:{width:'100%',height:'100%',objectFit:'cover'}})
+                   : e('span',{style:{fontSize:26,color:MUTED}}, '📷')
+        ),
+        e('div',{style:{fontSize:10,color:MUTED,textAlign:'center'}}, dateStr||'—'),
+        e('button',{onClick:onAction,style:{
+          padding:'7px 4px',borderRadius:10,border:'1px solid '+BORDER,background:'#fff',
+          color:TEXT,fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
+        }}, actionLabel)
+      );
+    }
+
+    // Protein checklist — reuses the .habit-circle pattern from the Home habit tracker
+    var PROTEIN_STAPLES = [
+      {id:'greekYogurt', label:'Greek Yogurt', grams:20, emoji:'🥛'},
+      {id:'iso100', label:'ISO100', grams:50, emoji:'🥤'},
+      {id:'eggsWhites', label:'Eggs + Whites', grams:33, emoji:'🍳'},
+      {id:'chickenBowl', label:'Chicken Bowl', grams:48, emoji:'🍗'},
+    ];
+    var todayProtein = proteinLog[td] || {};
+    var proteinDoneCount = PROTEIN_STAPLES.filter(function(s){return !!todayProtein[s.id];}).length;
+    function toggleProtein(id) {
+      var day = Object.assign({}, todayProtein, {[id]: !todayProtein[id]});
+      var next = Object.assign({}, proteinLog, {[td]: day});
+      setProteinLog(next); save('proteinLog', next);
+    }
+
+    // Workouts — Apple Watch (most recent 3; full list + upload lives in the Watch tab)
+    var recentWorkouts = (watchLog||[]).slice().sort(function(a,b){return a.date<b.date?1:-1;}).slice(0,3);
+    var ACCENT_WATCH = '#30D158';
+
+    function ring(pct, size, stroke, color) {
+      var r=(size-stroke)/2, c=2*Math.PI*r, clamped=Math.max(0,Math.min(1,pct));
+      return e('svg',{width:size,height:size,viewBox:'0 0 '+size+' '+size,style:{transform:'rotate(-90deg)',flexShrink:0}},
+        e('circle',{cx:size/2,cy:size/2,r:r,fill:'none',stroke:CARD2,strokeWidth:stroke}),
+        e('circle',{cx:size/2,cy:size/2,r:r,fill:'none',stroke:color,strokeWidth:stroke,strokeDasharray:c,strokeDashoffset:c*(1-clamped),strokeLinecap:'round'})
+      );
+    }
+    function ringTile(size, stroke, color, value, target, label, unit) {
+      var pct = target>0 ? value/target : 0;
+      return e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6}},
+        e('div',{style:{position:'relative',width:size,height:size}},
+          ring(pct,size,stroke,color),
+          e('div',{style:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}},
+            e('div',{style:{fontSize:size>90?20:14,fontWeight:800,color:TEXT}}, Math.round(value)),
+            e('div',{style:{fontSize:9,color:MUTED}}, '/ '+target+unit)
+          )
+        ),
+        e('div',{style:{fontSize:11,fontWeight:700,color:TEXT}}, label)
+      );
+    }
+
+    function weightChart() {
+      var entries = weightEntries.length ? weightEntries : (latestWeight!=null?[{date:td,weight:latestWeight}]:[]);
+      if (!entries.length) return e('div',{style:{textAlign:'center',color:MUTED,fontSize:13,padding:'20px 0'}}, 'Log a weigh-in to see your trend.');
+      var W=300,H=120,padL=6,padR=6,padT=10,padB=8;
+      var innerW=W-padL-padR, innerH=H-padT-padB;
+      var vals = entries.map(function(p){return p.weight;}).concat([goalWeight]);
+      var minW=Math.min.apply(null,vals)-2, maxW=Math.max.apply(null,vals)+2;
+      function x(i){ return padL + (entries.length<=1?innerW/2:(i/(entries.length-1))*innerW); }
+      function y(w){ return padT + innerH - ((w-minW)/(maxW-minW))*innerH; }
+      var pathD = entries.map(function(pt,i){ return (i===0?'M':'L')+x(i).toFixed(1)+','+y(pt.weight).toFixed(1); }).join(' ');
+      var goalY = y(goalWeight);
+      return e('div',{},
+        e('svg',{width:'100%',viewBox:'0 0 '+W+' '+H,style:{display:'block'}},
+          e('line',{x1:padL,y1:goalY,x2:W-padR,y2:goalY,stroke:MUTED,strokeWidth:1,strokeDasharray:'4,3'}),
+          e('text',{x:W-padR,y:goalY-4,fontSize:9,fill:MUTED,textAnchor:'end'},'Goal '+goalWeight),
+          e('path',{d:pathD,fill:'none',stroke:ACCENT,strokeWidth:2.5,strokeLinejoin:'round',strokeLinecap:'round'}),
+          ...entries.map(function(pt,i){return e('circle',{key:i,cx:x(i),cy:y(pt.weight),r:3,fill:ACCENT});})
+        ),
+        e('div',{style:{display:'flex',justifyContent:'space-between',fontSize:9,color:MUTED,marginTop:4}},
+          e('span',{},new Date(entries[0].date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+          e('span',{},new Date(entries[entries.length-1].date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}))
+        )
+      );
+    }
+
+    return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+
+      // 1. Physique Progress
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:12}},'📸 Physique Progress'),
+        e('div',{style:{display:'flex',gap:10}},
+          photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){setTab&&setTab('photos');}),
+          photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){setTab&&setTab('photos');}),
+          photoTile('Goal Visualization', 'Coming soon', null, false, 'View Details', function(){setTab&&setTab('photos');})
+        )
+      ),
+
+      // 2. Weight Trend
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}},
+          e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}},'⚖️ Weight Trend — Last 30 Days'),
+          trendDelta!=null ? e('div',{style:{fontSize:12,fontWeight:800,color:trendDelta<=0?'#10B981':'#EF4444'}}, (trendDelta<=0?'↓ ':'↑ ')+Math.abs(trendDelta)+' lbs') : null
+        ),
+        weightChart(),
+        e('div',{style:{marginTop:12}},
+          !showWeighIn ? e('button',{onClick:function(){setWeighInDraft(latestWeight?String(latestWeight):'');setShowWeighIn(true);},style:{
+              width:'100%',padding:'10px',borderRadius:10,border:'1.5px dashed '+ACCENT+'60',background:ACCENT+'10',color:ACCENT,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
+            }}, "+ Log today's weigh-in")
+            : e('div',{style:{display:'flex',gap:8}},
+                e('input',{type:'number',className:'input',style:{marginBottom:0,flex:1},placeholder:'lbs',value:weighInDraft,autoFocus:true,
+                  onInput:function(ev){setWeighInDraft(ev.target.value);}, onKeyDown:function(ev){if(ev.key==='Enter')saveWeighIn();}}),
+                e('button',{onClick:saveWeighIn,style:{padding:'0 18px',borderRadius:12,background:ACCENT,border:'none',color:'#1A1833',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Save')
+              )
+        )
+      ),
+
+      // 3. Days Away From Goal
+      e('div',{style:{background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',borderRadius:16,padding:'18px',boxShadow:'0 8px 24px rgba(123,47,255,0.25)'}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+          goalResult.daysToGoal!=null
+            ? e('div',{},
+                e('div',{style:{fontSize:40,fontWeight:800,color:'white',lineHeight:1}}, goalResult.daysToGoal),
+                e('div',{style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.8)',letterSpacing:0.5,marginTop:4}}, 'DAYS AWAY FROM YOUR GOAL')
+              )
+            : e('div',{style:{fontSize:15,fontWeight:700,color:'white',maxWidth:200,lineHeight:1.4}}, goalResult.explanation),
+          e('div',{style:{fontSize:10,fontWeight:800,color:'white',background:'rgba(255,255,255,0.2)',padding:'4px 10px',borderRadius:10,whiteSpace:'nowrap'}}, goalStateLabel)
+        ),
+        onTrackDate ? e('div',{style:{marginTop:10,fontSize:12,color:'rgba(255,255,255,0.85)'}}, 'On track to reach your goal on ', e('b',{},onTrackDate)) : null,
+        goalResult.explanation && goalResult.daysToGoal!=null ? e('div',{style:{marginTop:8,fontSize:11,color:'rgba(255,255,255,0.85)',background:'rgba(0,0,0,0.15)',borderRadius:8,padding:'8px 10px'}}, goalResult.explanation) : null
+      ),
+
+      // 4. Nutrition — Today
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:14}},'🥗 Nutrition — Today'),
+        e('div',{style:{display:'flex',justifyContent:'space-around',marginBottom:16}},
+          ringTile(100,10,'#FF6B35',macroTotals.cal,macroTargets.cal,'Calories','kcal'),
+          ringTile(100,10,'#00C6FF',macroTotals.protein,macroTargets.protein,'Protein','g')
+        ),
+        e('div',{style:{display:'flex',justifyContent:'space-around'}},
+          ringTile(64,7,'#FFB347',macroTotals.carbs,macroTargets.carbs,'Carbs','g'),
+          ringTile(64,7,PURPLE,macroTotals.fat,macroTargets.fat,'Fat','g')
+        )
+      ),
+
+      // 5. Protein Checklist
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
+          e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}},'✅ Protein Checklist'),
+          e('div',{style:{fontSize:11,fontWeight:700,color:'#FFB347',background:'rgba(255,179,71,0.12)',padding:'3px 10px',borderRadius:10}}, proteinDoneCount+'/'+PROTEIN_STAPLES.length)
+        ),
+        e('div',{style:{display:'flex',gap:14,overflowX:'auto',paddingBottom:4}},
+          ...PROTEIN_STAPLES.map(function(s){
+            var done = !!todayProtein[s.id];
+            var c = done ? '#10B981' : '#EF4444';
+            return e('div',{key:s.id,onClick:function(){toggleProtein(s.id);},style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6,flexShrink:0,cursor:'pointer',minWidth:64}},
+              e('div',{className:'habit-circle'+(done?' done':''),style:{borderColor:c,background:done?'white':'#FFF5F5'}},
+                e('span',{style:{fontSize:22}}, s.emoji),
+                e('div',{style:{position:'absolute',bottom:-2,right:-2,width:18,height:18,borderRadius:'50%',background:c,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'white',border:'2px solid white'}}, done?'✓':'!')
+              ),
+              e('div',{style:{fontSize:10,fontWeight:700,color:done?TEXT:MUTED,textAlign:'center',lineHeight:1.2}}, s.label),
+              e('div',{style:{fontSize:9,color:MUTED}}, s.grams+'g')
+            );
+          })
+        )
+      ),
+
+      // 6. Workouts — Apple Watch
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}},
+          e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}},'⌚ Workouts — Apple Watch'),
+          e('button',{onClick:function(){setView('watch');},style:{background:'none',border:'none',color:ACCENT,fontSize:11,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'View All')
+        ),
+        recentWorkouts.length ? e('div',{style:{display:'flex',gap:10,overflowX:'auto',paddingBottom:4}},
+          ...recentWorkouts.map(function(w){
+            return e('div',{key:w.id,style:{background:'#F8FAFC',borderRadius:12,padding:'12px',minWidth:140,flexShrink:0}},
+              e('div',{style:{fontSize:11,color:MUTED,marginBottom:4}}, w.date||''),
+              e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:6}}, w.workoutType||'Workout'),
+              w.activeCalories?e('div',{style:{fontSize:11,fontWeight:700,color:ACCENT_WATCH}}, w.activeCalories+' active cal'):null,
+              w.avgHeartRate?e('div',{style:{fontSize:11,color:'#EF4444'}}, w.avgHeartRate+' bpm avg'):null
+            );
+          }),
+          e('div',{key:'upload',onClick:function(){setView('watch');},style:{
+            minWidth:140,flexShrink:0,borderRadius:12,border:'1.5px dashed '+BORDER,background:CARD2,
+            display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,cursor:'pointer',padding:'12px'
+          }},
+            e('span',{style:{fontSize:20,color:MUTED}}, '📤'),
+            e('div',{style:{fontSize:11,fontWeight:700,color:MUTED,textAlign:'center'}}, 'Upload Screenshot'),
+            e('div',{style:{fontSize:9,color:MUTED}}, 'PNG or JPG')
+          )
+        ) : e('div',{key:'upload-empty',onClick:function(){setView('watch');},style:{
+            borderRadius:12,border:'1.5px dashed '+BORDER,background:CARD2,textAlign:'center',padding:'20px',cursor:'pointer'
+          }},
+            e('div',{style:{fontSize:24,marginBottom:6}}, '📤'),
+            e('div',{style:{fontSize:12,fontWeight:700,color:MUTED}}, 'Upload Screenshot (PNG or JPG)')
+          )
+      )
+    );
+  }
+
   function renderCoach() {
     if(coachPhase==='onboarding') return renderOnboarding();
     if(coachPhase==='checkin') return renderCheckinForm();
@@ -11752,7 +12096,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
+        ...[ ['progress','📈 Progress'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
             flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
@@ -11765,9 +12109,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     ),
     // Body
     e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch'}},
-      view==='log'     ? renderLog()     :
-      view==='watch'   ? renderWatch()   :
-      view==='history' ? renderHistory() :
+      view==='log'      ? renderLog()      :
+      view==='watch'    ? renderWatch()    :
+      view==='history'  ? renderHistory()  :
+      view==='progress' ? renderProgress() :
       renderCoach()
     ),
     // Execute overlay — full-screen, outside scroll container
@@ -13353,7 +13698,7 @@ function App() {
       case 'time': return e(TimeScreen, {timeLog,setTimeLog,setTab});
       case 'calendar': return e(CalendarScreen, {calendarConnected,setCalendarConnected,setTab});
       case 'inbox': return e(InboxScreen, {setTab});
-      case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog,habits,habitLog,setHabitLog});
+      case 'fitness': return e(FitnessScreen, {workoutLog,setWorkoutLog,habits,habitLog,setHabitLog,setTab});
       case 'golf-league': return e(GolfLeagueScreen, {golfRounds,setGolfRounds,setTab,habits,habitLog,setHabitLog});
       case 'datenights': return e(DateNightsScreen, {dateNights,setDateNights,setTab});
       case 'homemaintenance': return e(HomeMaintenanceScreen, {homeItems,setHomeItems,setTab});
