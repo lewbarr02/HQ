@@ -10541,6 +10541,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [executeRestSecs, setExecuteRestSecs] = useState(0);
   const [executeActiveEx, setExecuteActiveEx] = useState(_wip ? _wip.activeEx : null);
   const [executeDraft, setExecuteDraft] = useState(_wip ? (_wip.draft||{}) : {}); // { exName: {weight,reps} } current set inputs
+  const [executeDate, setExecuteDate] = useState(_wip && _wip.date ? _wip.date : today()); // date this Live Workout session logs to
   const [checkinForm, setCheckinForm] = useState({
     sessionsCompleted: '', energy: 3, hasSoreness: false, soreness: '',
     hasPain: false, pain: '', weight: '', sleepQuality: 3,
@@ -10583,12 +10584,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setView('log');
   }
 
-  function saveWip(day, sets, startTime, activeEx, draft) {
-    localStorage.setItem('hq_wipWorkout', JSON.stringify({day:day, sets:sets, startTime:startTime, activeEx:activeEx, draft:draft||{}}));
+  function saveWip(day, sets, startTime, activeEx, draft, date) {
+    localStorage.setItem('hq_wipWorkout', JSON.stringify({day:day, sets:sets, startTime:startTime, activeEx:activeEx, draft:draft||{}, date:date||today()}));
   }
   function clearWip() { localStorage.removeItem('hq_wipWorkout'); }
 
-  function startExecute(day) {
+  function startExecute(day, forDate) {
     // Initialize one set slot per exercise
     var sets = {};
     (day.exercises||[]).forEach(function(ex){
@@ -10598,6 +10599,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     });
     var startTime = Date.now();
     var firstEx = day.exercises&&day.exercises[0]?day.exercises[0].name:null;
+    var d = forDate || today();
     setExecuteDay(day);
     setExecuteSets(sets);
     setExecuteDraft({});
@@ -10605,7 +10607,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setExecuteStartTime(startTime);
     setExecuteElapsed(0);
     setExecuteRestSecs(0);
-    saveWip(day, sets, startTime, firstEx, {});
+    setExecuteDate(d);
+    saveWip(day, sets, startTime, firstEx, {}, d);
     setView('execute');
   }
 
@@ -10655,7 +10658,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       exercises: exercises,
       duration: durationMin,
     };
-    var td = today();
+    var td = executeDate || today();
     var day = safeLog[td]||[];
     var newLog = Object.assign({},safeLog,{[td]:[...day,entry]});
     setWorkoutLog(newLog); save('workoutLog',newLog);
@@ -10682,6 +10685,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
 
     setExecuteDay(null); setExecuteSets({}); setExecuteStartTime(null);
     setExecuteElapsed(0); setExecuteRestSecs(0); setExecuteActiveEx(null);
+    setExecuteDate(today());
     clearWip();
     setView('log');
   }
@@ -10713,7 +10717,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setExecuteDraft(newDraft);
       setExecuteActiveEx(nextEx);
       setExecuteRestSecs(90);
-      saveWip(executeDay, newSets, executeStartTime, nextEx, newDraft);
+      saveWip(executeDay, newSets, executeStartTime, nextEx, newDraft, executeDate);
     }
 
     var totalSets = exercises.reduce(function(s,ex){return s+(ex.sets||3);},0);
@@ -10723,6 +10727,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     return e('div',{style:{position:'fixed',inset:0,background:'#0F0F1A',zIndex:500,display:'flex',flexDirection:'column',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
       e('div',{style:{padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
         e('div',{},
+          e('div',{style:{fontSize:10,fontWeight:800,color:ACCENT,letterSpacing:1,marginBottom:2}},'🟣 LIVE WORKOUT'+(executeDate!==today()?' · LOGGING FOR '+new Date(executeDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase():'')),
           e('div',{style:{fontSize:16,fontWeight:800,color:'white'}},executeDay.dayLabel),
           e('div',{style:{fontSize:12,color:'rgba(255,255,255,0.5)'}},timerStr+' · '+doneSets+'/'+totalSets+' sets')
         ),
@@ -10793,7 +10798,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             ):null
           );
         }),
-        e('button',{onClick:function(){if(confirm('Cancel workout? Progress will not be saved.')){clearWip();setExecuteDay(null);setExecuteSets({});setExecuteStartTime(null);setExecuteElapsed(0);setExecuteRestSecs(0);setView('log');}},style:{marginTop:8,padding:'14px',borderRadius:14,border:'1px solid rgba(255,255,255,0.15)',background:'none',color:'rgba(255,255,255,0.4)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Workout')
+        e('button',{onClick:function(){if(confirm('Cancel workout? Progress will not be saved.')){clearWip();setExecuteDay(null);setExecuteSets({});setExecuteStartTime(null);setExecuteElapsed(0);setExecuteRestSecs(0);setExecuteDate(today());setView('log');}},style:{marginTop:8,padding:'14px',borderRadius:14,border:'1px solid rgba(255,255,255,0.15)',background:'none',color:'rgba(255,255,255,0.4)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Workout')
       )
     );
   }
@@ -10871,7 +10876,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           }),
           todayProgramDay.exercises&&todayProgramDay.exercises.length>4 ? e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.3)',marginTop:2}},'+'+( todayProgramDay.exercises.length-4)+' more exercises') : null
         ),
-        e('button', {onClick:function(){startExecute(todayProgramDay);}, style:{width:'100%',padding:'15px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(123,47,255,0.4)'}}, '▶ Start Today\'s Workout')
+        e('button', {onClick:function(){startExecute(todayProgramDay, today());}, style:{width:'100%',padding:'15px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:15,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(123,47,255,0.4)'}}, '▶ Start Live Workout')
       ) : todayProgramDay && alreadyLoggedToday ? e('div',{style:{background:'rgba(16,185,129,0.08)',borderRadius:16,padding:'14px 16px',border:'1px solid rgba(16,185,129,0.25)',display:'flex',alignItems:'center',gap:10}},
         e('div',{style:{fontSize:20}},'✅'),
         e('div',{},
@@ -10909,12 +10914,25 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         )
       ),
 
+      // Date picker — lets you back-fill a missed day's workout onto the date you actually did it
+      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:10}}, '📅 Workout Date'),
+        e('input', {
+          type:'date', className:'input',
+          style:{marginBottom:0},
+          value:logDate,
+          onInput:function(ev){setLogDate(ev.target.value);}
+        })
+      ),
+
       // Program exercises with weight/reps logger
       selDay ? e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
           e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, '🏋️ '+selDay.dayLabel+' Exercises'),
           selDay.focus && selDay.focus.length ? e('div', {style:{fontSize:10,color:ACCENT,fontWeight:700,background:ACCENT+'12',padding:'3px 8px',borderRadius:20}}, selDay.focus.join(' · ')) : null
         ),
+        e('button', {onClick:function(){startExecute(selDay, logDate);}, style:{width:'100%',padding:'13px',borderRadius:14,border:'none',marginBottom:14,background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 6px 18px rgba(123,47,255,0.3)'}}, '▶ Start Live Workout for '+(logDate===today()?'Today':new Date(logDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}))),
+        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10,marginTop:-6}}, 'Or log sets manually below without the timer'),
         e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
           ...(selDay.exercises||[]).map(function(ex){
             var exLog = programExerciseLogs[ex.name] || {};
@@ -10953,16 +10971,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         )
       ) : null,
 
-      // Date picker
-      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
-        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:10}}, '📅 Workout Date'),
-        e('input', {
-          type:'date', className:'input',
-          style:{marginBottom:0},
-          value:logDate,
-          onInput:function(ev){setLogDate(ev.target.value);}
-        })
-      ),
       e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:10}}, '📊 Session Details (optional)'),
         e('div', {style:{display:'flex',gap:10,marginBottom:10}},
