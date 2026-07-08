@@ -12200,7 +12200,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     return renderMain();
   }
 
-  return e('div', {style:{height:'100dvh',display:'flex',flexDirection:'column',background:'#F7F8FC',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)'}},
+  return e('div', {style:{height:'100%',display:'flex',flexDirection:'column',background:'#F7F8FC'}},
     // Header
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
@@ -12217,7 +12217,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       )
     ),
     // Body
-    e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch'}},
+    e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',paddingBottom:40}},
       view==='log'      ? renderLog()      :
       view==='watch'    ? renderWatch()    :
       view==='history'  ? renderHistory()  :
