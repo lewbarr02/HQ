@@ -121,7 +121,7 @@ async function syncFromSupabase(){
 }
 
 async function pushAllToSupabase(){
-  var keys=['workoutLog','currentProgram','programMeta','coachProfile','coachWeight','coachGoalWeight','coachGoalBf','macroLog','macroTargets','foodPipeline','photoIndex','proteinLog','proteinStaples','bodyWeightLog','checkinHistory'];
+  var keys=['workoutLog','currentProgram','programMeta','coachProfile','coachWeight','coachGoalWeight','coachGoalBf','macroLog','macroTargets','foodPipeline','photoIndex','proteinLog','proteinStaples','bodyWeightLog','checkinHistory','progressStartMeta','progressCurrentMeta'];
   var rows=keys.map(k=>{var v=load(k);return v!==null?{user_id:'brittanie',key:k,value:v,updated_at:new Date().toISOString()}:null;}).filter(Boolean);
   if(rows.length===0)return;
   var {error}=await _SB.from('hq_data').upsert(rows,{onConflict:'user_id,key'});
@@ -403,6 +403,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [checkinResponse, setCheckinResponse] = useState(null);
   const [checkinHistory, setCheckinHistory] = useState(function(){ return load('checkinHistory') || {}; });
   const [bodyWeightLog, setBodyWeightLog] = useState(function(){ return load('bodyWeightLog') || {}; });
+  const [progressStartPhoto, setProgressStartPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_start'); });
+  const [progressStartMeta, setProgressStartMeta] = useState(function(){ return load('progressStartMeta'); });
+  const [progressCurrentPhoto, setProgressCurrentPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_current'); });
+  const [progressCurrentMeta, setProgressCurrentMeta] = useState(function(){ return load('progressCurrentMeta'); });
+  const startPhotoRef = useRef(null);
+  const currentPhotoRef = useRef(null);
   const safeLog = workoutLog || {};
 
   // Workout execution timer — lives at component level (rules of hooks)
@@ -1796,11 +1802,54 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       : goalResult.state==='no-trend' ? 'Recalculating' : 'No data yet';
 
     // Photos — reuses the same photoIndex / hq_photo_<date> storage as Progress Photos
-    var photoIdx = load('photoIndex') || [];
-    var startingEntry = photoIdx.length ? photoIdx[photoIdx.length-1] : null;
-    var currentEntry = photoIdx.length ? photoIdx[0] : null;
-    var startingPhoto = startingEntry ? localStorage.getItem('hq_photo_'+startingEntry.date) : null;
-    var currentPhoto = currentEntry ? localStorage.getItem('hq_photo_'+currentEntry.date) : null;
+    var startingEntry = progressStartMeta;
+    var currentEntry = progressCurrentMeta;
+    var startingPhoto = progressStartPhoto;
+    var currentPhoto = progressCurrentPhoto;
+
+    function compressProgressPhoto(file, cb) {
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var img = new Image();
+        img.onload = function() {
+          var MAX = 600;
+          var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          var w = Math.round(img.width * scale);
+          var h = Math.round(img.height * scale);
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          cb(canvas.toDataURL('image/jpeg', 0.72));
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+    function handleStartPhotoFile(ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if(!file) return;
+      compressProgressPhoto(file, function(dataUrl){
+        localStorage.setItem('hq_photo_progress_start', dataUrl);
+        var meta = {date: today()};
+        save('progressStartMeta', meta);
+        setProgressStartPhoto(dataUrl);
+        setProgressStartMeta(meta);
+      });
+      ev.target.value = '';
+    }
+    function handleCurrentPhotoFile(ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if(!file) return;
+      compressProgressPhoto(file, function(dataUrl){
+        localStorage.setItem('hq_photo_progress_current', dataUrl);
+        var meta = {date: today()};
+        save('progressCurrentMeta', meta);
+        setProgressCurrentPhoto(dataUrl);
+        setProgressCurrentMeta(meta);
+      });
+      ev.target.value = '';
+    }
 
     function photoTile(label, dateStr, photoSrc, active, actionLabel, onAction) {
       return e('div',{style:{display:'flex',flexDirection:'column',gap:8,flex:1}},
@@ -1902,9 +1951,11 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       // 1. Physique Progress
       e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div',{style:{fontSize:12,fontWeight:800,color:TEXT,marginBottom:12}},'📸 Physique Progress'),
+        e('input', {ref:startPhotoRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleStartPhotoFile}),
+        e('input', {ref:currentPhotoRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleCurrentPhotoFile}),
         e('div',{style:{display:'flex',gap:10}},
-          photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){setTab&&setTab('photos');}),
-          photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){setTab&&setTab('photos');}),
+          photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){startPhotoRef.current && startPhotoRef.current.click();}),
+          photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){currentPhotoRef.current && currentPhotoRef.current.click();}),
           photoTile('Goal', 'Coming soon', null, false, 'View Details', function(){setTab&&setTab('photos');})
         )
       ),
