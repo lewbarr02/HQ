@@ -2424,7 +2424,7 @@ function ProgressPhotosScreen({ setTab }) {
   }
 
   return e('div', {className:'content'},
-    e('input', {ref:fileRef, type:'file', accept:'image/*', capture:'environment', style:{display:'none'}, onChange:handleFile}),
+    e('input', {ref:fileRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleFile}),
 
     e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
       e('button', {onClick:function(){setTab('today');}, style:{background:'none',border:'none',fontSize:22,color:MUTED,cursor:'pointer',padding:'0 4px 0 0',lineHeight:1}}, '←'),
