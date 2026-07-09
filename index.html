@@ -12054,7 +12054,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         e('div',{style:{display:'flex',gap:10}},
           photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){setTab&&setTab('photos');}),
           photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){setTab&&setTab('photos');}),
-          photoTile('Goal Visualization', 'Coming soon', null, false, 'View Details', function(){setTab&&setTab('photos');})
+          photoTile('Goal', 'Coming soon', null, false, 'View Details', function(){setTab&&setTab('photos');})
         )
       ),
 
