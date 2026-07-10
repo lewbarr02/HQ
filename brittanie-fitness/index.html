@@ -393,6 +393,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [executeActiveEx, setExecuteActiveEx] = useState(_wip ? _wip.activeEx : null);
   const [executeDraft, setExecuteDraft] = useState(_wip ? (_wip.draft||{}) : {}); // { exName: {weight,reps} } current set inputs
   const [executeDate, setExecuteDate] = useState(_wip && _wip.date ? _wip.date : today()); // date this Live Workout session logs to
+  const [executeSetError, setExecuteSetError] = useState({}); // { exName: "message" } — missing weight/reps warning
   const [checkinForm, setCheckinForm] = useState({
     sessionsCompleted: '', energy: 3, hasSoreness: false, soreness: '',
     hasPain: false, pain: '', weight: '', sleepQuality: 3,
@@ -562,6 +563,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       var draft = executeDraft[exName]||{};
       var w = draft.weight||'';
       var r = draft.reps||'';
+      if(!w||!r){
+        var msg = (!w&&!r) ? 'Enter weight and reps to log this set' : !w ? 'Enter weight to log this set' : 'Enter reps to log this set';
+        setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:msg});});
+        return;
+      }
+      setExecuteSetError(function(errs){ if(!errs[exName]) return errs; var n=Object.assign({},errs); delete n[exName]; return n; });
       var sets = (executeSets[exName]||[]).slice();
       var idx = sets.findIndex(function(s){return !s.done;});
       if(idx===-1) return;
@@ -609,6 +616,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           var allDone = doneCt===sets.length&&sets.length>0;
           var isActive = executeActiveEx===ex.name;
           var draft = executeDraft[ex.name]||{};
+          var exErr = executeSetError[ex.name];
           var nextSetNum = doneCt+1;
           var targetW = ex.lastWeight||ex.targetWeight;
           return e('div',{key:ex.name,onClick:function(){if(!allDone)setExecuteActiveEx(ex.name);},style:{
@@ -627,30 +635,33 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
                 })
               )
             ),
-            isActive&&!allDone?e('div',{style:{display:'flex',gap:8,alignItems:'flex-end'}},
-              e('div',{style:{flex:1}},
-                e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Set '+nextSetNum+' — Weight (lbs)'),
-                e('input',{
-                  className:'input',type:'number',
-                  style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
-                  placeholder:targetW?String(targetW):'lbs',
-                  value:draft.weight||'',
-                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{weight:v})});});},
-                  onClick:function(ev){ev.stopPropagation();}
-                })
+            isActive&&!allDone?e('div',{},
+              e('div',{style:{display:'flex',gap:8,alignItems:'flex-end'}},
+                e('div',{style:{flex:1}},
+                  e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Set '+nextSetNum+' — Weight (lbs)'),
+                  e('input',{
+                    className:'input',type:'number',
+                    style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid '+(exErr&&!draft.weight?'#F59E0B99':'rgba(255,255,255,0.2)'),color:'white',fontSize:15,fontWeight:700},
+                    placeholder:targetW?String(targetW):'lbs',
+                    value:draft.weight||'',
+                    onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{weight:v})});});setExecuteSetError(function(errs){ if(!errs[ex.name]) return errs; var n=Object.assign({},errs); delete n[ex.name]; return n; });},
+                    onClick:function(ev){ev.stopPropagation();}
+                  })
+                ),
+                e('div',{style:{flex:1}},
+                  e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Reps'),
+                  e('input',{
+                    className:'input',type:'number',
+                    style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid '+(exErr&&!draft.reps?'#F59E0B99':'rgba(255,255,255,0.2)'),color:'white',fontSize:15,fontWeight:700},
+                    placeholder:String(ex.reps).split('-').pop()||String(ex.reps),
+                    value:draft.reps||'',
+                    onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{reps:v})});});setExecuteSetError(function(errs){ if(!errs[ex.name]) return errs; var n=Object.assign({},errs); delete n[ex.name]; return n; });},
+                    onClick:function(ev){ev.stopPropagation();}
+                  })
+                ),
+                e('button',{onClick:function(ev){ev.stopPropagation();logSet(ex.name);},style:{padding:'12px 14px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}},'Log Set')
               ),
-              e('div',{style:{flex:1}},
-                e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Reps'),
-                e('input',{
-                  className:'input',type:'number',
-                  style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
-                  placeholder:String(ex.reps).split('-').pop()||String(ex.reps),
-                  value:draft.reps||'',
-                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{reps:v})});});},
-                  onClick:function(ev){ev.stopPropagation();}
-                })
-              ),
-              e('button',{onClick:function(ev){ev.stopPropagation();logSet(ex.name);},style:{padding:'12px 14px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}},'Log Set')
+              exErr?e('div',{style:{marginTop:6,fontSize:11,color:'#F59E0B',fontWeight:600,display:'flex',alignItems:'center',gap:4}},'⚠ '+exErr):null
             ):null,
             isActive&&doneCt>0?e('div',{style:{marginTop:8,display:'flex',flexWrap:'wrap',gap:6}},
               ...sets.filter(function(s){return s.done;}).map(function(s,i){
