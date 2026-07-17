@@ -198,10 +198,12 @@ Work through this in order. Check off items as they are completed.
 ### 🔁 ROUTINES
 - [x] **Midday check-in routine** — A second routine flow midday — quick pulse check, priority reset, catch anything that slipped in the morning.
 - [x] **Evening routine + CPAP reminder** — Wind-down checklist. CPAP goes on as a hard step — foundational to 5am wake goal.
+- [x] **Alarm-triggered wake capture** — `log-wake` edge function, called silently by an iOS Shortcuts personal automation on alarm-stop, writes `wakeLog[today]` in `hq_data` (only if not already set today). Decouples the "Wake:" badge from whenever the morning routine happens to get started — `handleMorningStart` now only backfills `wakeLog` if the automation hasn't already logged it.
 
 ### 🔔 NOTIFICATIONS & INTELLIGENCE
 - [x] **Push notifications** — Live via Supabase (`pg_cron` + `send-push` edge function): morning alarm (5am ET), midday check-in (12pm ET), job application nudge (3pm ET), evening routine (9pm ET), and a daily momentum check (7pm ET, via `check-momentum`) that flags stale habits/projects using data synced through `hq_data`.
-- [ ] **Blocker trend analysis** — Data is already being logged when morning routine steps are skipped. Dashboard view to surface what keeps blocking you.
+- [x] **Blocker trend analysis** — More → Review → ⚠️ Blockers tab. Top-pattern callout, blockers-by-day-of-week chart, per-item skip counts (AM/PM tagged) with recent reasons, and midday blockers list. Pulls from morning, evening, and midday logs.
+- [x] **Routine timeout escalation** — `check-routine-timeout` edge function (`pg_cron`, every 5 min) flags any routine (morning, midday, evening, post-workout, cleaning, golf, car wash, or custom) that has a `_start` timestamp but no `_done` after 20 minutes. Sends push + SMS "not completed," and re-fires every cron tick (~5 min) until the routine is closed out. Skips `_test` runs. Midday now stamps `_start`/`_done` like the other routines so it participates.
 
 ### 📧 EMAIL → HQ
 - [x] **Email bookmarklet** — 1-click send any email to Today's Priorities. Auto-detects which Gmail account is active and tags the category (Job Search, Finance, Shopping, Work, Email).

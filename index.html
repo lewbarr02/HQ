@@ -6946,7 +6946,15 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
   ];
   const [supps, setSupps] = useState({});
 
-  useEffect(function(){ setTimeout(function(){ setShow(true); }, 50); }, []);
+  useEffect(function(){
+    setTimeout(function(){ setShow(true); }, 50);
+    if(!middayLog[td+'_start']) {
+      var startTime = new Date().toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+      var withStart = Object.assign({}, middayLog, {[td+'_start']: startTime});
+      setMiddayLog(withStart);
+      save('middayLog', withStart);
+    }
+  }, []);
 
   function handleDone() {
     var time = new Date().toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
@@ -6959,6 +6967,7 @@ function MiddayCheckin({ onDone, middayLog, setMiddayLog }) {
       supps: supps,
       time: time,
     };
+    newLog[td+'_done'] = time;
     setMiddayLog(newLog);
     save('middayLog', newLog);
     // Merge freeWins into the daily wins log
@@ -10543,6 +10552,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [executeDraft, setExecuteDraft] = useState(_wip ? (_wip.draft||{}) : {}); // { exName: {weight,reps} } current set inputs
   const [executeDate, setExecuteDate] = useState(_wip && _wip.date ? _wip.date : today()); // date this Live Workout session logs to
   const [executeSetError, setExecuteSetError] = useState({}); // { exName: "message" } — missing weight/reps warning
+  const [showDrinkPrompt, setShowDrinkPrompt] = useState(false); // full-screen "Drink" nudge shown after each logged set
   const [checkinForm, setCheckinForm] = useState({
     sessionsCompleted: '', energy: 3, hasSoreness: false, soreness: '',
     hasPain: false, pain: '', weight: '', sleepQuality: 3,
@@ -10735,6 +10745,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setExecuteActiveEx(nextEx);
       setExecuteRestSecs(90);
       saveWip(executeDay, newSets, executeStartTime, nextEx, newDraft, executeDate);
+      setShowDrinkPrompt(true);
     }
 
     var totalSets = exercises.reduce(function(s,ex){return s+(ex.sets||3);},0);
@@ -10820,7 +10831,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           );
         }),
         e('button',{onClick:function(){if(confirm('Cancel workout? Progress will not be saved.')){clearWip();setExecuteDay(null);setExecuteSets({});setExecuteStartTime(null);setExecuteElapsed(0);setExecuteRestSecs(0);setExecuteDate(today());setView('log');}},style:{marginTop:8,padding:'14px',borderRadius:14,border:'1px solid rgba(255,255,255,0.15)',background:'none',color:'rgba(255,255,255,0.4)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Workout')
-      )
+      ),
+      showDrinkPrompt?e('div',{style:{position:'absolute',inset:0,background:'#0F0F1A',zIndex:50,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:22,paddingBottom:'env(safe-area-inset-bottom)'}},
+        e('div',{style:{fontSize:80}},'💧'),
+        e('div',{style:{fontSize:26,fontWeight:900,color:'white',letterSpacing:1}},'Drink'),
+        e('button',{onClick:function(){setShowDrinkPrompt(false);},style:{padding:'16px 48px',borderRadius:16,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:16,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(123,47,255,0.4)'}},'Done ✓')
+      ):null
     );
   }
 
@@ -13926,7 +13942,7 @@ function App() {
   function handleMorningStart(isTest) {
     var td = (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
     var wakeTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    if(!isTest) {
+    if(!isTest && !wakeLog[td]) {
       var newWakeLog = Object.assign({}, wakeLog);
       newWakeLog[td] = wakeTime;
       setWakeLog(newWakeLog);
