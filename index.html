@@ -269,6 +269,108 @@ function save(k,v){
   _SB.from('hq_data').upsert({user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);else localStorage.setItem('hq_lastCloudSync',new Date().toISOString());});
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
+
+// ── Progress photos (Supabase Storage) ──────────────────────────────────────
+// Path: lewis/{date}/{angle}.jpg. Isolated from UI so it's independently
+// testable and reusable by a future time-lapse export.
+const PROGRESS_PHOTO_BUCKET = 'progress-photos';
+const PROGRESS_PHOTO_ANGLES = ['front', 'side', 'back'];
+
+function compressPhotoBlob(file, cb) {
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var img = new Image();
+    img.onload = function() {
+      var MAX = 900;
+      var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      var w = Math.round(img.width * scale);
+      var h = Math.round(img.height * scale);
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(cb, 'image/jpeg', 0.8);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Uploads a photo for one angle on one date, upserting both the Storage
+// object and the progress_photos row. Looks up that date's weigh-in from
+// bodyWeightLog and stores it; leaves weight_on_date null if none logged.
+// Returns {date, angle, storagePath, weightOnDate, url} with a signed URL
+// ready for immediate display.
+async function uploadProgressPhoto(file, angle, date) {
+  date = date || today();
+  if (PROGRESS_PHOTO_ANGLES.indexOf(angle) === -1) throw new Error('invalid angle: ' + angle);
+
+  var blob = await new Promise(function(resolve) { compressPhotoBlob(file, resolve); });
+  var path = 'lewis/' + date + '/' + angle + '.jpg';
+
+  var uploadRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).upload(path, blob, {
+    upsert: true, contentType: 'image/jpeg',
+  });
+  if (uploadRes.error) throw uploadRes.error;
+
+  var bodyWeightLog = load('bodyWeightLog') || {};
+  var weightOnDate = bodyWeightLog[date] != null ? parseFloat(bodyWeightLog[date]) : null;
+  if (weightOnDate != null && isNaN(weightOnDate)) weightOnDate = null;
+
+  var dbRes = await _SB.from('progress_photos').upsert({
+    user_id: 'lewis', date: date, angle: angle, storage_path: path, weight_on_date: weightOnDate,
+  }, { onConflict: 'user_id,date,angle' });
+  if (dbRes.error) throw dbRes.error;
+
+  var signRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).createSignedUrl(path, 3600);
+  if (signRes.error) throw signRes.error;
+
+  return { date: date, angle: angle, storagePath: path, weightOnDate: weightOnDate, url: signRes.data.signedUrl };
+}
+
+// Most recent row per angle, with signed URLs resolved — feeds the dashboard triptych.
+async function getLatestProgressPhotos() {
+  var latest = { front: null, side: null, back: null };
+  var { data, error } = await _SB.from('progress_photos')
+    .select('date,angle,storage_path,weight_on_date')
+    .eq('user_id', 'lewis')
+    .order('date', { ascending: false });
+  if (error || !data) return latest;
+
+  data.forEach(function(row) { if (!latest[row.angle]) latest[row.angle] = row; });
+  var paths = PROGRESS_PHOTO_ANGLES.map(function(a) { return latest[a] && latest[a].storage_path; }).filter(Boolean);
+  if (paths.length === 0) return latest;
+
+  var signRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).createSignedUrls(paths, 3600);
+  var urlByPath = {};
+  (signRes.data || []).forEach(function(s) { if (s.signedUrl) urlByPath[s.path] = s.signedUrl; });
+  PROGRESS_PHOTO_ANGLES.forEach(function(a) { if (latest[a]) latest[a].url = urlByPath[latest[a].storage_path] || null; });
+  return latest;
+}
+
+// Export readiness: every photo for one angle, oldest-to-newest, with signed
+// URLs resolved. This is the only query a future time-lapse export needs.
+async function getProgressPhotosByAngle(angle) {
+  if (PROGRESS_PHOTO_ANGLES.indexOf(angle) === -1) throw new Error('invalid angle: ' + angle);
+  var { data, error } = await _SB.from('progress_photos')
+    .select('date,angle,storage_path,weight_on_date')
+    .eq('user_id', 'lewis')
+    .eq('angle', angle)
+    .order('date', { ascending: true });
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  var paths = data.map(function(r) { return r.storage_path; });
+  var signRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).createSignedUrls(paths, 3600);
+  if (signRes.error) throw signRes.error;
+  var urlByPath = {};
+  (signRes.data || []).forEach(function(s) { if (s.signedUrl) urlByPath[s.path] = s.signedUrl; });
+
+  return data.map(function(r) {
+    return { date: r.date, angle: r.angle, storagePath: r.storage_path, weightOnDate: r.weight_on_date, url: urlByPath[r.storage_path] || null };
+  });
+}
+
 function useDragSort(items, onReorder) {
   var [dragIdx, setDragIdx] = React.useState(null);
   var [overIdx, setOverIdx] = React.useState(null);
@@ -12886,6 +12988,64 @@ function ProgressPhotosScreen({ setTab }) {
   var [uploading, setUploading] = useState(false);
   var fileRef = React.useRef(null);
 
+  var [angleShots, setAngleShots] = useState({front:null, side:null, back:null});
+  var [angleUploading, setAngleUploading] = useState(null); // angle currently uploading, or null
+  var [angleError, setAngleError] = useState('');
+  var frontRef = React.useRef(null);
+  var sideRef = React.useRef(null);
+  var backRef = React.useRef(null);
+  var angleRefs = {front:frontRef, side:sideRef, back:backRef};
+
+  useEffect(function(){
+    getLatestProgressPhotos().then(setAngleShots).catch(function(){});
+  }, []);
+
+  function handleAngleFile(angle) {
+    return function(ev) {
+      var file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if(!file) return;
+      setAngleError('');
+      setAngleUploading(angle);
+      uploadProgressPhoto(file, angle).then(function(result){
+        setAngleShots(function(prev){
+          var next = Object.assign({}, prev);
+          next[angle] = {date:result.date, angle:result.angle, storage_path:result.storagePath, weight_on_date:result.weightOnDate, url:result.url};
+          return next;
+        });
+        setAngleUploading(null);
+      }).catch(function(err){
+        console.warn('progress photo upload failed', err);
+        setAngleError('Upload failed — try again');
+        setAngleUploading(null);
+      });
+    };
+  }
+
+  function angleTile(angle, label) {
+    var shot = angleShots[angle];
+    return e('div', {key:angle, style:{display:'flex',flexDirection:'column',alignItems:'center',gap:6}},
+      e('div', {
+        onClick:function(){ angleRefs[angle].current && angleRefs[angle].current.click(); },
+        style:{
+          width:'100%',aspectRatio:'3/4',borderRadius:12,overflow:'hidden',cursor:'pointer',
+          background:CARD2,border:'1.5px solid '+BORDER,
+          display:'flex',alignItems:'center',justifyContent:'center',position:'relative',
+        }
+      },
+        angleUploading===angle
+          ? e('div', {style:{fontSize:12,color:MUTED,fontWeight:700}}, '⏳')
+          : (shot && shot.url)
+            ? e('img', {src:shot.url, style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}})
+            : e('div', {style:{fontSize:24,color:MUTED}}, '📷')
+      ),
+      e('div', {style:{fontSize:11,fontWeight:700,color:TEXT}}, label),
+      e('div', {style:{fontSize:10,color:MUTED}},
+        shot ? new Date(shot.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : 'No photo'
+      )
+    );
+  }
+
   function saveIndex(next) { setIndex(next); save('photoIndex', next); }
 
   function compressImage(file, cb) {
@@ -12989,6 +13149,19 @@ function ProgressPhotosScreen({ setTab }) {
         padding:'3px 10px',borderRadius:10}},
         dueThisWeek ? (daysSincePhoto===null?'No photos yet':'Due — '+daysSincePhoto+'d ago') : '✓ This week'
       )
+    ),
+
+    // Angle check-in triptych (front/side/back) — cloud-synced, feeds a future time-lapse export
+    e('div', {style:{background:'#fff',borderRadius:16,border:'1.5px solid '+BORDER,padding:'16px',marginBottom:20}},
+      e('input', {ref:frontRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleAngleFile('front')}),
+      e('input', {ref:sideRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleAngleFile('side')}),
+      e('input', {ref:backRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleAngleFile('back')}),
+      e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:2}}, '📐 Angle Check-In'),
+      e('div', {style:{fontSize:11,color:MUTED,marginBottom:12}}, 'Front / side / back — synced to the cloud, linked to today’s weigh-in'),
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}},
+        angleTile('front','Front'), angleTile('side','Side'), angleTile('back','Back')
+      ),
+      angleError ? e('div', {style:{marginTop:10,fontSize:11,color:'#FF6B6B',fontWeight:700}}, angleError) : null
     ),
 
     // Add photo flow
