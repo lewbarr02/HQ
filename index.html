@@ -10652,6 +10652,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [activityLog, setActivityLog] = useState(function(){ return load('activityLog') || {}; });
   const [activityUploading, setActivityUploading] = useState(false);
   const [activityError, setActivityError] = useState(null);
+  const [activityJustSaved, setActivityJustSaved] = useState(false);
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
   const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
@@ -12020,6 +12021,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             var entry = Object.assign({uploadedAt:new Date().toISOString()}, result.parsed, {date:parsedDate});
             var newLog = Object.assign({}, activityLog, {[parsedDate]: entry});
             setActivityLog(newLog); save('activityLog', newLog);
+            setActivityJustSaved(true);
+            setTimeout(function(){ setActivityJustSaved(false); }, 2200);
           } catch(err){ setActivityError(err.message||'Upload failed.'); }
           setActivityUploading(false);
         };
@@ -12058,6 +12061,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               e('div',{style:{fontSize:28}},'📊'),
               e('div',{style:{fontSize:14,fontWeight:700,color:TEXT}},'Reading your activity...'),
               e('div',{style:{fontSize:12,color:MUTED}},'Claude is extracting the data'))
+          : activityJustSaved
+          ? e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:8,padding:'8px 0'}},
+              e('div',{style:{fontSize:36}},'✅'),
+              e('div',{style:{fontSize:16,fontWeight:800,color:'#16A34A'}},'Saved!'))
           : e('div',{},
               e('div',{style:{fontSize:32,marginBottom:8}},'🔴'),
               e('div',{style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:4}},todayActivity?'Update Today’s Activity':'Upload Daily Activity Summary'),
