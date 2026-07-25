@@ -12017,9 +12017,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             if(!resp.ok){var t=await resp.text();throw new Error(t);}
             var result = await resp.json();
             if(!result.parsed) throw new Error('Could not read activity data from screenshot.');
-            var parsedDate = result.parsed.date || today();
-            var entry = Object.assign({uploadedAt:new Date().toISOString()}, result.parsed, {date:parsedDate});
-            var newLog = Object.assign({}, activityLog, {[parsedDate]: entry});
+            // Always file under the upload date, not whatever date the screenshot itself shows —
+            // the Watch's Activity screen can still be displaying yesterday's summary (e.g. before
+            // you've reopened the app today), and this feature is "log today's activity," not a backfill.
+            var uploadDate = today();
+            var entry = Object.assign({uploadedAt:new Date().toISOString()}, result.parsed, {date:uploadDate});
+            var newLog = Object.assign({}, activityLog, {[uploadDate]: entry});
             setActivityLog(newLog); save('activityLog', newLog);
             setActivityJustSaved(true);
             setTimeout(function(){ setActivityJustSaved(false); }, 2200);
