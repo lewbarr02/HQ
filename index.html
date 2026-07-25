@@ -371,6 +371,52 @@ async function getProgressPhotosByAngle(angle) {
   });
 }
 
+// ── Progress milestones (Starting Point / Current / Goal — Supabase Storage) ──
+// Same bucket as angle photos. One photo per slot, overwritten in place —
+// not a dated series, so no history query like getProgressPhotosByAngle.
+const PROGRESS_MILESTONE_SLOTS = ['start', 'current', 'goal'];
+
+async function uploadMilestonePhoto(file, slot, date) {
+  date = date || today();
+  if (PROGRESS_MILESTONE_SLOTS.indexOf(slot) === -1) throw new Error('invalid slot: ' + slot);
+
+  var blob = await new Promise(function(resolve) { compressPhotoBlob(file, resolve); });
+  var path = 'lewis/milestones/' + slot + '.jpg';
+
+  var uploadRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).upload(path, blob, {
+    upsert: true, contentType: 'image/jpeg',
+  });
+  if (uploadRes.error) throw uploadRes.error;
+
+  var dbRes = await _SB.from('progress_milestones').upsert({
+    user_id: 'lewis', slot: slot, date: date, storage_path: path, updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,slot' });
+  if (dbRes.error) throw dbRes.error;
+
+  var signRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).createSignedUrl(path, 3600);
+  if (signRes.error) throw signRes.error;
+
+  return { slot: slot, date: date, storagePath: path, url: signRes.data.signedUrl };
+}
+
+async function getMilestonePhotos() {
+  var result = { start: null, current: null, goal: null };
+  var { data, error } = await _SB.from('progress_milestones')
+    .select('slot,date,storage_path')
+    .eq('user_id', 'lewis');
+  if (error || !data || data.length === 0) return result;
+
+  var paths = data.map(function(r) { return r.storage_path; });
+  var signRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).createSignedUrls(paths, 3600);
+  var urlByPath = {};
+  (signRes.data || []).forEach(function(s) { if (s.signedUrl) urlByPath[s.path] = s.signedUrl; });
+
+  data.forEach(function(r) {
+    result[r.slot] = { date: r.date, storagePath: r.storage_path, url: urlByPath[r.storage_path] || null };
+  });
+  return result;
+}
+
 function useDragSort(items, onReorder) {
   var [dragIdx, setDragIdx] = React.useState(null);
   var [overIdx, setOverIdx] = React.useState(null);
@@ -10665,16 +10711,25 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [checkinResponse, setCheckinResponse] = useState(null);
   const [checkinHistory, setCheckinHistory] = useState(function(){ return load('checkinHistory') || {}; });
   const [bodyWeightLog, setBodyWeightLog] = useState(function(){ return load('bodyWeightLog') || {}; });
-  const [progressStartPhoto, setProgressStartPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_start'); });
-  const [progressStartMeta, setProgressStartMeta] = useState(function(){ return load('progressStartMeta'); });
-  const [progressCurrentPhoto, setProgressCurrentPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_current'); });
-  const [progressCurrentMeta, setProgressCurrentMeta] = useState(function(){ return load('progressCurrentMeta'); });
-  const [progressGoalPhoto, setProgressGoalPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_goal'); });
-  const [progressGoalMeta, setProgressGoalMeta] = useState(function(){ return load('progressGoalMeta'); });
+  const [progressStartPhoto, setProgressStartPhoto] = useState(null);
+  const [progressStartMeta, setProgressStartMeta] = useState(null);
+  const [progressCurrentPhoto, setProgressCurrentPhoto] = useState(null);
+  const [progressCurrentMeta, setProgressCurrentMeta] = useState(null);
+  const [progressGoalPhoto, setProgressGoalPhoto] = useState(null);
+  const [progressGoalMeta, setProgressGoalMeta] = useState(null);
+  const [milestoneUploading, setMilestoneUploading] = useState(null);
   const startPhotoRef = useRef(null);
   const currentPhotoRef = useRef(null);
   const goalPhotoRef = useRef(null);
   const safeLog = workoutLog || {};
+
+  useEffect(function(){
+    getMilestonePhotos().then(function(m){
+      if (m.start) { setProgressStartPhoto(m.start.url); setProgressStartMeta({date:m.start.date}); }
+      if (m.current) { setProgressCurrentPhoto(m.current.url); setProgressCurrentMeta({date:m.current.date}); }
+      if (m.goal) { setProgressGoalPhoto(m.goal.url); setProgressGoalMeta({date:m.goal.date}); }
+    }).catch(function(){});
+  }, []);
 
   // Workout execution timer — lives at component level (rules of hooks)
   useEffect(function(){
@@ -12088,63 +12143,50 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var startingPhoto = progressStartPhoto;
     var currentPhoto = progressCurrentPhoto;
 
-    function compressProgressPhoto(file, cb) {
-      var reader = new FileReader();
-      reader.onload = function(ev) {
-        var img = new Image();
-        img.onload = function() {
-          var MAX = 600;
-          var scale = Math.min(1, MAX / Math.max(img.width, img.height));
-          var w = Math.round(img.width * scale);
-          var h = Math.round(img.height * scale);
-          var canvas = document.createElement('canvas');
-          canvas.width = w; canvas.height = h;
-          var ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
-          cb(canvas.toDataURL('image/jpeg', 0.72));
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
     function handleStartPhotoFile(ev) {
       var file = ev.target.files && ev.target.files[0];
-      if(!file) return;
-      compressProgressPhoto(file, function(dataUrl){
-        localStorage.setItem('hq_photo_progress_start', dataUrl);
-        var meta = {date: today()};
-        save('progressStartMeta', meta);
-        setProgressStartPhoto(dataUrl);
-        setProgressStartMeta(meta);
-      });
       ev.target.value = '';
+      if(!file) return;
+      setMilestoneUploading('start');
+      uploadMilestonePhoto(file, 'start').then(function(result){
+        setProgressStartPhoto(result.url);
+        setProgressStartMeta({date:result.date});
+        setMilestoneUploading(null);
+      }).catch(function(err){
+        console.warn('milestone photo upload failed', err);
+        setMilestoneUploading(null);
+      });
     }
     function handleCurrentPhotoFile(ev) {
       var file = ev.target.files && ev.target.files[0];
-      if(!file) return;
-      compressProgressPhoto(file, function(dataUrl){
-        localStorage.setItem('hq_photo_progress_current', dataUrl);
-        var meta = {date: today()};
-        save('progressCurrentMeta', meta);
-        setProgressCurrentPhoto(dataUrl);
-        setProgressCurrentMeta(meta);
-      });
       ev.target.value = '';
+      if(!file) return;
+      setMilestoneUploading('current');
+      uploadMilestonePhoto(file, 'current').then(function(result){
+        setProgressCurrentPhoto(result.url);
+        setProgressCurrentMeta({date:result.date});
+        setMilestoneUploading(null);
+      }).catch(function(err){
+        console.warn('milestone photo upload failed', err);
+        setMilestoneUploading(null);
+      });
     }
     function handleGoalPhotoFile(ev) {
       var file = ev.target.files && ev.target.files[0];
-      if(!file) return;
-      compressProgressPhoto(file, function(dataUrl){
-        localStorage.setItem('hq_photo_progress_goal', dataUrl);
-        var meta = {date: today()};
-        save('progressGoalMeta', meta);
-        setProgressGoalPhoto(dataUrl);
-        setProgressGoalMeta(meta);
-      });
       ev.target.value = '';
+      if(!file) return;
+      setMilestoneUploading('goal');
+      uploadMilestonePhoto(file, 'goal').then(function(result){
+        setProgressGoalPhoto(result.url);
+        setProgressGoalMeta({date:result.date});
+        setMilestoneUploading(null);
+      }).catch(function(err){
+        console.warn('milestone photo upload failed', err);
+        setMilestoneUploading(null);
+      });
     }
 
-    function photoTile(label, dateStr, photoSrc, active, actionLabel, onAction) {
+    function photoTile(label, dateStr, photoSrc, active, actionLabel, onAction, uploading) {
       return e('div',{style:{display:'flex',flexDirection:'column',gap:8,flex:1}},
         e('div',{style:{fontSize:9,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase',color:active?ACCENT:MUTED,textAlign:'center'}}, label),
         e('div',{style:{
@@ -12152,14 +12194,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           border: active ? '2px solid '+ACCENT : '1px solid '+BORDER,
           display:'flex',alignItems:'center',justifyContent:'center'
         }},
-          photoSrc ? e('img',{src:photoSrc,style:{width:'100%',height:'100%',objectFit:'cover'}})
+          uploading ? e('span',{style:{fontSize:12,color:MUTED,fontWeight:700}}, '⏳')
+                   : photoSrc ? e('img',{src:photoSrc,style:{width:'100%',height:'100%',objectFit:'cover'}})
                    : e('span',{style:{fontSize:26,color:MUTED}}, '📷')
         ),
         e('div',{style:{fontSize:10,color:MUTED,textAlign:'center'}}, dateStr||'—'),
-        e('button',{onClick:onAction,style:{
+        e('button',{onClick:onAction,disabled:uploading,style:{
           padding:'7px 4px',borderRadius:10,border:'1px solid '+BORDER,background:'#fff',
           color:TEXT,fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
-        }}, actionLabel)
+        }}, uploading?'Uploading…':actionLabel)
       );
     }
 
@@ -12248,9 +12291,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         e('input', {ref:currentPhotoRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleCurrentPhotoFile}),
         e('input', {ref:goalPhotoRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleGoalPhotoFile}),
         e('div',{style:{display:'flex',gap:10}},
-          photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){startPhotoRef.current && startPhotoRef.current.click();}),
-          photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){currentPhotoRef.current && currentPhotoRef.current.click();}),
-          photoTile('Goal', progressGoalMeta?new Date(progressGoalMeta.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, progressGoalPhoto, false, progressGoalPhoto?'Retake Photo':'Add Photo', function(){goalPhotoRef.current && goalPhotoRef.current.click();})
+          photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){startPhotoRef.current && startPhotoRef.current.click();}, milestoneUploading==='start'),
+          photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){currentPhotoRef.current && currentPhotoRef.current.click();}, milestoneUploading==='current'),
+          photoTile('Goal', progressGoalMeta?new Date(progressGoalMeta.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, progressGoalPhoto, false, progressGoalPhoto?'Retake Photo':'Add Photo', function(){goalPhotoRef.current && goalPhotoRef.current.click();}, milestoneUploading==='goal')
         )
       ),
 
