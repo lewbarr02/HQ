@@ -10503,6 +10503,7 @@ function computeDaysToGoal(input) {
   var goalWeight = parseFloat(input.goalWeight);
   var todayCaloriesIn = input.todayCaloriesIn || 0;
   var todayActiveCalories = input.todayActiveCalories || 0;
+  var hasFullDayActivityData = !!input.hasFullDayActivityData;  // true when todayActiveCalories is a real Move-calorie reading, not a workout-only estimate
   var currentWeightLbs = input.currentWeightLbs;
   var alpha = input.alpha || 0.12;                  // EWMA smoothing factor (0.1–0.15 suggested)
   var heightIn = input.heightIn || 69;               // 5'9"
@@ -10603,7 +10604,8 @@ function computeDaysToGoal(input) {
     trendWeightToday: Math.round(trendToday*10)/10,
     dailyRate: roundedRate,
     trendDirection: dayAdjustment > 0.05 ? 'slipping' : (dayAdjustment < -0.05 ? 'improving' : 'flat'),
-    explanation: explanation
+    explanation: explanation,
+    calorieDataQuality: hasFullDayActivityData ? 'measured' : (todayActiveCalories > 0 ? 'partial' : 'none'),
   };
 }
 
@@ -10647,6 +10649,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [watchLog, setWatchLog] = useState(function(){ return load('watchLog') || []; });
   const [watchUploading, setWatchUploading] = useState(false);
   const [watchError, setWatchError] = useState(null);
+  const [activityLog, setActivityLog] = useState(function(){ return load('activityLog') || {}; });
+  const [activityUploading, setActivityUploading] = useState(false);
+  const [activityError, setActivityError] = useState(null);
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
   const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
@@ -11995,6 +12000,36 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setWatchLog(newLog); save('watchLog',newLog);
     }
 
+    function resizeAndUploadActivity(file) {
+      setActivityUploading(true); setActivityError(null);
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        var img = new Image();
+        img.onload = async function() {
+          var MAX=1200, w=img.width, h=img.height;
+          if(w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+          var canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
+          canvas.getContext('2d').drawImage(img,0,0,w,h);
+          var b64 = canvas.toDataURL('image/jpeg',0.82).split(',')[1];
+          try {
+            var resp = await fetch(COACH_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':COACH_AUTH},body:JSON.stringify({type:'extract-activity-screenshot',photo:b64})});
+            if(!resp.ok){var t=await resp.text();throw new Error(t);}
+            var result = await resp.json();
+            if(!result.parsed) throw new Error('Could not read activity data from screenshot.');
+            var parsedDate = result.parsed.date || today();
+            var entry = Object.assign({uploadedAt:new Date().toISOString()}, result.parsed, {date:parsedDate});
+            var newLog = Object.assign({}, activityLog, {[parsedDate]: entry});
+            setActivityLog(newLog); save('activityLog', newLog);
+          } catch(err){ setActivityError(err.message||'Upload failed.'); }
+          setActivityUploading(false);
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    var todayActivity = activityLog[today()];
+
     return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
 
       // Upload card
@@ -12014,6 +12049,34 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               )
             ),
         watchError?e('div',{style:{marginTop:12,background:'#FEF2F2',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#DC2626',textAlign:'left'}},'⚠️ '+watchError):null
+      ),
+
+      // Daily Activity summary upload card — feeds the real Move-calorie number into days-to-goal
+      e('div',{style:{background:'#fff',borderRadius:16,padding:'20px',border:'1px solid '+BORDER,textAlign:'center'}},
+        activityUploading
+          ? e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',gap:10}},
+              e('div',{style:{fontSize:28}},'📊'),
+              e('div',{style:{fontSize:14,fontWeight:700,color:TEXT}},'Reading your activity...'),
+              e('div',{style:{fontSize:12,color:MUTED}},'Claude is extracting the data'))
+          : e('div',{},
+              e('div',{style:{fontSize:32,marginBottom:8}},'🔴'),
+              e('div',{style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:4}},todayActivity?'Update Today’s Activity':'Upload Daily Activity Summary'),
+              e('div',{style:{fontSize:12,color:MUTED,marginBottom:14}},'End of day → screenshot the Move/Exercise/Stand rings → upload here'),
+              e('label',{style:{display:'inline-block',padding:'12px 28px',borderRadius:12,background:'linear-gradient(135deg,#FA114F,#FF9500)',color:'white',fontSize:14,fontWeight:800,cursor:'pointer'}},
+                todayActivity?'+ Retake Screenshot':'+ Add Screenshot',
+                e('input',{type:'file',accept:'image/*',style:{display:'none'},onChange:function(ev){if(ev.target.files[0])resizeAndUploadActivity(ev.target.files[0]);}})
+              )
+            ),
+        activityError?e('div',{style:{marginTop:12,background:'#FEF2F2',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#DC2626',textAlign:'left'}},'⚠️ '+activityError):null,
+        todayActivity ? e('div',{style:{marginTop:14,display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}},
+          [['🔥',todayActivity.moveCalories,'Move'],['⏱️',todayActivity.exerciseMinutes,'Exercise'],['🧍',todayActivity.standHours,'Stand'],['👣',todayActivity.steps,'Steps'],['🏃',todayActivity.flights,'Flights']].map(function(row,i){
+            return e('div',{key:i},
+              e('div',{style:{fontSize:16}},row[0]),
+              e('div',{style:{fontSize:12,fontWeight:800,color:TEXT}}, row[1]!=null?row[1]:'—'),
+              e('div',{style:{fontSize:9,color:MUTED}}, row[2])
+            );
+          })
+        ) : null
       ),
 
       // 30-day summary pills
@@ -12121,11 +12184,18 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       if (todayProtein[s.id]) { macroTotals.protein += proteinGramsFor(s); macroTotals.cal += calGramsFor(s); }
     });
 
-    // Days-to-goal
-    var todayActiveCal = (watchLog||[]).filter(function(w){return w.date===td;}).reduce(function(s,w){return s+(w.activeCalories||0);},0);
+    // Days-to-goal — prefer today's real full-day Move calories (Activity summary upload)
+    // over the workout-only estimate, since Move captures all daily movement, not just the
+    // formal workout, making the calorie-balance nudge below meaningfully more accurate.
+    var todaysActivity = activityLog[td];
+    var hasFullDayActivityData = !!(todaysActivity && todaysActivity.moveCalories != null);
+    var todayActiveCal = hasFullDayActivityData
+      ? (parseFloat(todaysActivity.moveCalories)||0)
+      : (watchLog||[]).filter(function(w){return w.date===td;}).reduce(function(s,w){return s+(w.activeCalories||0);},0);
     var goalResult = computeDaysToGoal({
       weighIns: bodyWeightLog||{}, goalWeight: goalWeight,
       todayCaloriesIn: macroTotals.cal, todayActiveCalories: todayActiveCal,
+      hasFullDayActivityData: hasFullDayActivityData,
       currentWeightLbs: latestWeight, todayDate: td,
     });
     var onTrackDate = goalResult.daysToGoal != null
@@ -12309,7 +12379,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           e('div',{style:{fontSize:10,fontWeight:800,color:'white',background:'rgba(255,255,255,0.2)',padding:'4px 10px',borderRadius:10,whiteSpace:'nowrap'}}, goalStateLabel)
         ),
         onTrackDate ? e('div',{style:{marginTop:10,fontSize:12,color:'rgba(255,255,255,0.85)'}}, 'On track to reach your goal on ', e('b',{},onTrackDate)) : null,
-        goalResult.explanation && goalResult.daysToGoal!=null ? e('div',{style:{marginTop:8,fontSize:11,color:'rgba(255,255,255,0.85)',background:'rgba(0,0,0,0.15)',borderRadius:8,padding:'8px 10px'}}, goalResult.explanation) : null
+        goalResult.explanation && goalResult.daysToGoal!=null ? e('div',{style:{marginTop:8,fontSize:11,color:'rgba(255,255,255,0.85)',background:'rgba(0,0,0,0.15)',borderRadius:8,padding:'8px 10px'}}, goalResult.explanation) : null,
+        goalResult.calorieDataQuality==='measured' && goalResult.daysToGoal!=null ? e('div',{style:{marginTop:6,fontSize:10,color:'rgba(255,255,255,0.7)'}}, '✓ Using today’s logged food + Move calories') : null
       ),
 
       // 3. Weight Trend

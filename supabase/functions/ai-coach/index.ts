@@ -431,6 +431,51 @@ If a value is not visible in the screenshot, use null. Numbers only (no units in
       return new Response(JSON.stringify({ parsed }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    // ── type: extract-activity-screenshot ───────────────────────────────────
+    if (type === 'extract-activity-screenshot') {
+      if (!photo) return new Response(JSON.stringify({ error: 'No photo provided' }), { status: 400, headers: corsHeaders })
+
+      const extractPrompt = `This is a screenshot from the Apple Watch/Fitness app's daily Activity summary — the Move/Exercise/Stand rings screen (not a single workout summary). Extract all visible data and return it as JSON.
+
+Return ONLY this JSON object (no other text):
+\`\`\`json
+{
+  "date": "YYYY-MM-DD if visible, otherwise null",
+  "moveCalories": "Move ring calories (active energy) burned as a number, or null",
+  "exerciseMinutes": "Exercise ring minutes as a number, or null",
+  "standHours": "Stand ring hours as a number, or null",
+  "steps": "step count as a number, or null",
+  "flights": "flights climbed as a number, or null",
+  "confidence": "high | medium | low — how clearly you could read the data"
+}
+\`\`\`
+If a value is not visible in the screenshot, use null. Numbers only (no units in the values).`
+
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 512,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: imgMediaType(photo), data: photo } },
+              { type: 'text', text: extractPrompt },
+            ]
+          }],
+        }),
+      })
+      if (!resp.ok) {
+        const err = await resp.text()
+        return new Response(JSON.stringify({ error: err }), { status: resp.status, headers: corsHeaders })
+      }
+      const data = await resp.json()
+      const rawText = data.content?.[0]?.text || ''
+      const parsed = extractJSON(rawText)
+      return new Response(JSON.stringify({ parsed }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown type: ' + type }), { status: 400, headers: corsHeaders })
 
   } catch (err) {
