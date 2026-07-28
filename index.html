@@ -530,6 +530,9 @@ const DEFAULT_HABITS=[];
 const DEFAULT_CATS=["Work","Health","Learning","Personal","Creative"];
 
 function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+const GOAL_START_DATE = new Date(2026,6,24); // 5-year goal countdown start
+const GOAL_TOTAL_DAYS = 1825;
+function goalDaysLeft(){const msPerDay=86400000;const startMid=new Date(GOAL_START_DATE.getFullYear(),GOAL_START_DATE.getMonth(),GOAL_START_DATE.getDate());const now=new Date();const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate());const elapsed=Math.round((todayMid-startMid)/msPerDay);return GOAL_TOTAL_DAYS-elapsed;}
 // Before 4 AM counts as "still last night" for evening routine purposes
 function eveningDate(){const d=new Date();if(d.getHours()<4){d.setDate(d.getDate()-1);}return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function dateKey(y,m,d){return y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");}
@@ -3466,9 +3469,18 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
         e('button', {onClick:()=>setEmailToast(null), style:{background:'rgba(255,255,255,0.08)',border:'none',borderRadius:8,color:'#8E8EAA',padding:'6px 10px',fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Skip')
       )
     ) : null,
-    e('div', {style:{marginBottom:16}},
-      e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
-      e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
+    e('div', {style:{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}},
+      e('div', {},
+        e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
+        e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
+      ),
+      e('div', {style:{display:'flex',alignItems:'center',gap:8,background:'linear-gradient(135deg, rgba(0,198,255,0.12), rgba(123,47,255,0.12))',border:'1px solid '+BORDER,borderRadius:14,padding:'8px 14px'}},
+        e('span', {style:{fontSize:18}}, '🎯'),
+        e('div', {},
+          e('div', {style:{fontSize:18,fontWeight:800,color:TEXT,lineHeight:1.1}}, goalDaysLeft().toLocaleString(), e('span',{style:{fontSize:11,fontWeight:700,color:MUTED,marginLeft:4}}, 'days')),
+          e('div', {style:{fontSize:9,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:MUTED}}, 'to goal')
+        )
+      )
     ),
     e(TimeBlockBanner, {priorities: priorities}),
     e('div', {style:{marginBottom:16}},
