@@ -10770,6 +10770,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     }).catch(function(){});
   }, []);
 
+  // Keep the Coach tab's Current Weight in lockstep with the latest Progress-tab weigh-in —
+  // it's a read-only mirror of bodyWeightLog, never a separately-entered value.
+  useEffect(function(){
+    var dates = Object.keys(bodyWeightLog||{}).sort();
+    if(!dates.length) return;
+    var latest = String(bodyWeightLog[dates[dates.length-1]]);
+    if(latest !== coachWeight){ setCoachWeight(latest); save('coachWeight', latest); }
+  }, [bodyWeightLog]);
+
   // Workout execution timer — lives at component level (rules of hooks)
   useEffect(function(){
     if(!executeStartTime) return;
@@ -11801,13 +11810,14 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   }
 
   function renderMain() {
-    var weight=coachWeight,setWeight=setCoachWeight,goalWeight=coachGoalWeight,setGoalWeight=setCoachGoalWeight;
+    var weight=coachWeight,goalWeight=coachGoalWeight,setGoalWeight=setCoachGoalWeight;
     var goalBf=coachGoalBf,setGoalBf=setCoachGoalBf,loading=coachLoading,setLoading=setCoachLoading;
     var analysis=coachAnalysis,setAnalysis=setCoachAnalysis,analysisDate=coachAnalysisDate,setAnalysisDate=setCoachAnalysisDate;
     var error=coachError,setError=setCoachError;
     var profileAge = coachProfile?Math.floor((Date.now()-new Date(coachProfile.createdAt).getTime())/86400000):0;
     var canCheckin = profileAge>=5;
     var lastCheckin = Object.keys(checkinHistory).sort().reverse()[0];
+    var lastWeighInDate = Object.keys(bodyWeightLog||{}).sort().reverse()[0] || null;
 
     async function generate() {
       setLoading(true);setError(null);
@@ -11946,7 +11956,11 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div',{style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:12}},'⚙️ Your Stats'),
         e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}},
-          e('div',{},e('div',{style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}},'Current Weight'),e('input',{className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:weight,onInput:function(ev){setWeight(ev.target.value);}})),
+          e('div',{},
+            e('div',{style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}},'Current Weight'),
+            e('div',{className:'input',style:{marginBottom:0,display:'flex',alignItems:'center',color:weight?TEXT:MUTED,background:'#F8FAFC'}}, weight?weight+' lbs':'No weigh-ins yet'),
+            e('div',{style:{fontSize:10,color:MUTED,marginTop:4}}, lastWeighInDate?'Synced from '+new Date(lastWeighInDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})+' weigh-in':'Log one on the Progress tab')
+          ),
           e('div',{},e('div',{style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}},'Goal Weight'),e('input',{className:'input',type:'number',placeholder:'lbs',style:{marginBottom:0},value:goalWeight,onInput:function(ev){setGoalWeight(ev.target.value);}})),
           e('div',{},e('div',{style:{fontSize:11,color:MUTED,marginBottom:4,fontWeight:600}},'Goal BF%'),e('input',{className:'input',type:'number',placeholder:'%',style:{marginBottom:0},value:goalBf,onInput:function(ev){setGoalBf(ev.target.value);}}))
         )
