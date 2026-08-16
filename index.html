@@ -10666,6 +10666,26 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [activityUploading, setActivityUploading] = useState(false);
   const [activityError, setActivityError] = useState(null);
   const [activityJustSaved, setActivityJustSaved] = useState(false);
+  // ── Britt's workouts (read-only, pulled from her app's Supabase sync) ────
+  const [brittWorkoutLog, setBrittWorkoutLog] = useState(null); // null = not loaded yet
+  const [brittLoading, setBrittLoading] = useState(false);
+  const [brittError, setBrittError] = useState(null);
+  const [brittSyncedAt, setBrittSyncedAt] = useState(null);
+  const [brittExpandedDay, setBrittExpandedDay] = useState(null);
+  function fetchBrittWorkouts() {
+    setBrittLoading(true); setBrittError(null);
+    _SB.from('hq_data').select('value,updated_at').eq('user_id','brittanie').eq('key','workoutLog').maybeSingle()
+      .then(function(res){
+        setBrittLoading(false);
+        if(res.error){ setBrittError('Could not load Britt\'s workouts'); return; }
+        setBrittWorkoutLog((res.data && res.data.value) || {});
+        setBrittSyncedAt(res.data ? res.data.updated_at : null);
+      })
+      .catch(function(){ setBrittLoading(false); setBrittError('Could not load Britt\'s workouts'); });
+  }
+  useEffect(function(){
+    if(view==='britt' && brittWorkoutLog===null && !brittLoading) fetchBrittWorkouts();
+  }, [view]);
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
   const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
@@ -11327,6 +11347,83 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     );
   }
 
+  function renderBritt() {
+    var safeLog = brittWorkoutLog || {};
+    var sortedDays = Object.keys(safeLog).sort().reverse();
+    var header = e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 16px 12px'}},
+      e('div',{style:{fontSize:11,color:MUTED}}, brittSyncedAt ? 'Synced '+new Date(brittSyncedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : (brittLoading?'':'Not synced yet')),
+      e('button',{onClick:fetchBrittWorkouts,disabled:brittLoading,style:{background:'none',border:'1px solid '+BORDER,borderRadius:20,padding:'5px 12px',fontSize:11,fontWeight:700,color:ACCENT,cursor:brittLoading?'default':'pointer',fontFamily:'inherit',opacity:brittLoading?0.6:1}}, brittLoading?'Refreshing…':'↻ Refresh')
+    );
+    if(brittLoading && brittWorkoutLog===null) return e('div',{},header,
+      e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading Britt\'s workouts…')
+    );
+    if(brittError) return e('div',{},header,
+      e('div',{style:{padding:'40px 16px',textAlign:'center',color:'#EF4444',fontSize:13}}, brittError)
+    );
+    if(sortedDays.length===0) return e('div',{},header,
+      e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
+        e('div',{style:{fontSize:48,marginBottom:12}},'💗'),
+        e('div',{style:{fontSize:16,fontWeight:700,marginBottom:6}}, 'No workouts logged yet'),
+        e('div',{style:{fontSize:13}}, 'Nothing synced from Britt\'s app so far')
+      )
+    );
+    return e('div', {},
+      header,
+      e('div', {style:{display:'flex',flexDirection:'column',gap:10,padding:'0 16px 16px'}},
+        ...sortedDays.map(function(date){
+          var sessions = safeLog[date];
+          var allGroups = sessions.reduce(function(a,s){return a.concat(s.groups||[]);}, []);
+          var uniq = allGroups.filter(function(x,i){return allGroups.indexOf(x)===i;});
+          var isOpen = brittExpandedDay === date;
+          return e('div', {key:date, style:{background:'#fff',borderRadius:16,overflow:'hidden',border:'1px solid '+BORDER}},
+            e('button', {
+              onClick:function(){setBrittExpandedDay(isOpen?null:date);},
+              style:{width:'100%',padding:'14px 16px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'space-between',textAlign:'left'}
+            },
+              e('div', {},
+                e('div', {style:{fontSize:13,fontWeight:800,color:TEXT}}, new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+                e('div', {style:{display:'flex',flexWrap:'wrap',gap:4,marginTop:5}},
+                  ...uniq.slice(0,6).map(function(gid){
+                    var g = MUSCLE_GROUPS.find(function(x){return x.id===gid;});
+                    if(!g) return null;
+                    var col = CATEGORY_COLORS[g.category];
+                    return e('span',{key:gid,style:{fontSize:10,padding:'2px 7px',borderRadius:20,background:col.bg,color:col.text,fontWeight:700,border:'1px solid '+col.border}}, g.emoji+' '+g.name);
+                  }),
+                  uniq.length>6?e('span',{style:{fontSize:10,color:MUTED}},'+'+(uniq.length-6)+' more'):null
+                )
+              ),
+              e('div', {style:{fontSize:12,color:MUTED,display:'flex',alignItems:'center',gap:6}},
+                sessions.length+' session'+(sessions.length>1?'s':''),
+                e('span',{},isOpen?'▲':'▼')
+              )
+            ),
+            isOpen ? e('div', {style:{borderTop:'1px solid '+BORDER}},
+              ...sessions.map(function(s, si){
+                var cats = [...new Set((s.groups||[]).map(function(gid){var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});return g?g.category:null;}).filter(Boolean))];
+                return e('div', {key:s.id||si, style:{padding:'12px 16px',borderBottom:si<sessions.length-1?'1px solid '+BORDER:'none'}},
+                  e('div', {style:{display:'flex',gap:5,flexWrap:'wrap',marginBottom:6}},
+                    ...cats.map(function(cat){
+                      var col = CATEGORY_COLORS[cat];
+                      return e('span',{key:cat,style:{fontSize:10,padding:'2px 8px',borderRadius:20,background:col.grad,color:'white',fontWeight:700}},cat);
+                    })
+                  ),
+                  e('div', {style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:s.note?6:0}},
+                    ...(s.groups||[]).map(function(gid){
+                      var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});
+                      return g?e('span',{key:gid,style:{fontSize:11,color:TEXT}},(g.emoji+' '+g.name)):null;
+                    })
+                  ),
+                  s.note?e('div',{style:{fontSize:12,color:MUTED,fontStyle:'italic'}},'"'+s.note+'"'):null,
+                  s.sets?e('div',{style:{fontSize:11,color:MUTED,marginTop:3}},s.sets+' total sets'):null
+                );
+              })
+            ) : null
+          );
+        })
+      )
+    );
+  }
+
   // ── AI Coach ─────────────────────────────────────────────────────────────
   var COACH_URL = 'https://bfgybytjjubdnciraksj.supabase.co/functions/v1/ai-coach';
   var COACH_AUTH = 'Bearer sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4';
@@ -11731,6 +11828,103 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setLoading(false);
     }
 
+    function exportForConsultant() {
+      var divider = '═══════════════════════════════════';
+      var lines = [];
+      var prog = load('currentProgram');
+      var log = load('workoutLog') || {};
+      var checkins = load('checkinHistory') || {};
+      var exportWeight = load('coachWeight');
+      var exportGoalWeight = load('coachGoalWeight');
+      var exportGoalBf = load('coachGoalBf');
+
+      lines.push(divider, 'HQ CONSULTANT EXPORT', 'Generated: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}), divider);
+
+      // Stats
+      var statLines = [];
+      if(exportWeight) statLines.push('Current Weight: '+exportWeight+' lbs');
+      if(exportGoalWeight || exportGoalBf) statLines.push('Goal: '+(exportGoalWeight?exportGoalWeight+' lbs':'?')+' / '+(exportGoalBf?exportGoalBf+'% BF':'? BF'));
+      if(statLines.length) lines.push('', 'STATS', ...statLines);
+
+      // Current program
+      if(prog && prog.days && prog.days.length) {
+        lines.push('', divider, 'CURRENT PROGRAM'+(prog.weekNumber?' — Week '+prog.weekNumber:''));
+        if(prog.split) lines.push('Split: '+prog.split);
+        lines.push(divider);
+        prog.days.forEach(function(day,i){
+          lines.push('', day.dayLabel+(day.scheduledDay?' ('+day.scheduledDay+')':''));
+          (day.exercises||[]).forEach(function(ex){
+            var wt = ex.targetWeight ? ' @ '+ex.targetWeight+' lbs' : '';
+            lines.push('• '+ex.name+' — '+(ex.sets||'?')+'x'+(ex.reps||'?')+wt);
+          });
+        });
+      }
+
+      // Workout log — last 28 days, only days with logged exercises
+      var td = today();
+      var dayBlocks = [];
+      for(var i=0;i<28;i++){
+        var dt = new Date(td+'T12:00:00'); dt.setDate(dt.getDate()-i);
+        var dk = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+        var sessions = (log[dk]||[]).filter(function(s){ return s.exercises && s.exercises.length; });
+        if(!sessions.length) continue;
+        var dayLabel = sessions.map(function(s){return s.programDay;}).filter(Boolean)[0] || 'Free Log';
+        var exList = [];
+        sessions.forEach(function(s){ (s.exercises||[]).forEach(function(ex){ exList.push(ex); }); });
+        dayBlocks.push({date:dk, label:dayLabel, exercises:exList});
+      }
+      if(dayBlocks.length){
+        lines.push('', divider, 'WORKOUT LOG — Last 28 Days', divider);
+        dayBlocks.forEach(function(b){
+          lines.push('', b.date+' — '+b.label);
+          b.exercises.forEach(function(ex){
+            var wt = ex.weight ? ex.weight+' lbs' : null;
+            var reps = ex.reps ? ex.reps+' reps' : null;
+            var detail = [wt,reps].filter(Boolean).join(' x ');
+            lines.push('• '+ex.name+(detail?' — '+detail:''));
+          });
+        });
+      }
+
+      // Weekly check-ins — last 4
+      var checkinDates = Object.keys(checkins).sort().reverse().slice(0,4);
+      if(checkinDates.length){
+        lines.push('', divider, 'WEEKLY CHECK-INS — Last 4', divider);
+        checkinDates.forEach(function(dk){
+          var entry = checkins[dk] || {};
+          var form = entry.formAnswers || {};
+          var totalDays = (entry.programSnapshot && entry.programSnapshot.days) ? entry.programSnapshot.days.length : ((prog && prog.days) ? prog.days.length : null);
+          lines.push('', dk);
+          var statParts = [];
+          if(form.sessionsCompleted != null && form.sessionsCompleted !== '') statParts.push('Sessions: '+form.sessionsCompleted+(totalDays?'/'+totalDays:''));
+          if(form.energy != null && form.energy !== '') statParts.push('Energy: '+form.energy+'/5');
+          if(form.weight) statParts.push('Weight: '+form.weight);
+          if(statParts.length) lines.push(statParts.join(' | '));
+          if(form.openNotes) lines.push('Notes: '+form.openNotes);
+          var cr = entry.coachResponse, summary = null;
+          if(cr && typeof cr === 'object') summary = cr.weeklySnapshot || cr.whatWorking || cr.focusCue || null;
+          else if(typeof cr === 'string' && cr) summary = cr.length>200 ? cr.slice(0,200)+'…' : cr;
+          if(summary) lines.push('Coach Response: '+summary);
+        });
+      }
+
+      lines.push('', divider, 'END OF EXPORT', divider);
+
+      var exportText = lines.join('\n');
+      navigator.clipboard.writeText(exportText).then(function(){
+        setCoachToast('Copied — paste into your consultant chat');
+        setTimeout(function(){setCoachToast(null);},4000);
+      }).catch(function(){
+        var ta = document.createElement('textarea');
+        ta.value = exportText; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); setCoachToast('Copied — paste into your consultant chat'); }
+        catch(e){ setCoachToast('Could not copy — check clipboard permissions'); }
+        document.body.removeChild(ta);
+        setTimeout(function(){setCoachToast(null);},4000);
+      });
+    }
+
     return e('div',{style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
       renderImportModal(),
       e('button',{onClick:function(){setShowImportModal(true);},style:{padding:'12px 16px',borderRadius:14,background:'#F0F7FF',border:'1.5px solid #BFDBFE',color:'#1D4ED8',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',textAlign:'left'}},'📥 Import Plan from Claude →'),
@@ -11758,6 +11952,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         )
       ),
       e('button',{onClick:generate,disabled:loading,style:{padding:'17px',borderRadius:16,background:loading?'#E8E8F0':'linear-gradient(135deg,#7B2FFF,#00C6FF)',border:'none',color:loading?'#B0B0C0':'white',fontSize:16,fontWeight:800,cursor:loading?'default':'pointer',fontFamily:'inherit',boxShadow:loading?'none':'0 8px 24px rgba(123,47,255,0.3)',transition:'all 0.2s'}},loading?'🤖 Analyzing...':'🤖 Generate Quick Analysis'),
+      e('button',{onClick:exportForConsultant,style:{padding:'14px',borderRadius:16,background:'#fff',border:'1.5px solid '+BORDER,color:TEXT,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'📋 Export for Consultant'),
       error?e('div',{style:{background:'#FEF2F2',borderRadius:12,padding:'12px 14px',border:'1px solid #FECACA',fontSize:13,color:'#DC2626'}},'⚠️ '+error):null,
       analysis?e('div',{style:{background:'#fff',borderRadius:16,padding:'18px',border:'1px solid '+BORDER}},
         e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
@@ -12538,7 +12733,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['progress','📈 Progress'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
+        ...[ ['progress','📈 Progress'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'], ['britt','💗 Britt'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
             flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
@@ -12555,6 +12750,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       view==='watch'    ? renderWatch()    :
       view==='history'  ? renderHistory()  :
       view==='progress' ? renderProgress() :
+      view==='britt'    ? renderBritt()    :
       renderCoach()
     ),
     // Execute overlay — full-screen, outside scroll container
@@ -14123,8 +14319,13 @@ function App() {
     });
     // Sync DOWN from Supabase on load (Supabase wins if newer than local)
     syncFromSupabase().then(()=>{
-      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','carWashLog','carWashItems','dateNights','homeItems','currentProgram','macroLog','macroTargets','foodPipeline','pwItems','pwLog','ideaLog','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog'];
-      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);else if(k==='homeItems')setHomeItems(v);else if(k==='currentProgram')setCurrentProgram(v);else if(k==='macroLog')setMacroLog(v);else if(k==='macroTargets')setTargets(v);else if(k==='foodPipeline')setFoodPipelineData(v);else if(k==='pwItems')setPwItems(v);else if(k==='pwLog')setPwLog(v);}});
+      // currentProgram/macroLog/macroTargets/foodPipeline are intentionally excluded here — their
+      // setters live inside FitnessScreen/MacroScreen/FoodPipelineScreen, not this top-level App
+      // component. syncFromSupabase() already writes them straight to localStorage above, and each
+      // of those screens self-initializes from load() on its own mount, so they still pick up synced
+      // data — just not as a live update while already mounted, same as most other MORE_ITEMS screens.
+      const keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','carWashLog','carWashItems','dateNights','homeItems','pwItems','pwLog','ideaLog','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog'];
+      keys.forEach(k=>{const v=load(k);if(v!==null){if(k==='habits'){const migrated=v.map(function(h){return h.freq?h:{...h,freq:'daily'};});setHabits(migrated);}else if(k==='habitLog')setHabitLog(v);else if(k==='timeLog')setTimeLog(v);else if(k==='goals')setGoals(v);else if(k==='projects')setProjects(v);else if(k==='notes')setNotes(v);else if(k==='groceries')setGroceries(v);else if(k==='brainDump')setBrainDump(v);else if(k==='routineLog')setRoutineLog(v);else if(k==='wakeLog')setWakeLog(v);else if(k==='areasData')setAreasData(v);else if(k==='morningItems')setMorningItems(v);else if(k==='cpapLog')setCpapLog(v);else if(k==='projectData')setProjectData(v);else if(k==='eveningLog')setEveningLog(v);else if(k==='eveningItems')setEveningItems(v);else if(k==='workoutLog')setWorkoutLog(v);else if(k==='middayLog')setMiddayLog(v);else if(k==='postWorkoutLog')setPwLog(v);else if(k==='postWorkoutItems')setPwItems(v);else if(k==='cleaningLog')setCleaningLog(v);else if(k==='cleaningItems')setCleaningItems(v);else if(k==='ideaLog')setIdeaLog(v);else if(k==='dateNights')setDateNights(v);else if(k==='homeItems')setHomeItems(v);else if(k==='pwItems')setPwItems(v);else if(k==='pwLog')setPwLog(v);}});
     });
     setTimeout(()=>{ setSplash(false); }, 3400);
     if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
