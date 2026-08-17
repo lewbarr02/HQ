@@ -592,6 +592,21 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var doneSets = Object.values(executeSets).reduce(function(s,arr){return s+arr.filter(function(x){return x.done;}).length;},0);
     var pct = totalSets>0?Math.round(doneSets/totalSets*100):0;
 
+    // Most recent prior session of this same program day, for per-set "last time" reference
+    function getPrevSession(exName) {
+      var dates = Object.keys(safeLog).filter(function(dk){ return dk < executeDate; }).sort().reverse();
+      for (var i=0;i<dates.length;i++){
+        var sessions = safeLog[dates[i]] || [];
+        for (var j=0;j<sessions.length;j++){
+          if (sessions[j].programDay === executeDay.dayLabel) {
+            var match = (sessions[j].exercises||[]).find(function(e){ return e.name===exName; });
+            if (match && match.allSets && match.allSets.length) return {date: dates[i], sets: match.allSets};
+          }
+        }
+      }
+      return null;
+    }
+
     return e('div',{style:{position:'fixed',inset:0,background:'#0F0F1A',zIndex:500,display:'flex',flexDirection:'column',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
       e('div',{style:{padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
         e('div',{},
@@ -619,6 +634,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           var exErr = executeSetError[ex.name];
           var nextSetNum = doneCt+1;
           var targetW = ex.lastWeight||ex.targetWeight;
+          var prevSession = getPrevSession(ex.name);
+          var prevSetForNext = prevSession && prevSession.sets[nextSetNum-1] ? prevSession.sets[nextSetNum-1] : null;
           return e('div',{key:ex.name,onClick:function(){if(!allDone)setExecuteActiveEx(ex.name);},style:{
             background:allDone?'rgba(16,185,129,0.12)':isActive?'rgba(123,47,255,0.15)':'rgba(255,255,255,0.05)',
             borderRadius:16,border:'1.5px solid '+(allDone?'rgba(16,185,129,0.4)':isActive?PURPLE+'66':'rgba(255,255,255,0.08)'),
@@ -627,7 +644,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:isActive&&!allDone?12:0}},
               e('div',{},
                 e('div',{style:{fontSize:14,fontWeight:800,color:allDone?'#10B981':'white'}},ex.name),
-                e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:2}},ex.sets+'×'+ex.reps+(targetW?' · '+targetW+'lbs':''))
+                e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:2}},ex.sets+'×'+ex.reps+(targetW?' · '+targetW+'lbs':'')),
+                prevSession?e('div',{style:{fontSize:11,color:'#34D399',marginTop:3,fontWeight:600}},'Last time: '+prevSession.sets.map(function(s){return (s.weight!=null?s.weight:'—')+'×'+(s.reps!=null?s.reps:'—');}).join(', ')):null
               ),
               e('div',{style:{display:'flex',gap:5,alignItems:'center'}},
                 ...sets.map(function(s,i){
@@ -636,13 +654,14 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               )
             ),
             isActive&&!allDone?e('div',{},
+              prevSetForNext?e('div',{style:{fontSize:12,color:'#34D399',fontWeight:700,marginBottom:8,display:'flex',alignItems:'center',gap:4}},'✓ Set '+nextSetNum+' last time: '+(prevSetForNext.weight!=null?prevSetForNext.weight+' lbs':'—')+' × '+(prevSetForNext.reps!=null?prevSetForNext.reps+' reps':'—')):null,
               e('div',{style:{display:'flex',gap:8,alignItems:'flex-end'}},
                 e('div',{style:{flex:1}},
                   e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Set '+nextSetNum+' — Weight (lbs)'),
                   e('input',{
                     className:'input',type:'number',
                     style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid '+(exErr&&!draft.weight?'#F59E0B99':'rgba(255,255,255,0.2)'),color:'white',fontSize:15,fontWeight:700},
-                    placeholder:targetW?String(targetW):'lbs',
+                    placeholder:prevSetForNext&&prevSetForNext.weight!=null?String(prevSetForNext.weight):(targetW?String(targetW):'lbs'),
                     value:draft.weight||'',
                     onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{weight:v})});});setExecuteSetError(function(errs){ if(!errs[ex.name]) return errs; var n=Object.assign({},errs); delete n[ex.name]; return n; });},
                     onClick:function(ev){ev.stopPropagation();}
@@ -653,7 +672,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
                   e('input',{
                     className:'input',type:'number',
                     style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid '+(exErr&&!draft.reps?'#F59E0B99':'rgba(255,255,255,0.2)'),color:'white',fontSize:15,fontWeight:700},
-                    placeholder:String(ex.reps).split('-').pop()||String(ex.reps),
+                    placeholder:prevSetForNext&&prevSetForNext.reps!=null?String(prevSetForNext.reps):(String(ex.reps).split('-').pop()||String(ex.reps)),
                     value:draft.reps||'',
                     onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{reps:v})});});setExecuteSetError(function(errs){ if(!errs[ex.name]) return errs; var n=Object.assign({},errs); delete n[ex.name]; return n; });},
                     onClick:function(ev){ev.stopPropagation();}
