@@ -10253,6 +10253,30 @@ const CATEGORY_COLORS = {
   Core: { bg:'#8B5CF620', border:'#8B5CF6', text:'#8B5CF6', grad:'linear-gradient(135deg,#8B5CF6,#EC4899)' },
 };
 
+// 48-workout sequential block: rotates through these 4 types.
+// hq_workoutCount holds workouts completed so far; the next workout's type is
+// selected by rotation position ((workoutCount-1) % 4), so count=21 (≡1 mod 4) => Upper A.
+const WORKOUT_BLOCK_LENGTH = 48;
+const WORKOUT_ROTATION = ['Upper A','Lower A','Upper B','Lower B'];
+const WORKOUT_ROTATION_DESC = {
+  'Upper A': 'Horizontal Push + Back + Arms',
+  'Lower A': 'Quad Dominant',
+  'Upper B': 'Vertical Push + Back Width + Arms',
+  'Lower B': 'Posterior Chain + Maintenance Volume',
+};
+function nextWorkoutType(workoutCount) {
+  var idx = ((workoutCount - 1) % 4 + 4) % 4;
+  return WORKOUT_ROTATION[idx];
+}
+// Programs (incl. imported ones) may not use our canonical dayLabel text (e.g. "Day 1 — Upper A"
+// instead of "Upper A"), so the 4 rotation slots are matched by array position, not by label string.
+// The returned object's dayLabel/exercises/focus always reflect the canonical rotation type.
+function programDayByType(prog, typeLabel) {
+  var idx = WORKOUT_ROTATION.indexOf(typeLabel);
+  if (idx===-1 || !prog || !prog.days || !prog.days[idx]) return null;
+  return Object.assign({}, prog.days[idx], {dayLabel: typeLabel, _rotationIdx: idx});
+}
+
 function daysSince(workoutLog, muscleId) {
   var keys = Object.keys(workoutLog).sort().reverse();
   for(var i=0;i<keys.length;i++){
@@ -10706,6 +10730,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [coachProfile, setCoachProfile] = useState(function(){ return load('coachProfile'); });
   const [currentProgram, setCurrentProgram] = useState(function(){ return load('currentProgram'); });
   const [programMeta, setProgramMeta] = useState(function(){ return load('programMeta'); });
+  const [workoutCount, setWorkoutCount] = useState(function(){ var c = load('workoutCount'); return c==null ? 21 : c; });
   const [coachPhase, setCoachPhase] = useState(function(){ return load('coachProfile') ? 'main' : 'onboarding'; });
   const [coachToast, setCoachToast] = useState(null);
   var _onboardingDraft = load('coachOnboardingDraft');
@@ -10740,6 +10765,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [executeDate, setExecuteDate] = useState(_wip && _wip.date ? _wip.date : today()); // date this Live Workout session logs to
   const [executeSetError, setExecuteSetError] = useState({}); // { exName: "message" } — missing weight/reps warning
   const [showDrinkPrompt, setShowDrinkPrompt] = useState(false); // full-screen "Drink" nudge shown after each logged set
+  // Keep localStorage in sync with every change (not just completed sets) so switching to another
+  // tab mid-set — even mid-keystroke — and coming back via Fitness never loses anything.
+  useEffect(function(){
+    if (!executeDay) return;
+    saveWip(executeDay, executeSets, executeStartTime, executeActiveEx, executeDraft, executeDate);
+  }, [executeDay, executeSets, executeStartTime, executeActiveEx, executeDraft, executeDate]);
   const [checkinForm, setCheckinForm] = useState({
     sessionsCompleted: '', energy: 3, hasSoreness: false, soreness: '',
     hasPain: false, pain: '', weight: '', sleepQuality: 3,
@@ -10887,14 +10918,16 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var day = safeLog[td]||[];
     var newLog = Object.assign({},safeLog,{[td]:[...day,entry]});
     setWorkoutLog(newLog); save('workoutLog',newLog);
+    var newWorkoutCount = workoutCount + 1;
+    setWorkoutCount(newWorkoutCount); save('workoutCount', newWorkoutCount);
     autoCheckExercise(td, habitLog);
     addPassiveWin('Logged a workout: '+(executeDay.dayLabel||groups.join(', ')));
 
     // Update lastWeight/lastReps on the program
-    if(currentProgram && exercises.length>0){
+    if(currentProgram && exercises.length>0 && executeDay._rotationIdx!=null){
       var updatedProg = JSON.parse(JSON.stringify(currentProgram));
-      updatedProg.days = updatedProg.days.map(function(d){
-        if(d.dayLabel!==executeDay.dayLabel) return d;
+      updatedProg.days = updatedProg.days.map(function(d,i){
+        if(i!==executeDay._rotationIdx) return d;
         return Object.assign({},d,{exercises:d.exercises.map(function(ex){
           var logged = exercises.find(function(e){return e.name===ex.name;});
           if(!logged) return ex;
@@ -10973,13 +11006,14 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     }
 
     return e('div',{style:{position:'fixed',inset:0,background:'#0F0F1A',zIndex:500,display:'flex',flexDirection:'column',paddingTop:'env(safe-area-inset-top)',paddingBottom:'env(safe-area-inset-bottom)',overflowY:'auto'}},
-      e('div',{style:{padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
-        e('div',{},
+      e('div',{style:{padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,gap:10}},
+        e('button',{onClick:function(){setTab('today');},title:'Leave workout running in the background',style:{flexShrink:0,width:36,height:36,borderRadius:10,border:'1px solid rgba(255,255,255,0.15)',background:'rgba(255,255,255,0.06)',color:'white',fontSize:16,cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'center'}},'⌄'),
+        e('div',{style:{flex:1,minWidth:0}},
           e('div',{style:{fontSize:10,fontWeight:800,color:ACCENT,letterSpacing:1,marginBottom:2}},'🟣 LIVE WORKOUT'+(executeDate!==today()?' · LOGGING FOR '+new Date(executeDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}).toUpperCase():'')),
-          e('div',{style:{fontSize:16,fontWeight:800,color:'white'}},executeDay.dayLabel),
+          e('div',{style:{fontSize:16,fontWeight:800,color:'white',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},executeDay.dayLabel),
           e('div',{style:{fontSize:12,color:'rgba(255,255,255,0.5)'}},timerStr+' · '+doneSets+'/'+totalSets+' sets')
         ),
-        e('button',{onClick:function(){if(confirm('Finish and save workout?'))finishExecute();},style:{padding:'10px 18px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}},'Finish ✓')
+        e('button',{onClick:function(){if(confirm('Finish and save workout?'))finishExecute();},style:{flexShrink:0,padding:'10px 18px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}},'Finish ✓')
       ),
       e('div',{style:{height:3,background:'rgba(255,255,255,0.1)',flexShrink:0}},
         e('div',{style:{height:3,width:pct+'%',background:'linear-gradient(90deg,'+PURPLE+','+ACCENT+')',transition:'width 0.4s'}})
@@ -11067,7 +11101,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   function renderLog() {
     var categories = ['Push','Pull','Legs','Core'];
     var prog = currentProgram;
-    var selDay = prog && selectedProgramDay ? prog.days.find(function(d){return d.dayLabel===selectedProgramDay;}) : null;
+    var selDay = prog && selectedProgramDay ? programDayByType(prog, selectedProgramDay) : null;
 
     function selectProgramDay(label) {
       if (label === selectedProgramDay) {
@@ -11078,7 +11112,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       }
       setSelectedProgramDay(label);
       setProgramExerciseLogs({});
-      var day = prog.days.find(function(d){return d.dayLabel===label;});
+      var day = programDayByType(prog, label);
       if (!day) return;
       // Pre-select muscle groups from the day's exercises
       var groupSet = {};
@@ -11116,25 +11150,31 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       });
     }
 
-    // Auto-detect today's program day by day-of-week
-    var DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    var todayDayName = DAY_NAMES[new Date().getDay()];
-    var todayProgramDay = prog ? prog.days.find(function(d){ return d.scheduledDay && d.scheduledDay.startsWith(todayDayName); }) : null;
+    // Next workout is determined by the sequential 48-workout rotation (hq_workoutCount), not day-of-week
+    var nextType = nextWorkoutType(workoutCount);
+    var todayProgramDay = prog ? programDayByType(prog, nextType) : null;
     var alreadyLoggedToday = safeLog[today()] && safeLog[today()].some(function(s){ return s.programDay && todayProgramDay && s.programDay===todayProgramDay.dayLabel; });
+    var completedCount = Math.min(workoutCount, WORKOUT_BLOCK_LENGTH);
+    var blockPct = Math.round(completedCount/WORKOUT_BLOCK_LENGTH*100);
 
-    // Program days already logged somewhere this week disappear from the day-picker below
-    var thisWeekDates = getWeekDates(today());
-    var loggedThisWeek = {};
-    thisWeekDates.forEach(function(dk){
-      (safeLog[dk]||[]).forEach(function(s){ if(s.programDay) loggedThisWeek[s.programDay]=true; });
-    });
-    var pendingDays = prog ? prog.days.filter(function(d){ return !loggedThisWeek[d.dayLabel]; }) : [];
+    // All 4 rotation days are always available in the day-picker below
+    var pendingDays = prog ? WORKOUT_ROTATION.map(function(label){ return programDayByType(prog, label); }).filter(Boolean) : [];
 
     return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      // 48-workout block progress
+      e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+        e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}},
+          e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, '📦 48-Workout Block'),
+          e('div', {style:{fontSize:12,fontWeight:800,color:PURPLE}}, completedCount+' / '+WORKOUT_BLOCK_LENGTH)
+        ),
+        e('div', {style:{height:6,background:CARD2,borderRadius:3,overflow:'hidden'}},
+          e('div', {style:{height:'100%',width:blockPct+'%',background:'linear-gradient(90deg,'+ACCENT+','+PURPLE+')',borderRadius:3}})
+        )
+      ),
       // Today's Workout hero card
       todayProgramDay && !alreadyLoggedToday ? e('div', {style:{background:'linear-gradient(135deg,#1A1040,#2D1B6B)',borderRadius:20,padding:'20px',border:'1px solid '+PURPLE+'44'}},
-        e('div', {style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:1,marginBottom:6}}, 'TODAY · '+todayDayName.toUpperCase()),
-        e('div', {style:{fontSize:20,fontWeight:900,color:'white',marginBottom:4}}, todayProgramDay.dayLabel),
+        e('div', {style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:1,marginBottom:6}}, 'WORKOUT '+(workoutCount+1)+' OF '+WORKOUT_BLOCK_LENGTH),
+        e('div', {style:{fontSize:20,fontWeight:900,color:'white',marginBottom:4}}, todayProgramDay.dayLabel+' — '+(WORKOUT_ROTATION_DESC[todayProgramDay.dayLabel]||'')),
         todayProgramDay.focus&&todayProgramDay.focus.length ? e('div', {style:{fontSize:12,color:ACCENT,fontWeight:700,marginBottom:14}}, todayProgramDay.focus.join(' · ')) : null,
         e('div', {style:{display:'flex',flexDirection:'column',gap:4,marginBottom:16}},
           ...(todayProgramDay.exercises||[]).slice(0,4).map(function(ex){
@@ -11162,10 +11202,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         ),
         e('button', {onClick:function(){setFitnessTab('coach');}, style:{padding:'8px 14px',borderRadius:20,border:'none',background:PURPLE,color:'white',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Go to Coach')
       ) : null,
-      // Program Day Selector (always shown) — days already logged this week drop off the list
+      // Program Day Selector — always shows all 4 rotation types
       e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}}, '📋 '+(prog ? 'Log a Different Day' : 'Quick Log')),
-        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, prog ? (pendingDays.length ? 'Select to pre-fill exercises from your program' : 'All program days logged this week 🎉') : 'Log a free-form workout session'),
+        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, prog ? 'Select to pre-fill exercises from your program' : 'Log a free-form workout session'),
         e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
           ...(prog ? pendingDays.map(function(d){
             var active = selectedProgramDay === d.dayLabel;
@@ -11173,7 +11213,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               padding:'8px 14px',borderRadius:20,border:'1.5px solid '+(active?ACCENT:BORDER),
               background:active?ACCENT+'18':'#F8FAFC',color:active?ACCENT:TEXT,
               fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s',
-            }}, d.dayLabel + (d.scheduledDay?' · '+d.scheduledDay:''))
+            }}, d.dayLabel + ' — ' + (WORKOUT_ROTATION_DESC[d.dayLabel]||''))
           }) : []),
           e('button', {onClick:function(){setSelectedProgramDay(null);setProgramExerciseLogs({});setSelectedGroups([]);}, style:{
             padding:'8px 14px',borderRadius:20,border:'1.5px solid '+((!selectedProgramDay)?ACCENT:BORDER),
@@ -11265,13 +11305,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           var newLog = Object.assign({}, safeLog, {[logDate]: [...day, entry]});
           setWorkoutLog(newLog);
           save('workoutLog', newLog);
+          var newWorkoutCount = workoutCount + 1;
+          setWorkoutCount(newWorkoutCount); save('workoutCount', newWorkoutCount);
           autoCheckExercise(logDate, habitLog);
           addPassiveWin('Logged a workout'+(selectedProgramDay?': '+selectedProgramDay:selectedGroups.length?': '+selectedGroups.join(', '):''), logDate);
           // Update program lastWeight/lastReps
-          if (selDay && currentProgram && exData.length > 0) {
+          if (selDay && currentProgram && exData.length > 0 && selDay._rotationIdx!=null) {
             var updatedProg = JSON.parse(JSON.stringify(currentProgram));
-            updatedProg.days = updatedProg.days.map(function(d){
-              if (d.dayLabel !== selectedProgramDay) return d;
+            updatedProg.days = updatedProg.days.map(function(d,i){
+              if (i !== selDay._rotationIdx) return d;
               return Object.assign({}, d, {exercises: d.exercises.map(function(ex){
                 var logged = programExerciseLogs[ex.name];
                 if (!logged || (!logged.weight && !logged.reps)) return ex;
