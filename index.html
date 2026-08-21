@@ -66,6 +66,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 'use strict';
 const e = React.createElement;
@@ -10678,6 +10679,14 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   }, []);
   const [logDate, setLogDate] = useState(today());
   const [selectedGroups, setSelectedGroups] = useState([]);
+  // Lift progress tab
+  const [liftsSubview, setLiftsSubview] = useState('single'); // single | all
+  const [selectedLiftExercise, setSelectedLiftExercise] = useState(null);
+  const [liftsGroupFilter, setLiftsGroupFilter] = useState('All');
+  const liftChartRef = useRef(null);
+  const liftChartInstance = useRef(null);
+  const allLiftsChartRef = useRef(null);
+  const allLiftsChartInstance = useRef(null);
   const [sessionNote, setSessionNote] = useState('');
   const [sessionSets, setSessionSets] = useState('');
   const [historyFilter, setHistoryFilter] = useState('all');
@@ -10792,6 +10801,62 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const currentPhotoRef = useRef(null);
   const goalPhotoRef = useRef(null);
   const safeLog = workoutLog || {};
+
+  // Single Lift line chart — Actual Logged vs. Roadmap Target
+  useEffect(function(){
+    if (view !== 'lifts' || liftsSubview !== 'single') {
+      if (liftChartInstance.current) { liftChartInstance.current.destroy(); liftChartInstance.current = null; }
+      return;
+    }
+    if (!liftChartRef.current || !window.Chart) return;
+    var allEx = getAllProgramExercises();
+    if (!allEx.length) return;
+    var exName = (selectedLiftExercise && allEx.some(function(ex){return ex.name===selectedLiftExercise;})) ? selectedLiftExercise : allEx[0].name;
+    var exMeta = allEx.find(function(ex){return ex.name===exName;});
+    var history = getExerciseHistory(exName);
+    var roadmap = getRoadmap(history, exMeta ? exMeta.targetWeight : null);
+    if (liftChartInstance.current) { liftChartInstance.current.destroy(); liftChartInstance.current = null; }
+    liftChartInstance.current = new window.Chart(liftChartRef.current.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: history.map(function(p){ return p.date; }),
+        datasets: [
+          { label:'Actual Logged', data:history.map(function(p){return p.weight;}), borderColor:ACCENT, backgroundColor:ACCENT, borderWidth:2, tension:0.25, pointRadius:3, pointBackgroundColor:ACCENT },
+          { label:'Roadmap Target', data:roadmap.map(function(p){return p.weight;}), borderColor:MUTED, borderDash:[6,4], borderWidth:2, pointRadius:0, tension:0 }
+        ]
+      },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, scales:{y:{beginAtZero:false,ticks:{font:{size:10}}},x:{ticks:{font:{size:9}}}} }
+    });
+    return function(){ if (liftChartInstance.current) { liftChartInstance.current.destroy(); liftChartInstance.current = null; } };
+  }, [view, liftsSubview, selectedLiftExercise, workoutLog, currentProgram]);
+
+  // All Lifts horizontal bar chart — % gain since baseline, colored by workout day
+  useEffect(function(){
+    if (view !== 'lifts' || liftsSubview !== 'all') {
+      if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; }
+      return;
+    }
+    if (!allLiftsChartRef.current || !window.Chart) return;
+    var groupColors = {'Upper A':'#2a78d6','Lower A':'#9085e9','Upper B':'#1baf7a','Lower B':'#eb6834'};
+    var allEx = getAllProgramExercises().filter(function(ex){ return liftsGroupFilter==='All' || ex.group===liftsGroupFilter; });
+    var rows = allEx.map(function(ex){
+      var history = getExerciseHistory(ex.name);
+      var baseline = history.length ? history[0].weight : null;
+      var current = history.length ? history[history.length-1].weight : null;
+      var pct = (baseline && current!=null) ? Math.round((current-baseline)/baseline*100) : 0;
+      return { name: ex.name, group: ex.group, pct: pct };
+    });
+    if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; }
+    allLiftsChartInstance.current = new window.Chart(allLiftsChartRef.current.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(function(r){ return r.name; }),
+        datasets: [{ label:'% Gain Since Baseline', data:rows.map(function(r){return r.pct;}), backgroundColor:rows.map(function(r){return groupColors[r.group];}) }]
+      },
+      options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:function(v){return v+'%';},font:{size:10}}},y:{ticks:{font:{size:10}}}} }
+    });
+    return function(){ if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; } };
+  }, [view, liftsSubview, liftsGroupFilter, workoutLog, currentProgram]);
 
   useEffect(function(){
     getMilestonePhotos().then(function(m){
@@ -11200,7 +11265,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           e('div', {style:{fontSize:13,fontWeight:800,color:TEXT,marginBottom:2}}, 'No program loaded on this device'),
           e('div', {style:{fontSize:11,color:MUTED}}, 'Import your plan in the Coach tab to unlock structured workouts')
         ),
-        e('button', {onClick:function(){setFitnessTab('coach');}, style:{padding:'8px 14px',borderRadius:20,border:'none',background:PURPLE,color:'white',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Go to Coach')
+        e('button', {onClick:function(){setView('coach');}, style:{padding:'8px 14px',borderRadius:20,border:'none',background:PURPLE,color:'white',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Go to Coach')
       ) : null,
       // Program Day Selector — always shows all 4 rotation types
       e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
@@ -12435,6 +12500,148 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     );
   }
 
+  // ── Lift Progress (📊 Lifts tab) ─────────────────────────────────────────
+  function getAllProgramExercises() {
+    var prog = currentProgram;
+    if (!prog) return [];
+    var list = [];
+    WORKOUT_ROTATION.forEach(function(label){
+      var day = programDayByType(prog, label);
+      if (!day) return;
+      (day.exercises||[]).forEach(function(ex){
+        list.push({ name: ex.name, group: label, targetWeight: ex.targetWeight!=null?parseFloat(ex.targetWeight):null });
+      });
+    });
+    return list;
+  }
+
+  function getExerciseHistory(exName) {
+    var entries = [];
+    Object.keys(safeLog).sort().forEach(function(date){
+      (safeLog[date]||[]).forEach(function(session){
+        (session.exercises||[]).forEach(function(ex){
+          if (ex.name !== exName) return;
+          var w = parseFloat(ex.weight);
+          if (!isNaN(w)) entries.push({ date:date, weight:w });
+        });
+      });
+    });
+    return entries;
+  }
+
+  // Straight-line projection from the first logged weight to the program's target,
+  // spread evenly across the same sessions actually logged so far.
+  function getRoadmap(history, targetWeight) {
+    if (!history.length || targetWeight==null || isNaN(targetWeight)) return [];
+    if (history.length === 1) return [{ date:history[0].date, weight:history[0].weight }];
+    var base = history[0].weight;
+    return history.map(function(pt,i){
+      var frac = i/(history.length-1);
+      return { date:pt.date, weight:Math.round((base+(targetWeight-base)*frac)*10)/10 };
+    });
+  }
+
+  function renderLiftProgress() {
+    var prog = currentProgram;
+    var allExercises = getAllProgramExercises();
+
+    if (!prog || !allExercises.length) {
+      return e('div', {style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
+        e('div',{style:{fontSize:48,marginBottom:12}},'📊'),
+        e('div',{style:{fontSize:16,fontWeight:700,marginBottom:6}},'No program loaded'),
+        e('div',{style:{fontSize:13}},'Import a program in the Coach tab to track lift progress')
+      );
+    }
+
+    var activeExName = (selectedLiftExercise && allExercises.some(function(ex){return ex.name===selectedLiftExercise;})) ? selectedLiftExercise : allExercises[0].name;
+    var activeEx = allExercises.find(function(ex){return ex.name===activeExName;});
+    var history = getExerciseHistory(activeExName);
+    var baseline = history.length ? history[0].weight : null;
+    var current = history.length ? history[history.length-1].weight : null;
+    var totalGain = (baseline!=null && current!=null) ? Math.round((current-baseline)*10)/10 : null;
+    var pctGain = (baseline) ? Math.round((current-baseline)/baseline*100) : null;
+
+    var grouped = {};
+    WORKOUT_ROTATION.forEach(function(label){ grouped[label] = allExercises.filter(function(ex){return ex.group===label;}); });
+
+    function statCard(label, value, sub) {
+      return e('div', {style:{flex:1,background:'#fff',borderRadius:14,padding:'14px',border:'1px solid '+BORDER,textAlign:'center'}},
+        e('div', {style:{fontSize:10,color:MUTED,fontWeight:700,letterSpacing:0.5,marginBottom:4}}, label.toUpperCase()),
+        e('div', {style:{fontSize:20,fontWeight:900,color:TEXT}}, value),
+        sub ? e('div', {style:{fontSize:11,color:MUTED,marginTop:2}}, sub) : null
+      );
+    }
+
+    return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      // Single Lift / All Lifts toggle
+      e('div', {style:{display:'flex',gap:8}},
+        e('button', {onClick:function(){setLiftsSubview('single');}, style:{
+          flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+(liftsSubview==='single'?ACCENT:BORDER),
+          background:liftsSubview==='single'?ACCENT+'18':'#fff',color:liftsSubview==='single'?ACCENT:MUTED,
+          fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+        }}, 'Single Lift'),
+        e('button', {onClick:function(){setLiftsSubview('all');}, style:{
+          flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+(liftsSubview==='all'?ACCENT:BORDER),
+          background:liftsSubview==='all'?ACCENT+'18':'#fff',color:liftsSubview==='all'?ACCENT:MUTED,
+          fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+        }}, 'All Lifts')
+      ),
+
+      liftsSubview==='single' ? e('div', {style:{display:'flex',flexDirection:'column',gap:16}},
+        // Exercise picker, grouped by workout day
+        e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:6}}, 'EXERCISE'),
+          e('select', {
+            className:'input', style:{marginBottom:0},
+            value:activeExName,
+            onChange:function(ev){ setSelectedLiftExercise(ev.target.value); }
+          },
+            ...WORKOUT_ROTATION.map(function(label){
+              return grouped[label].length ? e('optgroup', {key:label, label:label}, ...grouped[label].map(function(ex){
+                return e('option', {key:ex.name, value:ex.name}, ex.name);
+              })) : null;
+            })
+          )
+        ),
+        // Stat cards
+        e('div', {style:{display:'flex',gap:10}},
+          statCard('Baseline', baseline!=null?baseline+' lbs':'—'),
+          statCard('Current', current!=null?current+' lbs':'—'),
+          statCard('Total Gain', totalGain!=null?(totalGain>=0?'+':'')+totalGain+' lbs':'—', pctGain!=null?(pctGain>=0?'+':'')+pctGain+'%':null)
+        ),
+        // Chart
+        history.length ? e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{position:'relative',height:260}},
+            e('canvas', {ref:liftChartRef})
+          )
+        ) : e('div', {style:{background:'#F8FAFC',borderRadius:16,padding:'24px',border:'1px dashed '+BORDER,textAlign:'center'}},
+          e('div',{style:{fontSize:32,marginBottom:8}},'📈'),
+          e('div',{style:{fontSize:13,color:MUTED}},'No logged sessions yet for '+activeExName)
+        )
+      ) : e('div', {style:{display:'flex',flexDirection:'column',gap:16}},
+        // Muscle-group filter
+        e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:6}}, 'FILTER'),
+          e('select', {
+            className:'input', style:{marginBottom:0},
+            value:liftsGroupFilter,
+            onChange:function(ev){ setLiftsGroupFilter(ev.target.value); }
+          },
+            ...['All'].concat(WORKOUT_ROTATION).map(function(label){
+              return e('option', {key:label, value:label}, label);
+            })
+          )
+        ),
+        // Chart
+        e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{position:'relative',height:Math.max(260, allExercises.filter(function(ex){return liftsGroupFilter==='All'||ex.group===liftsGroupFilter;}).length*32)}},
+            e('canvas', {ref:allLiftsChartRef})
+          )
+        )
+      )
+    );
+  }
+
   function renderProgress() {
     var td = today();
     var goalWeight = parseFloat(coachGoalWeight) || 188;
@@ -12808,7 +13015,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['progress','📈 Progress'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'], ['britt','💗 Britt'] ].map(function(item){
+        ...[ ['progress','📈 Progress'], ['lifts','📊 Lifts'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'], ['britt','💗 Britt'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
             flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
@@ -12825,6 +13032,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       view==='watch'    ? renderWatch()    :
       view==='history'  ? renderHistory()  :
       view==='progress' ? renderProgress() :
+      view==='lifts'    ? renderLiftProgress() :
       view==='britt'    ? renderBritt()    :
       renderCoach()
     ),
