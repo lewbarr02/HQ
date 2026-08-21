@@ -10811,9 +10811,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     if (!liftChartRef.current || !window.Chart) return;
     var allEx = getAllProgramExercises();
     if (!allEx.length) return;
-    var exName = (selectedLiftExercise && allEx.some(function(ex){return ex.name===selectedLiftExercise;})) ? selectedLiftExercise : allEx[0].name;
-    var exMeta = allEx.find(function(ex){return ex.name===exName;});
-    var history = getExerciseHistory(exName);
+    var exKey = (selectedLiftExercise && allEx.some(function(ex){return ex.key===selectedLiftExercise;})) ? selectedLiftExercise : allEx[0].key;
+    var exMeta = allEx.find(function(ex){return ex.key===exKey;});
+    var history = getExerciseHistory(exMeta.name, exMeta.group);
     var roadmap = getRoadmap(history, exMeta ? exMeta.targetWeight : null);
     if (liftChartInstance.current) { liftChartInstance.current.destroy(); liftChartInstance.current = null; }
     liftChartInstance.current = new window.Chart(liftChartRef.current.getContext('2d'), {
@@ -10838,22 +10838,49 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     }
     if (!allLiftsChartRef.current || !window.Chart) return;
     var groupColors = {'Upper A':'#2a78d6','Lower A':'#9085e9','Upper B':'#1baf7a','Lower B':'#eb6834'};
+    var NO_DATA_COLOR = '#B0B0C0';
     var allEx = getAllProgramExercises().filter(function(ex){ return liftsGroupFilter==='All' || ex.group===liftsGroupFilter; });
     var rows = allEx.map(function(ex){
-      var history = getExerciseHistory(ex.name);
-      var baseline = history.length ? history[0].weight : null;
-      var current = history.length ? history[history.length-1].weight : null;
-      var pct = (baseline && current!=null) ? Math.round((current-baseline)/baseline*100) : 0;
-      return { name: ex.name, group: ex.group, pct: pct };
+      var history = getExerciseHistory(ex.name, ex.group);
+      var hasData = history.length > 0;
+      var baseline = hasData ? history[0].weight : null;
+      var current = hasData ? history[history.length-1].weight : null;
+      var rawPct = (hasData && baseline) ? Math.round((current-baseline)/baseline*100) : 0;
+      return { name: ex.displayName, group: ex.group, rawPct: rawPct, hasData: hasData };
     });
+    // Every exercise always gets a visible bar: a real 0% gain (or no data yet) is stubbed
+    // to a minimum value of 1 so it renders, with the true "0%" drawn as a label on top.
+    var barValues = rows.map(function(r){ return r.rawPct !== 0 ? r.rawPct : 1; });
+    var barColors = rows.map(function(r){ return r.hasData ? groupColors[r.group] : NO_DATA_COLOR; });
+    var stubLabelPlugin = {
+      id: 'stubLabels',
+      afterDatasetsDraw: function(chart) {
+        var ctx = chart.ctx;
+        var meta = chart.getDatasetMeta(0);
+        ctx.save();
+        ctx.font = '10px sans-serif';
+        ctx.fillStyle = MUTED;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        meta.data.forEach(function(bar, i){
+          if (rows[i] && rows[i].rawPct === 0) ctx.fillText('0%', bar.x + 4, bar.y);
+        });
+        ctx.restore();
+      }
+    };
     if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; }
     allLiftsChartInstance.current = new window.Chart(allLiftsChartRef.current.getContext('2d'), {
       type: 'bar',
       data: {
         labels: rows.map(function(r){ return r.name; }),
-        datasets: [{ label:'% Gain Since Baseline', data:rows.map(function(r){return r.pct;}), backgroundColor:rows.map(function(r){return groupColors[r.group];}) }]
+        datasets: [{ label:'% Gain Since Baseline', data:barValues, backgroundColor:barColors }]
       },
-      options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{callback:function(v){return v+'%';},font:{size:10}}},y:{ticks:{font:{size:10}}}} }
+      plugins: [stubLabelPlugin],
+      options: {
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:function(ctx){ return (rows[ctx.dataIndex].hasData?'':'No data — ')+rows[ctx.dataIndex].rawPct+'% gain'; } } } },
+        scales:{x:{ticks:{callback:function(v){return v+'%';},font:{size:10}}},y:{ticks:{font:{size:10}}}}
+      }
     });
     return function(){ if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; } };
   }, [view, liftsSubview, liftsGroupFilter, workoutLog, currentProgram]);
@@ -12509,16 +12536,27 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       var day = programDayByType(prog, label);
       if (!day) return;
       (day.exercises||[]).forEach(function(ex){
-        list.push({ name: ex.name, group: label, targetWeight: ex.targetWeight!=null?parseFloat(ex.targetWeight):null });
+        list.push({ name: ex.name, group: label, key: label+'::'+ex.name, targetWeight: ex.targetWeight!=null?parseFloat(ex.targetWeight):null });
       });
     });
+    // Exercises sharing a name across different workout days get a "(Group)" suffix so
+    // they're distinguishable in the picker and on the All Lifts chart.
+    var nameCounts = {};
+    list.forEach(function(ex){ nameCounts[ex.name] = (nameCounts[ex.name]||0) + 1; });
+    list.forEach(function(ex){ ex.displayName = nameCounts[ex.name] > 1 ? ex.name+' ('+ex.group+')' : ex.name; });
     return list;
   }
 
-  function getExerciseHistory(exName) {
+  // Sets logged under a same-named exercise on a different day (e.g. "Leg Press" in both
+  // Lower A and Lower B) are disambiguated by the session's programDay tag when group is passed.
+  // Matched by substring, not equality — sessions logged before the sequential-rotation rework
+  // carry old-format labels like "Day 3 — Upper B: Vertical Push + Back Width + Arms" rather
+  // than the canonical "Upper B", and the 4 rotation labels never collide as substrings of each other.
+  function getExerciseHistory(exName, group) {
     var entries = [];
     Object.keys(safeLog).sort().forEach(function(date){
       (safeLog[date]||[]).forEach(function(session){
+        if (group && (!session.programDay || session.programDay.indexOf(group) === -1)) return;
         (session.exercises||[]).forEach(function(ex){
           if (ex.name !== exName) return;
           var w = parseFloat(ex.weight);
@@ -12553,9 +12591,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       );
     }
 
-    var activeExName = (selectedLiftExercise && allExercises.some(function(ex){return ex.name===selectedLiftExercise;})) ? selectedLiftExercise : allExercises[0].name;
-    var activeEx = allExercises.find(function(ex){return ex.name===activeExName;});
-    var history = getExerciseHistory(activeExName);
+    var activeKey = (selectedLiftExercise && allExercises.some(function(ex){return ex.key===selectedLiftExercise;})) ? selectedLiftExercise : allExercises[0].key;
+    var activeEx = allExercises.find(function(ex){return ex.key===activeKey;});
+    var history = getExerciseHistory(activeEx.name, activeEx.group);
     var baseline = history.length ? history[0].weight : null;
     var current = history.length ? history[history.length-1].weight : null;
     var totalGain = (baseline!=null && current!=null) ? Math.round((current-baseline)*10)/10 : null;
@@ -12593,12 +12631,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           e('div', {style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:6}}, 'EXERCISE'),
           e('select', {
             className:'input', style:{marginBottom:0},
-            value:activeExName,
+            value:activeKey,
             onChange:function(ev){ setSelectedLiftExercise(ev.target.value); }
           },
             ...WORKOUT_ROTATION.map(function(label){
               return grouped[label].length ? e('optgroup', {key:label, label:label}, ...grouped[label].map(function(ex){
-                return e('option', {key:ex.name, value:ex.name}, ex.name);
+                return e('option', {key:ex.key, value:ex.key}, ex.name);
               })) : null;
             })
           )
@@ -12616,7 +12654,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           )
         ) : e('div', {style:{background:'#F8FAFC',borderRadius:16,padding:'24px',border:'1px dashed '+BORDER,textAlign:'center'}},
           e('div',{style:{fontSize:32,marginBottom:8}},'📈'),
-          e('div',{style:{fontSize:13,color:MUTED}},'No logged sessions yet for '+activeExName)
+          e('div',{style:{fontSize:13,color:MUTED}},'No logged sessions yet for '+activeEx.displayName)
         )
       ) : e('div', {style:{display:'flex',flexDirection:'column',gap:16}},
         // Muscle-group filter
