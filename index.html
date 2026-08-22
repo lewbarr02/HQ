@@ -11184,7 +11184,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       for (var i=0;i<dates.length;i++){
         var sessions = safeLog[dates[i]] || [];
         for (var j=0;j<sessions.length;j++){
-          if (sessions[j].programDay === executeDay.dayLabel) {
+          // Substring match, not equality — sessions logged before the sequential-rotation rework
+          // carry old-format labels like "Day 1 — Upper A: Horizontal Push + Back + Arms" rather
+          // than the canonical "Upper A" now stored on executeDay.dayLabel.
+          if (sessions[j].programDay && sessions[j].programDay.indexOf(executeDay.dayLabel) !== -1) {
             var match = (sessions[j].exercises||[]).find(function(e){ return e.name===exName; });
             if (match && match.allSets && match.allSets.length) return {date: dates[i], sets: match.allSets};
           }
