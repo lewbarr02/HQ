@@ -413,6 +413,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const startPhotoRef = useRef(null);
   const currentPhotoRef = useRef(null);
   const goalPhotoRef = useRef(null);
+  const [zoomedPhoto, setZoomedPhoto] = useState(null); // {label, src}
   const safeLog = workoutLog || {};
 
   // Workout execution timer — lives at component level (rules of hooks)
@@ -1899,11 +1900,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     function photoTile(label, dateStr, photoSrc, active, actionLabel, onAction) {
       return e('div',{style:{display:'flex',flexDirection:'column',gap:8,flex:1}},
         e('div',{style:{fontSize:9,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase',color:active?ACCENT:MUTED,textAlign:'center'}}, label),
-        e('div',{style:{
-          aspectRatio:'3/4',borderRadius:14,overflow:'hidden',background:CARD2,
-          border: active ? '2px solid '+ACCENT : '1px solid '+BORDER,
-          display:'flex',alignItems:'center',justifyContent:'center'
-        }},
+        e('div',{
+          onClick: photoSrc ? function(){ setZoomedPhoto({label:label, src:photoSrc}); } : undefined,
+          style:{
+            aspectRatio:'3/4',borderRadius:14,overflow:'hidden',background:CARD2,
+            border: active ? '2px solid '+ACCENT : '1px solid '+BORDER,
+            display:'flex',alignItems:'center',justifyContent:'center',
+            cursor: photoSrc ? 'zoom-in' : 'default',
+          }
+        },
           photoSrc ? e('img',{src:photoSrc,style:{width:'100%',height:'100%',objectFit:'cover'}})
                    : e('span',{style:{fontSize:26,color:MUTED}}, '📷')
         ),
@@ -2136,6 +2141,26 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               e('button',{onClick:saveStapleForm,style:{flex:2,padding:'12px',borderRadius:12,background:ACCENT,border:'none',color:'#1A1833',fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
             )
           )
+        ) : null,
+
+        zoomedPhoto ? e('div', {
+          onClick: function(){ setZoomedPhoto(null); },
+          style:{
+            position:'fixed',inset:0,zIndex:400,background:'rgba(0,0,0,0.92)',
+            display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+            padding:'20px',paddingTop:'calc(20px + env(safe-area-inset-top))',
+            paddingBottom:'calc(20px + env(safe-area-inset-bottom))',
+          }
+        },
+          e('div', {style:{display:'flex',alignItems:'center',width:'100%',maxWidth:480,marginBottom:12,gap:8}},
+            e('div', {style:{fontSize:13,fontWeight:700,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:0.6}}, zoomedPhoto.label),
+            e('div', {style:{flex:1}}),
+            e('button', {
+              onClick:function(ev){ ev.stopPropagation(); setZoomedPhoto(null); },
+              style:{background:'rgba(255,255,255,0.1)',border:'none',color:'#fff',borderRadius:8,padding:'6px 14px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}
+            }, '✕')
+          ),
+          e('img', {src:zoomedPhoto.src, onClick:function(ev){ ev.stopPropagation(); }, style:{maxWidth:'100%',maxHeight:'80vh',borderRadius:12,objectFit:'contain'}})
         ) : null
       )
     );
