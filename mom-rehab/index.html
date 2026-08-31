@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mom Rehab">
+  <meta name="theme-color" content="#F7F8FC">
+  <title>Mom — Rehab</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html{-webkit-text-size-adjust:100%;overflow-x:hidden;max-width:100vw;}
+    body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F7F8FC;color:#1A1833;overflow:hidden;height:100%;overflow-x:hidden;max-width:100vw;}
+    #root{height:100dvh;display:flex;flex-direction:column;max-width:480px;margin:0 auto;background:#F7F8FC;overflow-x:hidden;width:100%;}
+    #app-inner{max-width:100vw !important;overflow-x:hidden !important;}
+    .content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;overflow-x:hidden;max-width:100%;}
+    .card{background:#fff;border:1px solid rgba(100,80,220,0.15);border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:0 2px 12px rgba(100,80,220,0.06);}
+    .header{padding:12px 20px;padding-top:calc(12px + env(safe-area-inset-top));background:rgba(247,248,252,0.97);border-bottom:1px solid rgba(100,80,220,0.1);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+    .nav{display:flex;background:rgba(247,248,252,0.97);border-top:1px solid rgba(100,80,220,0.1);padding:4px 0;padding-bottom:calc(6px + env(safe-area-inset-bottom));flex-shrink:0;}
+    .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;cursor:pointer;font-size:10px;font-family:inherit;font-weight:700;color:#8E8EAA;min-height:48px;justify-content:center;}
+    .nav-btn.active{color:#00C6FF;}
+    .input{width:100%;padding:14px 16px;border-radius:12px;border:1.5px solid rgba(100,80,220,0.18);background:#F0F2F8;color:#1A1833;font-size:16px;font-family:inherit;outline:none;margin-bottom:10px;-webkit-appearance:none;display:block;}
+    .input:focus{border-color:#00C6FF;background:#fff;}
+    .btn-primary{padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:none;font-family:inherit;min-height:48px;background:linear-gradient(135deg,#00C6FF,#7B2FFF);color:white;width:100%;}
+    .btn-ghost{padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;min-height:48px;background:#F0F2F8;color:#8E8EAA;border:1.5px solid rgba(100,80,220,0.18);width:100%;}
+    .grad{background:linear-gradient(135deg,#00C6FF,#7B2FFF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+    .chip{display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.2px;}
+    ::-webkit-scrollbar{display:none;}
+    input[type=number]{-moz-appearance:textfield;}
+    input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+    @media(min-width:768px){#root{max-width:none;margin:0;}}
+  </style>
+</head><body><div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+'use strict';
+const e = React.createElement;
+const {useState, useEffect, useRef} = React;
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Mom — Rehab
+   A per-client fork of the HQ tracker, same shape as the Brittanie and Cam forks.
+
+   Mom's plan is not a strength program — it's rehab, split into THREE SECTIONS:
+     • Hand Rehab   – prescribed hand-therapy exercises
+     • Home         – at-home exercises
+     • Pool         – pool / hydrotherapy session
+
+   Each section is an independent list of exercises. Mom opens a section, taps
+   Start, and logs each set (reps, or a hold in seconds, or weight×reps). Every
+   finished session is stored by date and tagged with its section, so each
+   section gets its own streak / this-week / history.
+
+   ────────────────────────────────────────────────────────────────────────────
+   HOW TO ADD EXERCISES LATER  (this is the whole point of the "architecture"):
+     1. Fill in the `exercises: [ ... ]` array for each section in SECTIONS below.
+     2. Bump PROGRAM_VERSION by 1.
+     3. Commit. On next load every device re-seeds its exercise list from the
+        code while keeping all logged history.
+
+   Exercise shape:
+     { name:'Towel gripper',  type:'reps',   sets:3, reps:15,            note:'...' }
+     { name:'Fist to fan',    type:'time',   sets:3, targetSecs:10, repsText:'10 sec hold', note:'...' }
+     { name:'Wrist curl',     type:'weight', sets:3, reps:12, targetWeight:2, note:'...' }
+   type is one of: 'reps' | 'time' | 'weight'
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+// ── Backend ──────────────────────────────────────────────────────────────────
+// Same Supabase project as the Brittanie / Cam forks (separate from Lewis's
+// personal HQ project). Mom's rows are scoped by user_id:'mom' in the shared
+// hq_data key/value table, so her data never mixes with anyone else's.
+const _SB = supabase.createClient(
+  'https://axybbtnkihoqwcmmmwae.supabase.co',
+  'sb_publishable_vYCFYjguIei_WXAHN5ig2Q_y1z45Sjl'
+);
+const MOM_USER = 'mom';
+// Local cache is namespaced with `mom_` (not `hq_`) so that if this app is ever
+// opened on a device that also has the main HQ app or another fork, their
+// localStorage never collides. Supabase rows stay keyed by the bare name.
+const LS = 'mom_';
+
+const ACCENT="#00C6FF", PURPLE="#7B2FFF", MUTED="#8E8EAA", TEXT="#1A1833", CARD2="#F0F2F8", BORDER="rgba(100,80,220,0.18)";
+const GREEN="#10B981";
+
+// ── The three sections + their exercises ─────────────────────────────────────
+// Exercise arrays are intentionally EMPTY for now — Lewis drops the real
+// exercises in later, then bumps PROGRAM_VERSION.
+const PROGRAM_VERSION = 1;
+const SECTIONS = [
+  {
+    id: 'hand',
+    label: 'Hand Rehab',
+    emoji: '🖐️',
+    accent: '#00C6FF',
+    hero: ['#0E4A63', '#12386B'],
+    blurb: 'Prescribed hand-therapy work. Do these as directed by the therapist — slow and controlled, stop if there is sharp pain.',
+    exercises: [],
+  },
+  {
+    id: 'home',
+    label: 'Home',
+    emoji: '🏠',
+    accent: '#10B981',
+    hero: ['#0C4B3A', '#125B45'],
+    blurb: 'At-home exercises. A little every day beats a lot once a week.',
+    exercises: [],
+  },
+  {
+    id: 'pool',
+    label: 'Pool',
+    emoji: '🏊',
+    accent: '#7B2FFF',
+    hero: ['#2D1B6B', '#3A2B8B'],
+    blurb: 'Pool / hydrotherapy session. The water takes the load off — move through the full range.',
+    exercises: [],
+  },
+];
+
+// ── Storage: localStorage first, mirrored to Supabase on every write ─────────
+function save(k, v) {
+  try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch (ex) {}
+  _SB.from('hq_data')
+    .upsert({ user_id: MOM_USER, key: k, value: v, updated_at: new Date().toISOString() }, { onConflict: 'user_id,key' })
+    .then(({ error }) => {
+      if (error) console.warn('SB save error', k, error);
+      else { try { localStorage.setItem(LS + 'lastCloudSync', new Date().toISOString()); } catch (ex) {} }
+    });
+}
+function load(k) {
+  try { const s = localStorage.getItem(LS + k); return s ? JSON.parse(s) : null; } catch (ex) { return null; }
+}
+function today() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+function ymd(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+// Pull the cloud snapshot down into localStorage (used on load + manual Restore).
+async function syncFromSupabase() {
+  const { data, error } = await _SB.from('hq_data').select('key,value').eq('user_id', MOM_USER);
+  if (error || !data) return false;
+  data.forEach(row => {
+    try { localStorage.setItem(LS + row.key, JSON.stringify(row.value)); } catch (ex) {}
+  });
+  return true;
+}
+// Force-upload every mom_ key from this device (the "Push to Cloud" step).
+async function pushAllToSupabase() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(LS) && k !== LS + 'lastCloudSync') keys.push(k.slice(LS.length));
+  }
+  const rows = keys.map(k => {
+    const v = load(k);
+    return v !== null ? { user_id: MOM_USER, key: k, value: v, updated_at: new Date().toISOString() } : null;
+  }).filter(Boolean);
+  if (!rows.length) return;
+  const { error } = await _SB.from('hq_data').upsert(rows, { onConflict: 'user_id,key' });
+  if (error) console.warn('pushAllToSupabase error', error);
+}
+
+// ── Seed / re-seed ──────────────────────────────────────────────────────────
+// Exercise definitions live in code (SECTIONS). Logged history lives in the
+// cloud. When PROGRAM_VERSION changes we refresh `sections` from code and leave
+// `sessionLog` untouched. Runs once at module load for the offline first paint;
+// App re-runs the version check after the cloud pull so code always wins for
+// exercise content.
+function seedMom() {
+  if (load('programVersion') !== PROGRAM_VERSION) {
+    save('sections', SECTIONS);
+    save('programVersion', PROGRAM_VERSION);
+  }
+  if (load('sessionLog') == null) save('sessionLog', {});
+  if (load('momProfile') == null) {
+    save('momProfile', { name: 'Mom', createdAt: new Date().toISOString() });
+  }
+}
+seedMom();
+
+// ── Exercise target text ────────────────────────────────────────────────────
+const EX_TYPE_LABEL = { weight: 'Weight', reps: 'Reps', time: 'Hold' };
+function exTargetText(ex) {
+  const s = ex.sets || 3;
+  if (ex.type === 'time') return s + ' × ' + (ex.repsText || (ex.targetSecs ? ex.targetSecs + ' sec hold' : '—'));
+  const rep = ex.repsText || (ex.reps != null ? ex.reps : 10);
+  if (ex.type === 'reps') return s + ' × ' + rep;
+  return s + ' × ' + rep + (ex.targetWeight != null ? ' @ ' + ex.targetWeight + ' lb' : '');
+}
+
+// ── Per-section stats ───────────────────────────────────────────────────────
+function sectionSessions(sessionLog, sectionId) {
+  const out = [];
+  Object.keys(sessionLog || {}).forEach(dt => {
+    (sessionLog[dt] || []).forEach(s => { if (s.section === sectionId) out.push(Object.assign({ date: dt }, s)); });
+  });
+  return out.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+function doneToday(sessionLog, sectionId) {
+  return (sessionLog[today()] || []).some(s => s.section === sectionId);
+}
+// Consecutive days (ending today, or yesterday if today isn't done yet) that
+// have at least one logged session for this section.
+function sectionStreak(sessionLog, sectionId) {
+  let streak = 0;
+  const d = new Date();
+  const td = today();
+  for (let guard = 0; guard < 400; guard++) {
+    const ds = ymd(d);
+    const has = (sessionLog[ds] || []).some(s => s.section === sectionId);
+    if (has) { streak++; d.setDate(d.getDate() - 1); continue; }
+    if (ds === td) { d.setDate(d.getDate() - 1); continue; } // today not done yet — grace
+    break;
+  }
+  return streak;
+}
+function sectionStats(sessionLog, sectionId) {
+  const sess = sectionSessions(sessionLog, sectionId);
+  const wk = new Date(); wk.setDate(wk.getDate() - 6);
+  const wkStr = ymd(wk);
+  const week = sess.filter(s => s.date >= wkStr).length;
+  return {
+    total: sess.length,
+    week,
+    lastDone: sess.length ? sess[0].date : null,
+    streak: sectionStreak(sessionLog, sectionId),
+    done: doneToday(sessionLog, sectionId),
+  };
+}
+function relDay(dateStr) {
+  if (!dateStr) return 'never';
+  const td = today();
+  if (dateStr === td) return 'today';
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  if (dateStr === ymd(y)) return 'yesterday';
+  const diff = Math.round((new Date(td + 'T12:00:00') - new Date(dateStr + 'T12:00:00')) / 86400000);
+  return diff + ' days ago';
+}
+
+// ── "Last time" lookup for the live view ────────────────────────────────────
+function prevSetsForExercise(sessionLog, sectionId, exName, beforeDate) {
+  const dates = Object.keys(sessionLog || {}).filter(d => !beforeDate || d < beforeDate).sort().reverse();
+  for (const d of dates) {
+    for (const s of (sessionLog[d] || [])) {
+      if (s.section !== sectionId) continue;
+      const m = (s.exercises || []).find(x => x.name === exName);
+      if (m && m.allSets && m.allSets.length) return { date: d, sets: m.allSets };
+    }
+  }
+  return null;
+}
+function setToText(s) {
+  if (s.secs != null) return s.secs + 's';
+  if (s.weight != null) return s.weight + '×' + (s.reps != null ? s.reps : '—');
+  return (s.reps != null ? s.reps : '—') + '';
+}
+
+// ── Live session (work-in-progress persistence) ─────────────────────────────
+const WIP_KEY = LS + 'wipSession';
+function readWip() { try { return JSON.parse(localStorage.getItem(WIP_KEY) || 'null'); } catch (ex) { return null; } }
+function writeWip(o) { try { localStorage.setItem(WIP_KEY, JSON.stringify(o)); } catch (ex) {} }
+function clearWip() { try { localStorage.removeItem(WIP_KEY); } catch (ex) {} }
+
+function draftForExercise(ex) {
+  if (ex.type === 'time') return { secs: ex.targetSecs != null ? String(ex.targetSecs) : '' };
+  if (ex.type === 'reps') return { reps: ex.reps != null ? String(ex.reps) : '' };
+  return { weight: ex.targetWeight != null ? String(ex.targetWeight) : '', reps: ex.reps != null ? String(ex.reps) : '' };
+}
+
+function LiveSession({ section, dateStr, sessionLog, onFinish, onCancel }) {
+  const exercises = section.exercises || [];
+  const wip = readWip();
+  const resuming = wip && wip.sectionId === section.id && wip.date === dateStr;
+
+  const [startedAt] = useState(() => (resuming ? wip.startedAt : Date.now()));
+  const [elapsed, setElapsed] = useState(() => Math.floor((Date.now() - (resuming ? wip.startedAt : Date.now())) / 1000));
+  const [sets, setSets] = useState(() => {
+    if (resuming) return wip.sets;
+    const init = {};
+    exercises.forEach(ex => { init[ex.name] = Array.from({ length: ex.sets || 3 }, () => ({ done: false })); });
+    return init;
+  });
+  const [draft, setDraft] = useState(() => {
+    if (resuming) return wip.draft || {};
+    const init = {};
+    exercises.forEach(ex => { init[ex.name] = draftForExercise(ex); });
+    return init;
+  });
+  const [timers, setTimers] = useState({});   // { exName: startEpoch } for hold exercises
+  const [rest, setRest] = useState(0);
+  const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      setRest(r => (r > 0 ? r - 1 : 0));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [startedAt]);
+
+  function persist(nextSets, nextDraft) {
+    writeWip({ sectionId: section.id, date: dateStr, startedAt: startedAt, sets: nextSets, draft: nextDraft });
+  }
+  function setDraftField(exName, field, val) {
+    setDraft(prev => {
+      const next = Object.assign({}, prev, { [exName]: Object.assign({}, prev[exName] || {}, { [field]: val }) });
+      persist(sets, next);
+      return next;
+    });
+  }
+  function toggleTimer(exName) {
+    setTimers(prev => {
+      if (prev[exName]) {
+        const secs = Math.max(0, Math.floor((Date.now() - prev[exName]) / 1000));
+        setDraftField(exName, 'secs', String(secs));
+        const n = Object.assign({}, prev); delete n[exName]; return n;
+      }
+      return Object.assign({}, prev, { [exName]: Date.now() });
+    });
+  }
+  function logSet(ex) {
+    const d = draft[ex.name] || {};
+    let entry;
+    if (ex.type === 'time') {
+      const secs = parseInt(d.secs, 10);
+      if (!secs) return setErrors(e2 => Object.assign({}, e2, { [ex.name]: 'Run the timer or type the seconds held.' }));
+      entry = { secs: secs };
+    } else if (ex.type === 'reps') {
+      const reps = parseInt(d.reps, 10);
+      if (!reps) return setErrors(e2 => Object.assign({}, e2, { [ex.name]: 'Enter reps to log this set.' }));
+      entry = { reps: reps };
+    } else {
+      const w = d.weight, reps = parseInt(d.reps, 10);
+      if (w === undefined || w === '' || !reps) {
+        return setErrors(e2 => Object.assign({}, e2, { [ex.name]: 'Enter weight and reps to log this set.' }));
+      }
+      entry = { weight: parseFloat(w), reps: reps };
+    }
+    setErrors(e2 => { const n = Object.assign({}, e2); delete n[ex.name]; return n; });
+    setSets(prev => {
+      const arr = (prev[ex.name] || []).slice();
+      const idx = arr.findIndex(s => !s.done);
+      const slot = Object.assign({ done: true }, entry);
+      if (idx === -1) arr.push(slot); else arr[idx] = slot;
+      const next = Object.assign({}, prev, { [ex.name]: arr });
+      // keep the target values filled in for the next set (one tap to log again)
+      const nd = Object.assign({}, draft, { [ex.name]: draftForExercise(ex) });
+      setDraft(nd);
+      persist(next, nd);
+      return next;
+    });
+    setRest(45);
+  }
+
+  const totalSets = exercises.reduce((n, ex) => n + (sets[ex.name] ? sets[ex.name].length : (ex.sets || 3)), 0);
+  const doneSets = Object.values(sets).reduce((n, arr) => n + arr.filter(s => s.done).length, 0);
+  const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+
+  function finish() {
+    const out = exercises.map(ex => {
+      const logged = (sets[ex.name] || []).filter(s => s.done);
+      if (!logged.length) return null;
+      const last = logged[logged.length - 1];
+      const o = { name: ex.name, type: ex.type, sets: logged.length };
+      if (ex.type === 'time') {
+        o.secs = last.secs != null ? last.secs : null;
+        o.allSets = logged.map(s => ({ secs: s.secs != null ? s.secs : null }));
+      } else if (ex.type === 'reps') {
+        o.reps = last.reps != null ? last.reps : null;
+        o.allSets = logged.map(s => ({ reps: s.reps != null ? s.reps : null }));
+      } else {
+        o.weight = last.weight != null ? last.weight : null;
+        o.reps = last.reps != null ? last.reps : null;
+        o.allSets = logged.map(s => ({ weight: s.weight != null ? s.weight : null, reps: s.reps != null ? s.reps : null }));
+      }
+      return o;
+    }).filter(Boolean);
+
+    const entry = {
+      id: 's' + Date.now(),
+      section: section.id,
+      sectionLabel: section.label,
+      date: dateStr,
+      duration: Math.max(1, Math.round((Date.now() - startedAt) / 60000)),
+      exercises: out,
+    };
+    clearWip();
+    onFinish(entry);
+  }
+
+  return e('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', background: '#12102B' } },
+    // header
+    e('div', { style: { padding: 'calc(14px + env(safe-area-inset-top)) 16px 12px', color: '#fff', flexShrink: 0 } },
+      e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } },
+        e('button', { onClick: () => { if (confirm('Discard this session? Logged sets will be lost.')) { clearWip(); onCancel(); } },
+          style: { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', width: 34, height: 34, borderRadius: 10, fontSize: 15, cursor: 'pointer' } }, '✕'),
+        e('div', { style: { fontSize: 13, fontWeight: 800, letterSpacing: 0.5 } }, section.emoji + '  ' + section.label),
+        e('div', { style: { fontVariantNumeric: 'tabular-nums', fontSize: 15, fontWeight: 800, color: section.accent } }, mm + ':' + ss)
+      ),
+      e('div', { style: { height: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 3, overflow: 'hidden' } },
+        e('div', { style: { height: '100%', width: pct + '%', background: 'linear-gradient(90deg,' + section.accent + ',' + PURPLE + ')', transition: 'width .3s' } })
+      ),
+      e('div', { style: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 6, fontWeight: 700 } }, doneSets + ' / ' + totalSets + ' sets' + (rest > 0 ? '   ·   rest ' + rest + 's' : ''))
+    ),
+    // body
+    e('div', { style: { flex: 1, overflowY: 'auto', padding: '4px 12px 24px' } },
+      ...exercises.map(ex => {
+        const arr = sets[ex.name] || [];
+        const nextIdx = arr.findIndex(s => !s.done);
+        const nextSetNum = nextIdx === -1 ? arr.length + 1 : nextIdx + 1;
+        const prev = prevSetsForExercise(sessionLog, section.id, ex.name, dateStr);
+        const prevForThis = prev && prev.sets[nextSetNum - 1] ? prev.sets[nextSetNum - 1] : null;
+        const d = draft[ex.name] || {};
+        const running = timers[ex.name];
+        const runSecs = running ? Math.floor((Date.now() - running) / 1000) : null;
+        return e('div', { key: ex.name, style: { background: 'rgba(255,255,255,0.07)', borderRadius: 16, padding: 14, marginBottom: 10, border: '1px solid rgba(255,255,255,0.08)' } },
+          e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 } },
+            e('div', { style: { fontSize: 14, fontWeight: 800, color: '#fff' } }, ex.name),
+            e('div', { style: { fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap' } }, exTargetText(ex))
+          ),
+          ex.note ? e('div', { style: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 4, lineHeight: 1.45 } }, ex.note) : null,
+          prev ? e('div', { style: { fontSize: 11, color: '#5EEAD4', marginTop: 6, fontWeight: 700 } },
+            'Last time: ' + prev.sets.map(setToText).join(', ')
+          ) : null,
+          // logged set pills
+          arr.some(s => s.done) ? e('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 } },
+            ...arr.filter(s => s.done).map((s, i) => e('div', { key: i, className: 'chip', style: { background: 'rgba(16,185,129,0.18)', color: '#6EE7B7' } },
+              '✓ ' + (s.secs != null ? s.secs + 's' : (s.weight != null ? s.weight + ' lb × ' + s.reps : s.reps + ' reps'))
+            ))
+          ) : null,
+          // input row (hidden once every set is done)
+          nextIdx === -1 ? e('div', { style: { fontSize: 12, color: '#6EE7B7', fontWeight: 800, marginTop: 10 } }, '✓ All sets logged')
+            : e('div', { style: { marginTop: 10 } },
+              prevForThis ? e('div', { style: { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginBottom: 6, fontWeight: 700 } },
+                'Set ' + nextSetNum + ' last time: ' + setToText(prevForThis)
+              ) : null,
+              e('div', { style: { display: 'flex', gap: 8, alignItems: 'stretch' } },
+                ex.type === 'weight' ? e('input', { type: 'number', inputMode: 'decimal', placeholder: 'lb', value: d.weight == null ? '' : d.weight,
+                  onInput: ev => setDraftField(ex.name, 'weight', ev.target.value), style: liveInput }) : null,
+                ex.type === 'time'
+                  ? e('input', { type: 'number', inputMode: 'numeric', placeholder: 'sec', value: running ? runSecs : (d.secs == null ? '' : d.secs),
+                      onInput: ev => setDraftField(ex.name, 'secs', ev.target.value), style: liveInput })
+                  : e('input', { type: 'number', inputMode: 'numeric', placeholder: 'reps', value: d.reps == null ? '' : d.reps,
+                      onInput: ev => setDraftField(ex.name, 'reps', ev.target.value), style: liveInput }),
+                ex.type === 'time' ? e('button', { onClick: () => toggleTimer(ex.name),
+                  style: { padding: '0 14px', borderRadius: 12, border: 'none', background: running ? '#EF4444' : 'rgba(255,255,255,0.16)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' } }, running ? '■ Stop' : '▶ Start') : null,
+                e('button', { onClick: () => logSet(ex),
+                  style: { padding: '0 18px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,' + section.accent + ',' + PURPLE + ')', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' } }, 'Log')
+              ),
+              errors[ex.name] ? e('div', { style: { fontSize: 11, color: '#FCA5A5', marginTop: 6, fontWeight: 700 } }, errors[ex.name]) : null
+            )
+        );
+      })
+    ),
+    // finish
+    e('div', { style: { padding: '10px 16px calc(14px + env(safe-area-inset-bottom))', flexShrink: 0, borderTop: '1px solid rgba(255,255,255,0.08)' } },
+      e('button', { onClick: finish, disabled: doneSets === 0,
+        style: { width: '100%', padding: 15, borderRadius: 14, border: 'none', fontSize: 15, fontWeight: 800, fontFamily: 'inherit',
+          background: doneSets === 0 ? 'rgba(255,255,255,0.12)' : 'linear-gradient(135deg,' + GREEN + ',#059669)', color: '#fff', cursor: doneSets === 0 ? 'default' : 'pointer' } },
+        'Finish Session')
+    )
+  );
+}
+const liveInput = { flex: 1, minWidth: 0, width: '100%', padding: '13px 12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: 16, fontFamily: 'inherit', outline: 'none' };
+
+// ── Today overview ─────────────────────────────────────────────────────────
+function TodayScreen({ sections, sessionLog, onOpen }) {
+  const now = new Date();
+  const hr = now.getHours();
+  const greet = hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
+  const dateLbl = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const doneCount = sections.filter(s => doneToday(sessionLog, s.id)).length;
+
+  return e('div', { style: { padding: 16 } },
+    e('div', { style: { marginBottom: 16 } },
+      e('div', { style: { fontSize: 22, fontWeight: 900, color: TEXT } }, greet + ', Mom.'),
+      e('div', { style: { fontSize: 13, color: MUTED, fontWeight: 600, marginTop: 2 } }, dateLbl)
+    ),
+
+    e('div', { className: 'card', style: { display: 'flex', alignItems: 'center', gap: 12 } },
+      e('div', { className: 'grad', style: { fontSize: 30, fontWeight: 900 } }, doneCount + '/' + sections.length),
+      e('div', null,
+        e('div', { style: { fontSize: 13, fontWeight: 800, color: TEXT } }, doneCount === sections.length ? 'All sections done today 🎉' : 'Sections done today'),
+        e('div', { style: { fontSize: 11, color: MUTED, fontWeight: 600, marginTop: 2 } }, 'Tap a card below to start.')
+      )
+    ),
+
+    ...sections.map(sec => {
+      const st = sectionStats(sessionLog, sec.id);
+      const count = (sec.exercises || []).length;
+      const notSetUp = count === 0;
+      return e('button', { key: sec.id, onClick: () => onOpen(sec.id),
+        style: { display: 'block', width: '100%', textAlign: 'left', background: '#fff', border: '1px solid ' + (st.done ? 'rgba(16,185,129,0.4)' : BORDER),
+          borderRadius: 18, padding: 16, marginBottom: 12, cursor: 'pointer', fontFamily: 'inherit',
+          boxShadow: '0 2px 12px rgba(100,80,220,0.06)' } },
+        e('div', { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+          e('div', { style: { fontSize: 30, lineHeight: 1 } }, sec.emoji),
+          e('div', { style: { flex: 1, minWidth: 0 } },
+            e('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+              e('div', { style: { fontSize: 16, fontWeight: 900, color: TEXT } }, sec.label),
+              st.done ? e('span', { className: 'chip', style: { background: 'rgba(16,185,129,0.15)', color: '#047857' } }, '✓ Done')
+                : (st.streak > 0 ? e('span', { className: 'chip', style: { background: 'rgba(0,198,255,0.12)', color: '#0369A1' } }, '🔥 ' + st.streak + 'd') : null)
+            ),
+            e('div', { style: { fontSize: 11.5, color: MUTED, fontWeight: 600, marginTop: 3 } },
+              notSetUp ? 'No exercises added yet'
+                : count + ' exercise' + (count === 1 ? '' : 's') + '  ·  ' + st.total + ' session' + (st.total === 1 ? '' : 's') + '  ·  last: ' + relDay(st.lastDone))
+          ),
+          e('div', { style: { fontSize: 20, color: MUTED } }, '›')
+        )
+      );
+    })
+  );
+}
+
+// ── Section screen ─────────────────────────────────────────────────────────
+function SectionScreen({ section, sessionLog, onStart }) {
+  const exercises = section.exercises || [];
+  const st = sectionStats(sessionLog, section.id);
+
+  return e('div', { style: { padding: 16 } },
+    // hero
+    e('div', { style: { background: 'linear-gradient(135deg,' + section.hero[0] + ',' + section.hero[1] + ')', borderRadius: 20, padding: 20, marginBottom: 12 } },
+      e('div', { style: { fontSize: 26, marginBottom: 4 } }, section.emoji),
+      e('div', { style: { fontSize: 22, fontWeight: 900, color: '#fff' } }, section.label),
+      e('div', { style: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: 600, marginTop: 6, lineHeight: 1.5 } }, section.blurb),
+      st.done ? e('div', { style: { marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(16,185,129,0.2)', color: '#6EE7B7', padding: '5px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800 } }, '✓ Done today') : null
+    ),
+
+    // stats
+    e('div', { className: 'card', style: { display: 'flex', gap: 8 } },
+      ...[['Sessions', st.total], ['Last 7 days', st.week], ['Day streak', st.streak]].map((row, i) =>
+        e('div', { key: row[0], style: { flex: 1, textAlign: 'center', borderLeft: i ? '1px solid ' + BORDER : 'none' } },
+          e('div', { className: 'grad', style: { fontSize: 22, fontWeight: 900 } }, row[1]),
+          e('div', { style: { fontSize: 9.5, color: MUTED, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 } }, row[0])
+        )
+      )
+    ),
+
+    exercises.length === 0
+      ? e('div', { className: 'card', style: { textAlign: 'center', color: MUTED, fontSize: 13, padding: 28, lineHeight: 1.6 } },
+          e('div', { style: { fontSize: 26, marginBottom: 8 } }, '📝'),
+          section.label + ' exercises will be added here soon.')
+      : e('div', { className: 'card', style: { padding: 0, overflow: 'hidden' } },
+          e('div', { style: { fontSize: 11, fontWeight: 800, color: MUTED, textTransform: 'uppercase', letterSpacing: 0.5, padding: '14px 16px 8px' } }, 'The exercises'),
+          ...exercises.map((ex, i) => {
+            const prev = prevSetsForExercise(sessionLog, section.id, ex.name);
+            return e('div', { key: ex.name, style: { padding: '10px 16px', borderTop: '1px solid ' + BORDER } },
+              e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 } },
+                e('div', { style: { fontSize: 13.5, fontWeight: 700, color: TEXT } }, ex.name),
+                e('div', { style: { fontSize: 11, fontWeight: 800, color: MUTED, whiteSpace: 'nowrap' } }, exTargetText(ex))
+              ),
+              ex.note ? e('div', { style: { fontSize: 11, color: MUTED, marginTop: 3, lineHeight: 1.45 } }, ex.note) : null,
+              prev ? e('div', { style: { fontSize: 10.5, color: '#0369A1', fontWeight: 700, marginTop: 4 } }, 'last: ' + prev.sets.map(setToText).join(', ')) : null
+            );
+          })
+        ),
+
+    exercises.length > 0
+      ? e('button', { className: 'btn-primary', onClick: () => onStart(section), style: { boxShadow: '0 8px 22px rgba(123,47,255,0.25)' } },
+          (st.done ? '▶ Start ' + section.label + ' again' : '▶ Start ' + section.label))
+      : null
+  );
+}
+
+// ── History ────────────────────────────────────────────────────────────────
+function HistoryScreen({ sections, sessionLog, onDelete }) {
+  const [open, setOpen] = useState({});
+  const [filter, setFilter] = useState('all');
+  const secById = {}; sections.forEach(s => { secById[s.id] = s; });
+
+  const dates = Object.keys(sessionLog || {}).filter(d => (sessionLog[d] || []).length).sort().reverse();
+  const total = dates.reduce((n, d) => n + sessionLog[d].filter(s => filter === 'all' || s.section === filter).length, 0);
+  const wk = new Date(); wk.setDate(wk.getDate() - 6);
+  const wkStr = ymd(wk);
+  const thisWeek = dates.filter(d => d >= wkStr).reduce((n, d) => n + sessionLog[d].filter(s => filter === 'all' || s.section === filter).length, 0);
+
+  return e('div', { style: { padding: 16 } },
+    e('div', { className: 'card', style: { display: 'flex', gap: 12 } },
+      e('div', { style: { flex: 1, textAlign: 'center' } },
+        e('div', { className: 'grad', style: { fontSize: 24, fontWeight: 900 } }, total),
+        e('div', { style: { fontSize: 10, color: MUTED, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 } }, 'Sessions')
+      ),
+      e('div', { style: { width: 1, background: BORDER } }),
+      e('div', { style: { flex: 1, textAlign: 'center' } },
+        e('div', { className: 'grad', style: { fontSize: 24, fontWeight: 900 } }, thisWeek),
+        e('div', { style: { fontSize: 10, color: MUTED, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 } }, 'Last 7 days')
+      )
+    ),
+
+    // section filter
+    e('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
+      ...[['all', 'All']].concat(sections.map(s => [s.id, s.emoji + ' ' + s.label])).map(f =>
+        e('button', { key: f[0], onClick: () => setFilter(f[0]),
+          style: { padding: '7px 12px', borderRadius: 20, border: '1px solid ' + BORDER, cursor: 'pointer', fontFamily: 'inherit',
+            fontSize: 11.5, fontWeight: 800, background: filter === f[0] ? 'linear-gradient(135deg,' + ACCENT + ',' + PURPLE + ')' : '#fff',
+            color: filter === f[0] ? '#fff' : MUTED } }, f[1])
+      )
+    ),
+
+    dates.length === 0 ? e('div', { className: 'card', style: { textAlign: 'center', color: MUTED, fontSize: 13, padding: 28 } },
+      'No sessions logged yet.') : null,
+
+    ...dates.map(dt => {
+      const rows = (sessionLog[dt] || []).filter(s => filter === 'all' || s.section === filter);
+      if (!rows.length) return null;
+      const label = new Date(dt + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      return e('div', { key: dt, className: 'card', style: { padding: 0, overflow: 'hidden' } },
+        ...rows.map((s, si) => {
+          const key = dt + ':' + s.id;
+          const isOpen = open[key];
+          const sec = secById[s.section] || { emoji: '•', label: s.sectionLabel || s.section, accent: MUTED };
+          return e('div', { key: s.id, style: { borderTop: si ? '1px solid ' + BORDER : 'none' } },
+            e('button', { onClick: () => setOpen(o => Object.assign({}, o, { [key]: !o[key] })),
+              style: { width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: 14, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' } },
+              e('div', { style: { fontSize: 18 } }, sec.emoji),
+              e('div', { style: { flex: 1 } },
+                e('div', { style: { fontSize: 13, fontWeight: 800, color: TEXT } }, sec.label),
+                e('div', { style: { fontSize: 11, color: MUTED, fontWeight: 600 } }, label + '  ·  ' + (s.exercises || []).length + ' exercises' + (s.duration ? '  ·  ' + s.duration + ' min' : ''))
+              ),
+              e('div', { style: { color: MUTED, fontSize: 12 } }, isOpen ? '▲' : '▼')
+            ),
+            isOpen ? e('div', { style: { padding: '0 14px 14px' } },
+              ...(s.exercises || []).map(x => e('div', { key: x.name, style: { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', fontSize: 12 } },
+                e('div', { style: { color: TEXT, fontWeight: 700 } }, x.name),
+                e('div', { style: { color: MUTED, fontWeight: 600, textAlign: 'right' } },
+                  (x.allSets || []).map(setToText).join(', ') || '—')
+              )),
+              e('button', { onClick: () => { if (confirm('Delete this logged session?')) onDelete(dt, s.id); },
+                style: { marginTop: 8, background: 'none', border: 'none', color: '#EF4444', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: 0 } }, 'Delete')
+            ) : null
+          );
+        })
+      );
+    })
+  );
+}
+
+// ── Settings sheet (Push / Restore cloud) ──────────────────────────────────
+function SettingsSheet({ onClose }) {
+  const [msg, setMsg] = useState('');
+  const last = localStorage.getItem(LS + 'lastCloudSync');
+  return e('div', { style: { position: 'fixed', inset: 0, zIndex: 500, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' } },
+    e('div', { onClick: onClose, style: { position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' } }),
+    e('div', { style: { position: 'relative', background: '#fff', borderRadius: '20px 20px 0 0', padding: '20px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' } },
+      e('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 } },
+        e('div', { style: { fontSize: 15, fontWeight: 900, color: TEXT } }, 'Cloud sync'),
+        e('button', { onClick: onClose, style: { background: 'none', border: 'none', fontSize: 20, color: MUTED, cursor: 'pointer' } }, '✕')
+      ),
+      e('div', { style: { fontSize: 12, color: MUTED, marginBottom: 14, lineHeight: 1.5 } },
+        'Every change saves to the cloud automatically. Use these if you switched phones or want to force it.' +
+        (last ? '  Last sync: ' + new Date(last).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')),
+      msg ? e('div', { style: { fontSize: 12, fontWeight: 700, color: '#047857', marginBottom: 10 } }, msg) : null,
+      e('div', { style: { display: 'flex', gap: 10 } },
+        e('button', { className: 'btn-primary', style: { flex: 1 }, onClick: () => {
+          setMsg('Pushing…');
+          pushAllToSupabase().then(() => { localStorage.setItem(LS + 'lastCloudSync', new Date().toISOString()); setMsg('✓ Pushed to cloud'); });
+        } }, '☁️ Push to Cloud'),
+        e('button', { className: 'btn-ghost', style: { flex: 1, color: TEXT }, onClick: () => {
+          setMsg('Restoring…');
+          syncFromSupabase().then(() => { setMsg('✓ Restored — reloading'); setTimeout(() => location.reload(), 900); });
+        } }, '🔄 Restore')
+      )
+    )
+  );
+}
+
+// ── App ────────────────────────────────────────────────────────────────────
+function App() {
+  const [tab, setTab] = useState('today');            // today | hand | home | pool | history
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sections, setSections] = useState(() => load('sections') || SECTIONS);
+  const [sessionLog, setSessionLog] = useState(() => load('sessionLog') || {});
+  const [live, setLive] = useState(() => {
+    const w = readWip();
+    return w ? { sectionId: w.sectionId, date: w.date } : null;
+  });
+
+  useEffect(() => {
+    syncFromSupabase().then(pulled => {
+      // Code is the source of truth for exercise definitions. If the cloud copy
+      // is from an older PROGRAM_VERSION, refresh `sections` from code and keep
+      // the pulled history.
+      if (load('programVersion') !== PROGRAM_VERSION) {
+        save('sections', SECTIONS);
+        save('programVersion', PROGRAM_VERSION);
+      }
+      setSections(load('sections') || SECTIONS);
+      setSessionLog(load('sessionLog') || {});
+    });
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  }, []);
+
+  function startLive(section) { setLive({ sectionId: section.id, date: today() }); }
+
+  function finishLive(entry) {
+    const next = Object.assign({}, sessionLog, { [entry.date]: [...(sessionLog[entry.date] || []), entry] });
+    setSessionLog(next); save('sessionLog', next);
+    setLive(null);
+    setTab('history');
+  }
+
+  function deleteSession(dt, id) {
+    const dayArr = (sessionLog[dt] || []).filter(s => s.id !== id);
+    const next = Object.assign({}, sessionLog);
+    if (dayArr.length) next[dt] = dayArr; else delete next[dt];
+    setSessionLog(next); save('sessionLog', next);
+  }
+
+  const secById = {}; sections.forEach(s => { secById[s.id] = s; });
+
+  if (live) {
+    const section = secById[live.sectionId] || sections[0];
+    return e('div', { id: 'app-inner', style: { height: '100%' } },
+      e(LiveSession, { section, dateStr: live.date, sessionLog, onFinish: finishLive, onCancel: () => setLive(null) })
+    );
+  }
+
+  let body;
+  if (tab === 'today') body = e(TodayScreen, { sections, sessionLog, onOpen: id => setTab(id) });
+  else if (tab === 'history') body = e(HistoryScreen, { sections, sessionLog, onDelete: deleteSession });
+  else body = e(SectionScreen, { section: secById[tab] || sections[0], sessionLog, onStart: startLive });
+
+  const navItems = [['today', '📆', 'Today']]
+    .concat(sections.map(s => [s.id, s.emoji, s.label.split(' ')[0]]))
+    .concat([['history', '📋', 'History']]);
+
+  return e('div', { id: 'app-inner', style: { display: 'flex', flexDirection: 'column', height: '100%' } },
+    e('div', { className: 'header' },
+      e('div', { style: { fontSize: 15, fontWeight: 800, color: TEXT } }, 'Mom ', e('span', { style: { color: MUTED, fontWeight: 600 } }, '· Rehab')),
+      e('button', { onClick: () => setSettingsOpen(true), title: 'Cloud sync',
+        style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: MUTED, padding: '2px 4px' } }, '☁️')
+    ),
+    e('div', { className: 'content', style: { padding: 0 } }, body),
+    e('nav', { className: 'nav' },
+      ...navItems.map(it => e('button', { key: it[0], className: 'nav-btn' + (tab === it[0] ? ' active' : ''), onClick: () => setTab(it[0]) },
+        e('div', { style: { fontSize: 20, lineHeight: 1 } }, it[1]), it[2]))
+    ),
+    settingsOpen ? e(SettingsSheet, { onClose: () => setSettingsOpen(false) }) : null
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(e(App));
+</script>
+</body></html>
