@@ -92,7 +92,7 @@ const GREEN="#10B981";
 // ── The three sections + their exercises ─────────────────────────────────────
 // Exercise arrays are intentionally EMPTY for now — Lewis drops the real
 // exercises in later, then bumps PROGRAM_VERSION.
-const PROGRAM_VERSION = 1;
+const PROGRAM_VERSION = 2;
 const SECTIONS = [
   {
     id: 'hand',
@@ -101,7 +101,20 @@ const SECTIONS = [
     accent: '#00C6FF',
     hero: ['#0E4A63', '#12386B'],
     blurb: 'Prescribed hand-therapy work. Do these as directed by the therapist — slow and controlled, stop if there is sharp pain.',
-    exercises: [],
+    exercises: [
+      { name: 'Open Hand → Relaxed Fist', type: 'reps', sets: 2, reps: 8,
+        note: 'Open the hand as wide as it goes, then close to a loose, relaxed fist — no hard squeezing. Rest 20 sec between sets.' },
+      { name: 'Finger Spreads', type: 'reps', sets: 2, reps: 8, repsText: '8 reps · 2-sec hold',
+        note: 'Fingers together, then spread them wide apart. Hold 2 sec at the end, then relax. Rest 20 sec between sets.' },
+      { name: 'Thumb-to-Finger Touches', type: 'reps', sets: 2, reps: 5, repsText: '5 rounds',
+        note: 'One round = thumb tip touches each fingertip in turn, index through pinky. Rest 20 sec between sets.' },
+      { name: 'Tendon Glides', type: 'reps', sets: 2, reps: 5, repsText: '5 sequences',
+        note: 'Straight hand → hook fist → full fist → tabletop → back to straight. That whole cycle is one sequence. Rest 30 sec between sets.' },
+      { name: 'Individual Finger Lifts', type: 'reps', sets: 2, reps: 5, repsText: '5 reps / finger',
+        note: 'Hand flat on the table. Lift one finger at a time keeping the others down — 5 lifts each finger. Rest 20 sec between sets.' },
+      { name: 'Gentle Wrist Up & Down', type: 'reps', sets: 2, reps: 8,
+        note: 'Forearm resting on the table with the hand off the edge. Slowly raise the wrist up, then lower it down. Rest 30 sec between sets.' },
+    ],
   },
   {
     id: 'home',
