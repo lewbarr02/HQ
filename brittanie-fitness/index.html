@@ -59,6 +59,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 'use strict';
 const e = React.createElement;
@@ -80,6 +81,72 @@ function save(k,v){
   _SB.from('hq_data').upsert({user_id:'brittanie',key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'}).then(({error})=>{if(error)console.warn('SB save error',k,error);else localStorage.setItem('hq_lastCloudSync',new Date().toISOString());});
 }
 function load(k){try{const s=localStorage.getItem("hq_"+k);return s?JSON.parse(s):null;}catch{return null;}}
+
+// ── Progress photo milestones (Supabase Storage) ────────────────────────────
+// Path: brittanie/milestones/{slot}.jpg — one photo per slot, overwritten in place.
+const PROGRESS_PHOTO_BUCKET = 'progress-photos';
+const PROGRESS_MILESTONE_SLOTS = ['start', 'current', 'goal'];
+
+function compressPhotoBlob(file, cb) {
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var img = new Image();
+    img.onload = function() {
+      var MAX = 900;
+      var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      var w = Math.round(img.width * scale);
+      var h = Math.round(img.height * scale);
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(cb, 'image/jpeg', 0.8);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function uploadMilestonePhoto(file, slot, date) {
+  date = date || today();
+  if (PROGRESS_MILESTONE_SLOTS.indexOf(slot) === -1) throw new Error('invalid slot: ' + slot);
+
+  var blob = await new Promise(function(resolve) { compressPhotoBlob(file, resolve); });
+  var path = 'brittanie/milestones/' + slot + '.jpg';
+
+  var uploadRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).upload(path, blob, {
+    upsert: true, contentType: 'image/jpeg',
+  });
+  if (uploadRes.error) throw uploadRes.error;
+
+  var dbRes = await _SB.from('progress_milestones').upsert({
+    user_id: 'brittanie', slot: slot, date: date, storage_path: path, updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,slot' });
+  if (dbRes.error) throw dbRes.error;
+
+  var signRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).createSignedUrl(path, 3600);
+  if (signRes.error) throw signRes.error;
+
+  return { slot: slot, date: date, storagePath: path, url: signRes.data.signedUrl };
+}
+
+async function getMilestonePhotos() {
+  var result = { start: null, current: null, goal: null };
+  var { data, error } = await _SB.from('progress_milestones')
+    .select('slot,date,storage_path')
+    .eq('user_id', 'brittanie');
+  if (error || !data || data.length === 0) return result;
+
+  var paths = data.map(function(r) { return r.storage_path; });
+  var signRes = await _SB.storage.from(PROGRESS_PHOTO_BUCKET).createSignedUrls(paths, 3600);
+  var urlByPath = {};
+  (signRes.data || []).forEach(function(s) { if (s.signedUrl) urlByPath[s.path] = s.signedUrl; });
+
+  data.forEach(function(r) {
+    result[r.slot] = { date: r.date, storagePath: r.storage_path, url: urlByPath[r.storage_path] || null };
+  });
+  return result;
+}
 
 function addPassiveWin(text, date) {
   var d = date || today();
@@ -121,7 +188,7 @@ async function syncFromSupabase(){
 }
 
 async function pushAllToSupabase(){
-  var keys=['workoutLog','currentProgram','programMeta','coachProfile','coachWeight','coachGoalWeight','coachGoalBf','macroLog','macroTargets','foodPipeline','photoIndex','proteinLog','proteinStaples','bodyWeightLog','checkinHistory','progressStartMeta','progressCurrentMeta','progressGoalMeta'];
+  var keys=['workoutLog','currentProgram','programMeta','coachProfile','coachWeight','coachGoalWeight','coachGoalBf','macroLog','macroTargets','foodPipeline','photoIndex','proteinLog','proteinStaples','bodyWeightLog','checkinHistory','workoutCount','exerciseBank'];
   var rows=keys.map(k=>{var v=load(k);return v!==null?{user_id:'brittanie',key:k,value:v,updated_at:new Date().toISOString()}:null;}).filter(Boolean);
   if(rows.length===0)return;
   var {error}=await _SB.from('hq_data').upsert(rows,{onConflict:'user_id,key'});
@@ -168,6 +235,29 @@ const CATEGORY_COLORS = {
   Legs: { bg:'#F59E0B20', border:'#F59E0B', text:'#F59E0B', grad:'linear-gradient(135deg,#F59E0B,#EF4444)' },
   Core: { bg:'#8B5CF620', border:'#8B5CF6', text:'#8B5CF6', grad:'linear-gradient(135deg,#8B5CF6,#EC4899)' },
 };
+
+// 4-workout sequential rotation over a 48-workout block. hq_workoutCount holds workouts
+// completed so far; the next workout's type is selected by rotation position, not day-of-week.
+const WORKOUT_BLOCK_LENGTH = 48;
+const WORKOUT_ROTATION = ['Glute & Hamstring','Upper Body Tone','Quad & Glute','Full Lower + Core'];
+const WORKOUT_ROTATION_DESC = {
+  'Glute & Hamstring': 'Monday · Posterior Priority',
+  'Upper Body Tone': 'Tuesday · Tone, Not Bulk',
+  'Quad & Glute': 'Thursday · Anterior Priority',
+  'Full Lower + Core': 'Friday · Heaviest Day',
+};
+function nextWorkoutType(workoutCount) {
+  var idx = ((workoutCount - 1) % 4 + 4) % 4;
+  return WORKOUT_ROTATION[idx];
+}
+// Programs may not use the canonical dayLabel text exactly, so rotation slots are matched
+// by array position, not by label string. The returned object's dayLabel always reflects
+// the canonical rotation type so downstream matching (history, write-back) stays consistent.
+function programDayByType(prog, typeLabel) {
+  var idx = WORKOUT_ROTATION.indexOf(typeLabel);
+  if (idx===-1 || !prog || !prog.days || !prog.days[idx]) return null;
+  return Object.assign({}, prog.days[idx], {dayLabel: typeLabel, _rotationIdx: idx});
+}
 
 function daysSince(workoutLog, muscleId) {
   var keys = Object.keys(workoutLog).sort().reverse();
@@ -301,6 +391,12 @@ function computeDaysToGoal(input) {
   };
 }
 
+// ── Exercise Bank ────────────────────────────────────────────────────────
+const EXERCISE_BANK_CATEGORIES = ['Upper Body','Lower Body','Core','Cardio','Mobility','Other'];
+const EXERCISE_BANK_TYPES = [ ['weight','Weight'], ['reps','Reps'], ['time','Time'] ];
+const EXERCISE_BANK_TYPE_LABELS = { weight:'Weight', reps:'Reps', time:'Time' };
+function makeExerciseBankId() { return 'ex'+Date.now()+Math.random().toString(36).slice(2,8); }
+
 var DEFAULT_PROTEIN_STAPLES = [
   {id:'greekYogurt', label:'Greek Yogurt', emoji:'🥛', proteinPer100g:10, calPer100g:59, servingGrams:200},
   {id:'iso100', label:'ISO100', emoji:'🥤', proteinPer100g:81, calPer100g:358, servingGrams:61},
@@ -394,6 +490,11 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [executeDraft, setExecuteDraft] = useState(_wip ? (_wip.draft||{}) : {}); // { exName: {weight,reps} } current set inputs
   const [executeDate, setExecuteDate] = useState(_wip && _wip.date ? _wip.date : today()); // date this Live Workout session logs to
   const [executeSetError, setExecuteSetError] = useState({}); // { exName: "message" } — missing weight/reps warning
+  const [executeAdHocExercises, setExecuteAdHocExercises] = useState(_wip && _wip.adHoc ? _wip.adHoc : []);
+  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
+  const [addExerciseSearch, setAddExerciseSearch] = useState('');
+  const [executeTimeRunning, setExecuteTimeRunning] = useState({}); // { exName: startTimestamp } while a Time-type stopwatch runs
+  const [showDrinkPrompt, setShowDrinkPrompt] = useState(false); // full-screen "Drink" nudge shown after each logged set
   const [checkinForm, setCheckinForm] = useState({
     sessionsCompleted: '', energy: 3, hasSoreness: false, soreness: '',
     hasPain: false, pain: '', weight: '', sleepQuality: 3,
@@ -404,16 +505,33 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [checkinResponse, setCheckinResponse] = useState(null);
   const [checkinHistory, setCheckinHistory] = useState(function(){ return load('checkinHistory') || {}; });
   const [bodyWeightLog, setBodyWeightLog] = useState(function(){ return load('bodyWeightLog') || {}; });
-  const [progressStartPhoto, setProgressStartPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_start'); });
-  const [progressStartMeta, setProgressStartMeta] = useState(function(){ return load('progressStartMeta'); });
-  const [progressCurrentPhoto, setProgressCurrentPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_current'); });
-  const [progressCurrentMeta, setProgressCurrentMeta] = useState(function(){ return load('progressCurrentMeta'); });
-  const [progressGoalPhoto, setProgressGoalPhoto] = useState(function(){ return localStorage.getItem('hq_photo_progress_goal'); });
-  const [progressGoalMeta, setProgressGoalMeta] = useState(function(){ return load('progressGoalMeta'); });
+  // Populated from Supabase Storage on mount (see useEffect below) — no longer localStorage-only.
+  const [progressStartPhoto, setProgressStartPhoto] = useState(null);
+  const [progressStartMeta, setProgressStartMeta] = useState(null);
+  const [progressCurrentPhoto, setProgressCurrentPhoto] = useState(null);
+  const [progressCurrentMeta, setProgressCurrentMeta] = useState(null);
+  const [progressGoalPhoto, setProgressGoalPhoto] = useState(null);
+  const [progressGoalMeta, setProgressGoalMeta] = useState(null);
+  const [milestoneUploading, setMilestoneUploading] = useState(null);
   const startPhotoRef = useRef(null);
   const currentPhotoRef = useRef(null);
   const goalPhotoRef = useRef(null);
   const [zoomedPhoto, setZoomedPhoto] = useState(null); // {label, src}
+  // She already has 17 real logged workouts (through 2026-08-27, last was Quad & Glute) — seed at 20
+  // so the rotation continues forward from there (Full Lower + Core next) instead of resetting to Day 1.
+  const [workoutCount, setWorkoutCount] = useState(function(){ var c = load('workoutCount'); return c==null ? 20 : c; });
+  const [exerciseBank, setExerciseBank] = useState(function(){ return load('exerciseBank') || []; });
+  const [bankSearch, setBankSearch] = useState('');
+  const [showAddExercise, setShowAddExercise] = useState(false);
+  const [bankForm, setBankForm] = useState({ name:'', category:'Upper Body', type:'weight', notes:'' });
+  // Lift progress tab
+  const [liftsSubview, setLiftsSubview] = useState('single'); // single | all
+  const [selectedLiftExercise, setSelectedLiftExercise] = useState(null);
+  const [liftsGroupFilter, setLiftsGroupFilter] = useState('All');
+  const liftChartRef = useRef(null);
+  const liftChartInstance = useRef(null);
+  const allLiftsChartRef = useRef(null);
+  const allLiftsChartInstance = useRef(null);
   const safeLog = workoutLog || {};
 
   // Workout execution timer — lives at component level (rules of hooks)
@@ -425,6 +543,100 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     },1000);
     return function(){clearInterval(iv);};
   },[executeStartTime]);
+
+  useEffect(function(){
+    getMilestonePhotos().then(function(m){
+      if (m.start) { setProgressStartPhoto(m.start.url); setProgressStartMeta({date:m.start.date}); }
+      if (m.current) { setProgressCurrentPhoto(m.current.url); setProgressCurrentMeta({date:m.current.date}); }
+      if (m.goal) { setProgressGoalPhoto(m.goal.url); setProgressGoalMeta({date:m.goal.date}); }
+    }).catch(function(){});
+  }, []);
+
+  // Single Lift line chart — Actual Logged vs. Roadmap Target
+  useEffect(function(){
+    if (view !== 'lifts' || liftsSubview !== 'single') {
+      if (liftChartInstance.current) { liftChartInstance.current.destroy(); liftChartInstance.current = null; }
+      return;
+    }
+    if (!liftChartRef.current || !window.Chart) return;
+    var allEx = getAllTrackedExercises();
+    if (!allEx.length) return;
+    var exKey = (selectedLiftExercise && allEx.some(function(ex){return ex.key===selectedLiftExercise;})) ? selectedLiftExercise : allEx[0].key;
+    var exMeta = allEx.find(function(ex){return ex.key===exKey;});
+    var field = fieldForExType(exMeta.exType);
+    var histGroup = exMeta.group==='Ad Hoc' ? null : exMeta.group;
+    var history = getExerciseHistory(exMeta.name, histGroup, field);
+    var roadmap = exMeta.group==='Ad Hoc' ? [] : getRoadmap(history, exMeta.targetWeight);
+    var unit = unitForExType(exMeta.exType);
+    if (liftChartInstance.current) { liftChartInstance.current.destroy(); liftChartInstance.current = null; }
+    var datasets = [
+      { label:'Actual Logged', data:history.map(function(p){return p.value;}), borderColor:ACCENT, backgroundColor:ACCENT, borderWidth:2, tension:0.25, pointRadius:3, pointBackgroundColor:ACCENT }
+    ];
+    if (roadmap.length) datasets.push({ label:'Roadmap Target', data:roadmap.map(function(p){return p.value;}), borderColor:MUTED, borderDash:[6,4], borderWidth:2, pointRadius:0, tension:0 });
+    liftChartInstance.current = new window.Chart(liftChartRef.current.getContext('2d'), {
+      type: 'line',
+      data: { labels: history.map(function(p){ return p.date; }), datasets: datasets },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}, scales:{y:{beginAtZero:false,title:{display:true,text:unit,font:{size:10}},ticks:{font:{size:10}}},x:{ticks:{font:{size:9}}}} }
+    });
+    return function(){ if (liftChartInstance.current) { liftChartInstance.current.destroy(); liftChartInstance.current = null; } };
+  }, [view, liftsSubview, selectedLiftExercise, workoutLog, currentProgram]);
+
+  // All Lifts horizontal bar chart — % gain since baseline, colored by workout day
+  useEffect(function(){
+    if (view !== 'lifts' || liftsSubview !== 'all') {
+      if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; }
+      return;
+    }
+    if (!allLiftsChartRef.current || !window.Chart) return;
+    var groupColors = {'Glute & Hamstring':'#2a78d6','Upper Body Tone':'#9085e9','Quad & Glute':'#1baf7a','Full Lower + Core':'#eb6834','Ad Hoc':'#f0a500'};
+    var NO_DATA_COLOR = '#B0B0C0';
+    var allEx = getAllTrackedExercises().filter(function(ex){ return liftsGroupFilter==='All' || ex.group===liftsGroupFilter; });
+    var rows = allEx.map(function(ex){
+      var field = fieldForExType(ex.exType);
+      var histGroup = ex.group==='Ad Hoc' ? null : ex.group;
+      var history = getExerciseHistory(ex.name, histGroup, field);
+      var hasData = history.length > 0;
+      var baseline = hasData ? history[0].value : null;
+      var current = hasData ? history[history.length-1].value : null;
+      var rawPct = (hasData && baseline) ? Math.round((current-baseline)/baseline*100) : 0;
+      return { name: ex.displayName, group: ex.group, rawPct: rawPct, hasData: hasData };
+    });
+    // Every exercise always gets a visible bar: a real 0% gain (or no data yet) is stubbed
+    // to a minimum value of 1 so it renders, with the true "0%" drawn as a label on top.
+    var barValues = rows.map(function(r){ return r.rawPct !== 0 ? r.rawPct : 1; });
+    var barColors = rows.map(function(r){ return r.hasData ? groupColors[r.group] : NO_DATA_COLOR; });
+    var stubLabelPlugin = {
+      id: 'stubLabels',
+      afterDatasetsDraw: function(chart) {
+        var ctx = chart.ctx;
+        var meta = chart.getDatasetMeta(0);
+        ctx.save();
+        ctx.font = '10px sans-serif';
+        ctx.fillStyle = MUTED;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        meta.data.forEach(function(bar, i){
+          if (rows[i] && rows[i].rawPct === 0) ctx.fillText('0%', bar.x + 4, bar.y);
+        });
+        ctx.restore();
+      }
+    };
+    if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; }
+    allLiftsChartInstance.current = new window.Chart(allLiftsChartRef.current.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(function(r){ return r.name; }),
+        datasets: [{ label:'% Gain Since Baseline', data:barValues, backgroundColor:barColors }]
+      },
+      plugins: [stubLabelPlugin],
+      options: {
+        indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:function(ctx){ return (rows[ctx.dataIndex].hasData?'':'No data — ')+rows[ctx.dataIndex].rawPct+'% gain'; } } } },
+        scales:{x:{ticks:{callback:function(v){return v+'%';},font:{size:10}}},y:{ticks:{font:{size:10}}}}
+      }
+    });
+    return function(){ if (allLiftsChartInstance.current) { allLiftsChartInstance.current.destroy(); allLiftsChartInstance.current = null; } };
+  }, [view, liftsSubview, liftsGroupFilter, workoutLog, currentProgram]);
 
   // ── Log workout ───────────────────────────────────────────────────────────
   function toggleGroup(id) {
@@ -446,8 +658,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setView('log');
   }
 
-  function saveWip(day, sets, startTime, activeEx, draft, date) {
-    localStorage.setItem('hq_wipWorkout', JSON.stringify({day:day, sets:sets, startTime:startTime, activeEx:activeEx, draft:draft||{}, date:date||today()}));
+  function saveWip(day, sets, startTime, activeEx, draft, date, adHoc) {
+    localStorage.setItem('hq_wipWorkout', JSON.stringify({day:day, sets:sets, startTime:startTime, activeEx:activeEx, draft:draft||{}, date:date||today(), adHoc:adHoc||[]}));
   }
   function clearWip() { localStorage.removeItem('hq_wipWorkout'); }
 
@@ -470,7 +682,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setExecuteElapsed(0);
     setExecuteRestSecs(0);
     setExecuteDate(d);
-    saveWip(day, sets, startTime, firstEx, {}, d);
+    setExecuteAdHocExercises([]);
+    setExecuteTimeRunning({});
+    saveWip(day, sets, startTime, firstEx, {}, d, []);
     setView('execute');
   }
 
@@ -490,6 +704,23 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         allSets: logged.map(function(s){return {weight:parseFloat(s.weight)||null,reps:parseInt(s.reps)||null};})
       };
     }).filter(Boolean);
+
+    // Ad-hoc exercises added mid-workout log the same way, tagged so the Progress tab can find them
+    var adHocExercises = executeAdHocExercises.map(function(aEx){
+      var logged = (executeSets[aEx.name]||[]).filter(function(s){return s.done;});
+      if(!logged.length) return null;
+      var last = logged[logged.length-1];
+      if (aEx.type === 'time') {
+        return { name:aEx.name, type:'time', adHoc:true, duration: last.duration!=null?parseInt(last.duration):null,
+          sets: logged.length, allSets: logged.map(function(s){return {duration:s.duration!=null?parseInt(s.duration):null};}) };
+      } else if (aEx.type === 'reps') {
+        return { name:aEx.name, type:'reps', adHoc:true, reps: last.reps!=null?parseInt(last.reps):null,
+          sets: logged.length, allSets: logged.map(function(s){return {reps:s.reps!=null?parseInt(s.reps):null};}) };
+      }
+      return { name:aEx.name, type:'weight', adHoc:true, weight: last.weight!=null?parseFloat(last.weight):null, reps: last.reps!=null?parseInt(last.reps):null,
+        sets: logged.length, allSets: logged.map(function(s){return {weight:parseFloat(s.weight)||null,reps:parseInt(s.reps)||null};}) };
+    }).filter(Boolean);
+    exercises = exercises.concat(adHocExercises);
 
     var groups = [];
     var exerciseGroupMap = {
@@ -524,14 +755,16 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var day = safeLog[td]||[];
     var newLog = Object.assign({},safeLog,{[td]:[...day,entry]});
     setWorkoutLog(newLog); save('workoutLog',newLog);
+    var newWorkoutCount = workoutCount + 1;
+    setWorkoutCount(newWorkoutCount); save('workoutCount', newWorkoutCount);
     autoCheckExercise(td, habitLog);
     addPassiveWin('Logged a workout: '+(executeDay.dayLabel||groups.join(', ')));
 
     // Update lastWeight/lastReps on the program
-    if(currentProgram && exercises.length>0){
+    if(currentProgram && exercises.length>0 && executeDay._rotationIdx!=null){
       var updatedProg = JSON.parse(JSON.stringify(currentProgram));
-      updatedProg.days = updatedProg.days.map(function(d){
-        if(d.dayLabel!==executeDay.dayLabel) return d;
+      updatedProg.days = updatedProg.days.map(function(d,i){
+        if(i!==executeDay._rotationIdx) return d;
         return Object.assign({},d,{exercises:d.exercises.map(function(ex){
           var logged = exercises.find(function(e){return e.name===ex.name;});
           if(!logged) return ex;
@@ -548,6 +781,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setExecuteDay(null); setExecuteSets({}); setExecuteStartTime(null);
     setExecuteElapsed(0); setExecuteRestSecs(0); setExecuteActiveEx(null);
     setExecuteDate(today());
+    setExecuteAdHocExercises([]); setExecuteTimeRunning({});
     clearWip();
     setSelectedProgramDay(null); setProgramExerciseLogs({}); setSelectedGroups([]);
     setView('log');
@@ -586,7 +820,110 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setExecuteDraft(newDraft);
       setExecuteActiveEx(nextEx);
       setExecuteRestSecs(90);
-      saveWip(executeDay, newSets, executeStartTime, nextEx, newDraft, executeDate);
+      saveWip(executeDay, newSets, executeStartTime, nextEx, newDraft, executeDate, executeAdHocExercises);
+      setShowDrinkPrompt(true);
+    }
+
+    // Ad-hoc exercises (added mid-workout from the Exercise Bank) don't have a fixed set count
+    // from the program, so each Log Set just appends a new set rather than filling a pre-sized slot.
+    function logAdHocSet(exName, exType) {
+      var draft = executeDraft[exName]||{};
+      var newSet;
+      if (exType === 'time') {
+        var secs = parseInt(draft.duration);
+        if (!secs) { setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:'Start the timer or enter a duration to log this set'});}); return; }
+        newSet = { duration: secs, done: true };
+      } else if (exType === 'reps') {
+        var r = draft.reps||'';
+        if (!r) { setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:'Enter reps to log this set'});}); return; }
+        newSet = { reps: r, done: true };
+      } else {
+        var w = draft.weight||'', r2 = draft.reps||'';
+        if (!w||!r2) {
+          var msg = (!w&&!r2) ? 'Enter weight and reps to log this set' : !w ? 'Enter weight to log this set' : 'Enter reps to log this set';
+          setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:msg});});
+          return;
+        }
+        newSet = { weight: w, reps: r2, done: true };
+      }
+      setExecuteSetError(function(errs){ if(!errs[exName]) return errs; var n=Object.assign({},errs); delete n[exName]; return n; });
+      var sets = (executeSets[exName]||[]).concat([newSet]);
+      var newSets = Object.assign({},executeSets,{[exName]:sets});
+      var carryWeight = exType==='weight' ? draft.weight : undefined;
+      var newDraft = Object.assign({},executeDraft,{[exName]: exType==='time' ? {duration:''} : {weight:carryWeight, reps:''}});
+      setExecuteSets(newSets);
+      setExecuteDraft(newDraft);
+      setExecuteRestSecs(90);
+      saveWip(executeDay, newSets, executeStartTime, executeActiveEx, newDraft, executeDate, executeAdHocExercises);
+      setShowDrinkPrompt(true);
+    }
+
+    function toggleAdHocTimer(exName) {
+      var running = executeTimeRunning[exName];
+      if (running) {
+        var secs = Math.max(0, Math.floor((Date.now()-running)/1000));
+        setExecuteTimeRunning(function(prev){ var n=Object.assign({},prev); delete n[exName]; return n; });
+        setExecuteDraft(function(d){ return Object.assign({},d,{[exName]: Object.assign({}, d[exName]||{}, {duration: String(secs)})}); });
+      } else {
+        setExecuteTimeRunning(function(prev){ return Object.assign({},prev,{[exName]: Date.now()}); });
+      }
+    }
+
+    function addAdHocExercise(bankEx) {
+      if (executeAdHocExercises.some(function(a){return a.name===bankEx.name;})) {
+        setShowAddExerciseModal(false); setAddExerciseSearch('');
+        return;
+      }
+      var next = executeAdHocExercises.concat([{ name:bankEx.name, type:bankEx.type, notes:bankEx.notes||'' }]);
+      setExecuteAdHocExercises(next);
+      saveWip(executeDay, executeSets, executeStartTime, executeActiveEx, executeDraft, executeDate, next);
+      setShowAddExerciseModal(false);
+      setAddExerciseSearch('');
+    }
+
+    // Most recent prior session of this same program day, for per-set "last time" reference
+    // (getPrevSession is defined below this point in the original render flow — unchanged)
+
+    // Slide-up panel for adding an exercise from the bank mid-workout — doesn't touch
+    // executeSets/executeStartTime/executeElapsed, so the running timer and logged sets are untouched.
+    function renderAddExerciseModal() {
+      var q = addExerciseSearch.trim().toLowerCase();
+      var filtered = exerciseBank.filter(function(ex){
+        return !q || ex.name.toLowerCase().indexOf(q)!==-1 || ex.category.toLowerCase().indexOf(q)!==-1;
+      });
+      var typeColors = { weight:'#2a78d6', reps:'#1baf7a', time:'#eb6834' };
+      return e('div',{style:{position:'fixed',inset:0,zIndex:600,display:'flex',flexDirection:'column',justifyContent:'flex-end'}},
+        e('div',{onClick:function(){setShowAddExerciseModal(false);setAddExerciseSearch('');},style:{position:'absolute',inset:0,background:'rgba(0,0,0,0.6)'}}),
+        e('div',{style:{position:'relative',background:'#1A1833',borderRadius:'20px 20px 0 0',padding:'20px',maxHeight:'75vh',display:'flex',flexDirection:'column',gap:12,paddingBottom:'calc(20px + env(safe-area-inset-bottom))'}},
+          e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            e('div',{style:{fontSize:15,fontWeight:800,color:'white'}},'Add Exercise'),
+            e('button',{onClick:function(){setShowAddExerciseModal(false);setAddExerciseSearch('');},style:{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:20,cursor:'pointer',padding:0}},'✕')
+          ),
+          e('input',{className:'input',style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white'},
+            placeholder:'🔍 Search exercises...', value:addExerciseSearch,
+            onInput:function(ev){setAddExerciseSearch(ev.target.value);}
+          }),
+          e('div',{style:{overflowY:'auto',display:'flex',flexDirection:'column',gap:6}},
+            filtered.length===0?e('div',{style:{padding:'24px 0',textAlign:'center',color:'rgba(255,255,255,0.4)',fontSize:13}},
+              exerciseBank.length===0?'Your Exercise Bank is empty — add exercises from the Log Workout screen first.':'No exercises match your search.'
+            ):null,
+            ...filtered.map(function(ex){
+              var alreadyAdded = executeAdHocExercises.some(function(a){return a.name===ex.name;});
+              return e('button',{key:ex.id, onClick:function(){addAdHocExercise(ex);}, disabled:alreadyAdded, style:{
+                display:'flex',alignItems:'center',gap:10,padding:'12px',borderRadius:12,
+                border:'1px solid rgba(255,255,255,0.1)',background:alreadyAdded?'rgba(255,255,255,0.03)':'rgba(255,255,255,0.06)',
+                cursor:alreadyAdded?'default':'pointer',fontFamily:'inherit',textAlign:'left',
+              }},
+                e('div',{style:{flex:1,minWidth:0}},
+                  e('div',{style:{fontSize:13,fontWeight:700,color:alreadyAdded?'rgba(255,255,255,0.35)':'white'}},ex.name),
+                  e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.4)',marginTop:2}},ex.category+(alreadyAdded?' · Already added':''))
+                ),
+                e('div',{style:{fontSize:9,fontWeight:700,color:typeColors[ex.type],background:typeColors[ex.type]+'22',padding:'3px 8px',borderRadius:10,whiteSpace:'nowrap'}},EXERCISE_BANK_TYPE_LABELS[ex.type])
+              );
+            })
+          )
+        )
+      );
     }
 
     var totalSets = exercises.reduce(function(s,ex){return s+(ex.sets||3);},0);
@@ -599,7 +936,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       for (var i=0;i<dates.length;i++){
         var sessions = safeLog[dates[i]] || [];
         for (var j=0;j<sessions.length;j++){
-          if (sessions[j].programDay === executeDay.dayLabel) {
+          if (sessions[j].programDay && sessions[j].programDay.indexOf(executeDay.dayLabel) !== -1) {
             var match = (sessions[j].exercises||[]).find(function(e){ return e.name===exName; });
             if (match && match.allSets && match.allSets.length) return {date: dates[i], sets: match.allSets};
           }
@@ -690,15 +1027,72 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             ):null
           );
         }),
-        e('button',{onClick:function(){if(confirm('Cancel workout? Progress will not be saved.')){clearWip();setExecuteDay(null);setExecuteSets({});setExecuteStartTime(null);setExecuteElapsed(0);setExecuteRestSecs(0);setExecuteDate(today());setView('log');}},style:{marginTop:8,padding:'14px',borderRadius:14,border:'1px solid rgba(255,255,255,0.15)',background:'none',color:'rgba(255,255,255,0.4)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Workout')
-      )
+        ...executeAdHocExercises.map(function(aEx){
+          var sets = executeSets[aEx.name]||[];
+          var draft = executeDraft[aEx.name]||{};
+          var exErr = executeSetError[aEx.name];
+          var running = executeTimeRunning[aEx.name];
+          var liveSecs = running ? Math.max(0,Math.floor((Date.now()-running)/1000)) : null;
+          return e('div',{key:'adhoc-'+aEx.name,style:{background:'rgba(240,165,0,0.08)',borderRadius:16,border:'1.5px solid rgba(240,165,0,0.35)',padding:'14px'}},
+            e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+              e('div',{},
+                e('div',{style:{display:'flex',alignItems:'center',gap:6}},
+                  e('div',{style:{fontSize:14,fontWeight:800,color:'white'}},aEx.name),
+                  e('div',{style:{fontSize:9,fontWeight:800,color:'#f0a500',background:'rgba(240,165,0,0.15)',padding:'2px 7px',borderRadius:10}},'AD HOC')
+                ),
+                aEx.notes?e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:2}},aEx.notes):null
+              )
+            ),
+            sets.length>0?e('div',{style:{marginBottom:10,display:'flex',flexWrap:'wrap',gap:6}},
+              ...sets.map(function(s,i){
+                var label = aEx.type==='time' ? (s.duration!=null?s.duration+'s':'—') : aEx.type==='reps' ? (s.reps!=null?s.reps+' reps':'—') : (s.weight?s.weight+'lbs':'—')+(s.reps?' × '+s.reps:'');
+                return e('div',{key:i,style:{fontSize:11,color:'rgba(255,255,255,0.5)',background:'rgba(255,255,255,0.06)',borderRadius:8,padding:'4px 8px'}},'Set '+(i+1)+': '+label);
+              })
+            ):null,
+            e('div',{style:{display:'flex',gap:8,alignItems:'flex-end',flexWrap:'wrap'}},
+              aEx.type==='weight'?e('div',{style:{flex:1,minWidth:70}},
+                e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Weight (lbs)'),
+                e('input',{className:'input',type:'number',style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
+                  placeholder:'lbs', value:draft.weight||'',
+                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[aEx.name]:Object.assign({},d[aEx.name]||{},{weight:v})});});}
+                })
+              ):null,
+              aEx.type!=='time'?e('div',{style:{flex:1,minWidth:70}},
+                e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Reps'),
+                e('input',{className:'input',type:'number',style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
+                  placeholder:'reps', value:draft.reps||'',
+                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[aEx.name]:Object.assign({},d[aEx.name]||{},{reps:v})});});}
+                })
+              ):null,
+              aEx.type==='time'?e('div',{style:{flex:1,minWidth:90}},
+                e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Duration (sec)'),
+                e('input',{className:'input',type:'number',style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
+                  placeholder:'seconds', value:running?String(liveSecs):(draft.duration||''), disabled:!!running,
+                  onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[aEx.name]:Object.assign({},d[aEx.name]||{},{duration:v})});});}
+                })
+              ):null,
+              aEx.type==='time'?e('button',{onClick:function(){toggleAdHocTimer(aEx.name);},style:{padding:'12px 14px',borderRadius:12,border:'none',background:running?'#EF4444':'rgba(255,255,255,0.15)',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}},running?'⏹ Stop':'▶ Start'):null,
+              e('button',{onClick:function(){logAdHocSet(aEx.name, aEx.type);},style:{padding:'12px 14px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}},'Log Set')
+            ),
+            exErr?e('div',{style:{marginTop:6,fontSize:11,color:'#F59E0B',fontWeight:600,display:'flex',alignItems:'center',gap:4}},'⚠ '+exErr):null
+          );
+        }),
+        e('button',{onClick:function(){setShowAddExerciseModal(true);},style:{padding:'13px',borderRadius:14,border:'1px dashed rgba(255,255,255,0.25)',background:'rgba(255,255,255,0.04)',color:'rgba(255,255,255,0.7)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'+ Add Exercise'),
+        e('button',{onClick:function(){if(confirm('Cancel workout? Progress will not be saved.')){clearWip();setExecuteDay(null);setExecuteSets({});setExecuteStartTime(null);setExecuteElapsed(0);setExecuteRestSecs(0);setExecuteDate(today());setExecuteAdHocExercises([]);setExecuteTimeRunning({});setView('log');}},style:{marginTop:8,padding:'14px',borderRadius:14,border:'1px solid rgba(255,255,255,0.15)',background:'none',color:'rgba(255,255,255,0.4)',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}},'Cancel Workout')
+      ),
+      showDrinkPrompt?e('div',{style:{position:'absolute',inset:0,background:'#0F0F1A',zIndex:50,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:22,paddingBottom:'env(safe-area-inset-bottom)'}},
+        e('div',{style:{fontSize:80}},'💧'),
+        e('div',{style:{fontSize:26,fontWeight:900,color:'white',letterSpacing:1}},'Drink'),
+        e('button',{onClick:function(){setShowDrinkPrompt(false);},style:{padding:'16px 48px',borderRadius:16,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:16,fontWeight:800,cursor:'pointer',fontFamily:'inherit',boxShadow:'0 8px 24px rgba(123,47,255,0.4)'}},'Done ✓')
+      ):null,
+      showAddExerciseModal?renderAddExerciseModal():null
     );
   }
 
   function renderLog() {
     var categories = ['Push','Pull','Legs','Core'];
     var prog = currentProgram;
-    var selDay = prog && selectedProgramDay ? prog.days.find(function(d){return d.dayLabel===selectedProgramDay;}) : null;
+    var selDay = prog && selectedProgramDay ? programDayByType(prog, selectedProgramDay) : null;
 
     function selectProgramDay(label) {
       if (label === selectedProgramDay) {
@@ -709,7 +1103,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       }
       setSelectedProgramDay(label);
       setProgramExerciseLogs({});
-      var day = prog.days.find(function(d){return d.dayLabel===label;});
+      var day = programDayByType(prog, label);
       if (!day) return;
       // Pre-select muscle groups from the day's exercises
       var groupSet = {};
@@ -747,25 +1141,22 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       });
     }
 
-    // Auto-detect today's program day by day-of-week
-    var DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    var todayDayName = DAY_NAMES[new Date().getDay()];
-    var todayProgramDay = prog ? prog.days.find(function(d){ return d.scheduledDay && d.scheduledDay.startsWith(todayDayName); }) : null;
+    // Next workout is determined by the sequential 48-workout rotation (hq_workoutCount), not day-of-week
+    var nextType = nextWorkoutType(workoutCount);
+    var todayProgramDay = prog ? programDayByType(prog, nextType) : null;
     var alreadyLoggedToday = safeLog[today()] && safeLog[today()].some(function(s){ return s.programDay && todayProgramDay && s.programDay===todayProgramDay.dayLabel; });
+    var completedCount = Math.min(workoutCount, WORKOUT_BLOCK_LENGTH);
+    var blockPct = Math.round(completedCount/WORKOUT_BLOCK_LENGTH*100);
 
-    // Program days already logged somewhere this week disappear from the day-picker below
-    var thisWeekDates = getWeekDates(today());
-    var loggedThisWeek = {};
-    thisWeekDates.forEach(function(dk){
-      (safeLog[dk]||[]).forEach(function(s){ if(s.programDay) loggedThisWeek[s.programDay]=true; });
-    });
-    var pendingDays = prog ? prog.days.filter(function(d){ return !loggedThisWeek[d.dayLabel]; }) : [];
+    // All 4 rotation days are always available in the day-picker below
+    var pendingDays = prog ? WORKOUT_ROTATION.map(function(label){ return programDayByType(prog, label); }).filter(Boolean) : [];
 
     return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
       // Today's Workout hero card
       todayProgramDay && !alreadyLoggedToday ? e('div', {style:{background:'linear-gradient(135deg,#1A1040,#2D1B6B)',borderRadius:20,padding:'20px',border:'1px solid '+PURPLE+'44'}},
-        e('div', {style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:1,marginBottom:6}}, 'TODAY · '+todayDayName.toUpperCase()),
+        e('div', {style:{fontSize:11,fontWeight:700,color:'rgba(255,255,255,0.5)',letterSpacing:1,marginBottom:6}}, 'WORKOUT '+completedCount+' OF '+WORKOUT_BLOCK_LENGTH),
         e('div', {style:{fontSize:20,fontWeight:900,color:'white',marginBottom:4}}, todayProgramDay.dayLabel),
+        e('div', {style:{fontSize:11,color:'rgba(255,255,255,0.4)',fontWeight:700,marginBottom:4}}, WORKOUT_ROTATION_DESC[todayProgramDay.dayLabel]||''),
         todayProgramDay.focus&&todayProgramDay.focus.length ? e('div', {style:{fontSize:12,color:ACCENT,fontWeight:700,marginBottom:14}}, todayProgramDay.focus.join(' · ')) : null,
         e('div', {style:{display:'flex',flexDirection:'column',gap:4,marginBottom:16}},
           ...(todayProgramDay.exercises||[]).slice(0,4).map(function(ex){
@@ -791,12 +1182,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           e('div', {style:{fontSize:13,fontWeight:800,color:TEXT,marginBottom:2}}, 'No program loaded on this device'),
           e('div', {style:{fontSize:11,color:MUTED}}, 'Import your plan in the Coach tab to unlock structured workouts')
         ),
-        e('button', {onClick:function(){setFitnessTab('coach');}, style:{padding:'8px 14px',borderRadius:20,border:'none',background:PURPLE,color:'white',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Go to Coach')
+        e('button', {onClick:function(){setView('coach');}, style:{padding:'8px 14px',borderRadius:20,border:'none',background:PURPLE,color:'white',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Go to Coach')
       ) : null,
-      // Program Day Selector (always shown) — days already logged this week drop off the list
+      e('div', {style:{display:'flex',justifyContent:'flex-end'}},
+        e('button', {onClick:function(){setView('bank');}, style:{background:'none',border:'none',color:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',padding:'4px 0'}}, '🗂️ Exercise Bank')
+      ),
+      // Program Day Selector — always shows all 4 rotation types
       e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
         e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginBottom:4}}, '📋 '+(prog ? 'Log a Different Day' : 'Quick Log')),
-        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, prog ? (pendingDays.length ? 'Select to pre-fill exercises from your program' : 'All program days logged this week 🎉') : 'Log a free-form workout session'),
+        e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, prog ? 'Select to pre-fill exercises from your program' : 'Log a free-form workout session'),
         e('div', {style:{display:'flex',flexWrap:'wrap',gap:8}},
           ...(prog ? pendingDays.map(function(d){
             var active = selectedProgramDay === d.dayLabel;
@@ -804,7 +1198,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               padding:'8px 14px',borderRadius:20,border:'1.5px solid '+(active?ACCENT:BORDER),
               background:active?ACCENT+'18':'#F8FAFC',color:active?ACCENT:TEXT,
               fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',transition:'all 0.15s',
-            }}, d.dayLabel + (d.scheduledDay?' · '+d.scheduledDay:''))
+            }}, d.dayLabel + (WORKOUT_ROTATION_DESC[d.dayLabel]?' — '+WORKOUT_ROTATION_DESC[d.dayLabel]:''))
           }) : []),
           e('button', {onClick:function(){setSelectedProgramDay(null);setProgramExerciseLogs({});setSelectedGroups([]);}, style:{
             padding:'8px 14px',borderRadius:20,border:'1.5px solid '+((!selectedProgramDay)?ACCENT:BORDER),
@@ -896,13 +1290,15 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           var newLog = Object.assign({}, safeLog, {[logDate]: [...day, entry]});
           setWorkoutLog(newLog);
           save('workoutLog', newLog);
+          var newWorkoutCount = workoutCount + 1;
+          setWorkoutCount(newWorkoutCount); save('workoutCount', newWorkoutCount);
           autoCheckExercise(logDate, habitLog);
           addPassiveWin('Logged a workout'+(selectedProgramDay?': '+selectedProgramDay:selectedGroups.length?': '+selectedGroups.join(', '):''), logDate);
           // Update program lastWeight/lastReps
-          if (selDay && currentProgram && exData.length > 0) {
+          if (selDay && currentProgram && exData.length > 0 && selDay._rotationIdx!=null) {
             var updatedProg = JSON.parse(JSON.stringify(currentProgram));
-            updatedProg.days = updatedProg.days.map(function(d){
-              if (d.dayLabel !== selectedProgramDay) return d;
+            updatedProg.days = updatedProg.days.map(function(d,i){
+              if (i !== selDay._rotationIdx) return d;
               return Object.assign({}, d, {exercises: d.exercises.map(function(ex){
                 var logged = programExerciseLogs[ex.name];
                 if (!logged || (!logged.weight && !logged.reps)) return ex;
@@ -1841,82 +2237,70 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var startingPhoto = progressStartPhoto;
     var currentPhoto = progressCurrentPhoto;
 
-    function compressProgressPhoto(file, cb) {
-      var reader = new FileReader();
-      reader.onload = function(ev) {
-        var img = new Image();
-        img.onload = function() {
-          var MAX = 600;
-          var scale = Math.min(1, MAX / Math.max(img.width, img.height));
-          var w = Math.round(img.width * scale);
-          var h = Math.round(img.height * scale);
-          var canvas = document.createElement('canvas');
-          canvas.width = w; canvas.height = h;
-          var ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, w, h);
-          cb(canvas.toDataURL('image/jpeg', 0.72));
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
     function handleStartPhotoFile(ev) {
       var file = ev.target.files && ev.target.files[0];
-      if(!file) return;
-      compressProgressPhoto(file, function(dataUrl){
-        localStorage.setItem('hq_photo_progress_start', dataUrl);
-        var meta = {date: today()};
-        save('progressStartMeta', meta);
-        setProgressStartPhoto(dataUrl);
-        setProgressStartMeta(meta);
-      });
       ev.target.value = '';
+      if(!file) return;
+      setMilestoneUploading('start');
+      uploadMilestonePhoto(file, 'start').then(function(result){
+        setProgressStartPhoto(result.url);
+        setProgressStartMeta({date:result.date});
+        setMilestoneUploading(null);
+      }).catch(function(err){
+        console.warn('milestone photo upload failed', err);
+        setMilestoneUploading(null);
+      });
     }
     function handleCurrentPhotoFile(ev) {
       var file = ev.target.files && ev.target.files[0];
-      if(!file) return;
-      compressProgressPhoto(file, function(dataUrl){
-        localStorage.setItem('hq_photo_progress_current', dataUrl);
-        var meta = {date: today()};
-        save('progressCurrentMeta', meta);
-        setProgressCurrentPhoto(dataUrl);
-        setProgressCurrentMeta(meta);
-      });
       ev.target.value = '';
+      if(!file) return;
+      setMilestoneUploading('current');
+      uploadMilestonePhoto(file, 'current').then(function(result){
+        setProgressCurrentPhoto(result.url);
+        setProgressCurrentMeta({date:result.date});
+        setMilestoneUploading(null);
+      }).catch(function(err){
+        console.warn('milestone photo upload failed', err);
+        setMilestoneUploading(null);
+      });
     }
     function handleGoalPhotoFile(ev) {
       var file = ev.target.files && ev.target.files[0];
-      if(!file) return;
-      compressProgressPhoto(file, function(dataUrl){
-        localStorage.setItem('hq_photo_progress_goal', dataUrl);
-        var meta = {date: today()};
-        save('progressGoalMeta', meta);
-        setProgressGoalPhoto(dataUrl);
-        setProgressGoalMeta(meta);
-      });
       ev.target.value = '';
+      if(!file) return;
+      setMilestoneUploading('goal');
+      uploadMilestonePhoto(file, 'goal').then(function(result){
+        setProgressGoalPhoto(result.url);
+        setProgressGoalMeta({date:result.date});
+        setMilestoneUploading(null);
+      }).catch(function(err){
+        console.warn('milestone photo upload failed', err);
+        setMilestoneUploading(null);
+      });
     }
 
-    function photoTile(label, dateStr, photoSrc, active, actionLabel, onAction) {
+    function photoTile(label, dateStr, photoSrc, active, actionLabel, onAction, uploading) {
       return e('div',{style:{display:'flex',flexDirection:'column',gap:8,flex:1}},
         e('div',{style:{fontSize:9,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase',color:active?ACCENT:MUTED,textAlign:'center'}}, label),
         e('div',{
-          onClick: photoSrc ? function(){ setZoomedPhoto({label:label, src:photoSrc}); } : undefined,
+          onClick: (photoSrc && !uploading) ? function(){ setZoomedPhoto({label:label, src:photoSrc}); } : undefined,
           style:{
             aspectRatio:'3/4',borderRadius:14,overflow:'hidden',background:CARD2,
             border: active ? '2px solid '+ACCENT : '1px solid '+BORDER,
             display:'flex',alignItems:'center',justifyContent:'center',
-            cursor: photoSrc ? 'zoom-in' : 'default',
+            cursor: (photoSrc && !uploading) ? 'zoom-in' : 'default',
           }
         },
-          photoSrc ? e('img',{src:photoSrc,style:{width:'100%',height:'100%',objectFit:'cover'}})
+          uploading ? e('span',{style:{fontSize:12,color:MUTED,fontWeight:700}}, '⏳')
+                   : photoSrc ? e('img',{src:photoSrc,style:{width:'100%',height:'100%',objectFit:'cover'}})
                    : e('span',{style:{fontSize:26,color:MUTED}}, '📷')
         ),
         e('div',{style:{fontSize:10,color:MUTED,textAlign:'center'}}, dateStr||'—'),
-        e('button',{onClick:onAction,style:{
+        e('button',{onClick:onAction,disabled:uploading,style:{
           padding:'7px 4px',borderRadius:10,border:'1px solid '+BORDER,background:'#fff',
           color:TEXT,fontSize:10,fontWeight:700,cursor:'pointer',fontFamily:'inherit'
-        }}, actionLabel)
+        }}, uploading?'Uploading…':actionLabel)
       );
     }
 
@@ -2005,9 +2389,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         e('input', {ref:currentPhotoRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleCurrentPhotoFile}),
         e('input', {ref:goalPhotoRef, type:'file', accept:'image/*', style:{display:'none'}, onChange:handleGoalPhotoFile}),
         e('div',{style:{display:'flex',gap:10}},
-          photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){startPhotoRef.current && startPhotoRef.current.click();}),
-          photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){currentPhotoRef.current && currentPhotoRef.current.click();}),
-          photoTile('Goal', progressGoalMeta?new Date(progressGoalMeta.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, progressGoalPhoto, false, progressGoalPhoto?'Retake Photo':'Add Photo', function(){goalPhotoRef.current && goalPhotoRef.current.click();})
+          photoTile('Starting Point', startingEntry?new Date(startingEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, startingPhoto, false, startingPhoto?'Retake Photo':'Add Photo', function(){startPhotoRef.current && startPhotoRef.current.click();}, milestoneUploading==='start'),
+          photoTile('Current', currentEntry?new Date(currentEntry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, currentPhoto, true, 'Update Photo', function(){currentPhotoRef.current && currentPhotoRef.current.click();}, milestoneUploading==='current'),
+          photoTile('Goal', progressGoalMeta?new Date(progressGoalMeta.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):null, progressGoalPhoto, false, progressGoalPhoto?'Retake Photo':'Add Photo', function(){goalPhotoRef.current && goalPhotoRef.current.click();}, milestoneUploading==='goal')
         )
       ),
 
@@ -2166,6 +2550,284 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     );
   }
 
+  function fieldForExType(t) { return t==='time' ? 'duration' : t==='reps' ? 'reps' : 'weight'; }
+  function unitForExType(t) { return t==='time' ? 'seconds' : t==='reps' ? 'reps' : 'lbs'; }
+
+  // Ad-hoc exercises (added mid-workout from the Exercise Bank) become trackable once
+  // they've been logged in at least 2 separate sessions.
+  function getAdHocExercisesFromLog() {
+    var counts = {};
+    Object.keys(safeLog).forEach(function(date){
+      (safeLog[date]||[]).forEach(function(session){
+        (session.exercises||[]).forEach(function(ex){
+          if (!ex.adHoc) return;
+          if (!counts[ex.name]) counts[ex.name] = { name: ex.name, type: ex.type, count: 0 };
+          counts[ex.name].count++;
+        });
+      });
+    });
+    return Object.values(counts).filter(function(a){ return a.count >= 2; });
+  }
+
+  function getAllTrackedExercises() {
+    var prog = currentProgram;
+    var list = [];
+    if (prog) {
+      WORKOUT_ROTATION.forEach(function(label){
+        var day = programDayByType(prog, label);
+        if (!day) return;
+        (day.exercises||[]).forEach(function(ex){
+          list.push({ name: ex.name, group: label, key: label+'::'+ex.name, exType:'weight', targetWeight: ex.targetWeight!=null?parseFloat(ex.targetWeight):null });
+        });
+      });
+    }
+    getAdHocExercisesFromLog().forEach(function(a){
+      list.push({ name: a.name, group: 'Ad Hoc', key: 'Ad Hoc::'+a.name, exType: a.type, targetWeight: null });
+    });
+    // Exercises sharing a name across different workout days (or with an ad-hoc exercise) get a
+    // "(Group)" suffix so they're distinguishable in the picker and on the All Lifts chart.
+    var nameCounts = {};
+    list.forEach(function(ex){ nameCounts[ex.name] = (nameCounts[ex.name]||0) + 1; });
+    list.forEach(function(ex){ ex.displayName = nameCounts[ex.name] > 1 ? ex.name+' ('+ex.group+')' : ex.name; });
+    return list;
+  }
+
+  // Sets logged under a same-named exercise on a different day are disambiguated by the
+  // session's programDay tag when group is passed. Matched by substring, not equality, so
+  // any historical variation in how programDay was stringified still matches. Ad-hoc
+  // exercises aren't tied to a rotation day, so callers pass group=null for those.
+  // field selects which logged value to pull: 'weight' (default), 'reps', or 'duration'.
+  function getExerciseHistory(exName, group, field) {
+    field = field || 'weight';
+    var entries = [];
+    Object.keys(safeLog).sort().forEach(function(date){
+      (safeLog[date]||[]).forEach(function(session){
+        if (group && (!session.programDay || session.programDay.indexOf(group) === -1)) return;
+        (session.exercises||[]).forEach(function(ex){
+          if (ex.name !== exName) return;
+          var v = parseFloat(ex[field]);
+          if (!isNaN(v)) entries.push({ date:date, value:v });
+        });
+      });
+    });
+    return entries;
+  }
+
+  // Straight-line projection from the first logged value to the program's target,
+  // spread evenly across the same sessions actually logged so far.
+  function getRoadmap(history, targetWeight) {
+    if (!history.length || targetWeight==null || isNaN(targetWeight)) return [];
+    if (history.length === 1) return [{ date:history[0].date, value:history[0].value }];
+    var base = history[0].value;
+    return history.map(function(pt,i){
+      var frac = i/(history.length-1);
+      return { date:pt.date, value:Math.round((base+(targetWeight-base)*frac)*10)/10 };
+    });
+  }
+
+  function renderLiftProgress() {
+    var allExercises = getAllTrackedExercises();
+
+    if (!allExercises.length) {
+      return e('div', {style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
+        e('div',{style:{fontSize:48,marginBottom:12}},'📊'),
+        e('div',{style:{fontSize:16,fontWeight:700,marginBottom:6}},'No program loaded'),
+        e('div',{style:{fontSize:13}},'Import a program in the Coach tab to track lift progress')
+      );
+    }
+
+    var activeKey = (selectedLiftExercise && allExercises.some(function(ex){return ex.key===selectedLiftExercise;})) ? selectedLiftExercise : allExercises[0].key;
+    var activeEx = allExercises.find(function(ex){return ex.key===activeKey;});
+    var field = fieldForExType(activeEx.exType);
+    var histGroup = activeEx.group==='Ad Hoc' ? null : activeEx.group;
+    var history = getExerciseHistory(activeEx.name, histGroup, field);
+    var unit = unitForExType(activeEx.exType);
+    var baseline = history.length ? history[0].value : null;
+    var current = history.length ? history[history.length-1].value : null;
+    var totalGain = (baseline!=null && current!=null) ? Math.round((current-baseline)*10)/10 : null;
+    var pctGain = (baseline) ? Math.round((current-baseline)/baseline*100) : null;
+
+    var LIFT_GROUPS = WORKOUT_ROTATION.concat(['Ad Hoc']);
+    var grouped = {};
+    LIFT_GROUPS.forEach(function(label){ grouped[label] = allExercises.filter(function(ex){return ex.group===label;}); });
+
+    function statCard(label, value, sub) {
+      return e('div', {style:{flex:1,background:'#fff',borderRadius:14,padding:'14px',border:'1px solid '+BORDER,textAlign:'center'}},
+        e('div', {style:{fontSize:10,color:MUTED,fontWeight:700,letterSpacing:0.5,marginBottom:4}}, label.toUpperCase()),
+        e('div', {style:{fontSize:20,fontWeight:900,color:TEXT}}, value),
+        sub ? e('div', {style:{fontSize:11,color:MUTED,marginTop:2}}, sub) : null
+      );
+    }
+
+    return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      // Single Lift / All Lifts toggle
+      e('div', {style:{display:'flex',gap:8}},
+        e('button', {onClick:function(){setLiftsSubview('single');}, style:{
+          flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+(liftsSubview==='single'?ACCENT:BORDER),
+          background:liftsSubview==='single'?ACCENT+'18':'#fff',color:liftsSubview==='single'?ACCENT:MUTED,
+          fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+        }}, 'Single Lift'),
+        e('button', {onClick:function(){setLiftsSubview('all');}, style:{
+          flex:1,padding:'10px',borderRadius:12,border:'1.5px solid '+(liftsSubview==='all'?ACCENT:BORDER),
+          background:liftsSubview==='all'?ACCENT+'18':'#fff',color:liftsSubview==='all'?ACCENT:MUTED,
+          fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+        }}, 'All Lifts')
+      ),
+
+      liftsSubview==='single' ? e('div', {style:{display:'flex',flexDirection:'column',gap:16}},
+        // Exercise picker, grouped by workout day
+        e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:6}}, 'EXERCISE'),
+          e('select', {
+            className:'input', style:{marginBottom:0},
+            value:activeKey,
+            onChange:function(ev){ setSelectedLiftExercise(ev.target.value); }
+          },
+            ...LIFT_GROUPS.map(function(label){
+              return grouped[label].length ? e('optgroup', {key:label, label:label}, ...grouped[label].map(function(ex){
+                return e('option', {key:ex.key, value:ex.key}, ex.name);
+              })) : null;
+            })
+          )
+        ),
+        // Stat cards
+        e('div', {style:{display:'flex',gap:10}},
+          statCard('Baseline', baseline!=null?baseline+' '+unit:'—'),
+          statCard('Current', current!=null?current+' '+unit:'—'),
+          statCard('Total Gain', totalGain!=null?(totalGain>=0?'+':'')+totalGain+' '+unit:'—', pctGain!=null?(pctGain>=0?'+':'')+pctGain+'%':null)
+        ),
+        // Chart
+        history.length ? e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{position:'relative',height:260}},
+            e('canvas', {ref:liftChartRef})
+          )
+        ) : e('div', {style:{background:'#F8FAFC',borderRadius:16,padding:'24px',border:'1px dashed '+BORDER,textAlign:'center'}},
+          e('div',{style:{fontSize:32,marginBottom:8}},'📈'),
+          e('div',{style:{fontSize:13,color:MUTED}},'No logged sessions yet for '+activeEx.displayName)
+        )
+      ) : e('div', {style:{display:'flex',flexDirection:'column',gap:16}},
+        // Muscle-group filter
+        e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{fontSize:11,color:MUTED,fontWeight:600,marginBottom:6}}, 'FILTER'),
+          e('select', {
+            className:'input', style:{marginBottom:0},
+            value:liftsGroupFilter,
+            onChange:function(ev){ setLiftsGroupFilter(ev.target.value); }
+          },
+            ...['All'].concat(LIFT_GROUPS).map(function(label){
+              return e('option', {key:label, value:label}, label);
+            })
+          )
+        ),
+        // Chart
+        e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div', {style:{position:'relative',height:Math.max(260, allExercises.filter(function(ex){return liftsGroupFilter==='All'||ex.group===liftsGroupFilter;}).length*32)}},
+            e('canvas', {ref:allLiftsChartRef})
+          )
+        )
+      )
+    );
+  }
+
+  function renderExerciseBank() {
+    var q = bankSearch.trim().toLowerCase();
+    var filtered = exerciseBank.filter(function(ex){
+      return !q || ex.name.toLowerCase().indexOf(q)!==-1 || ex.category.toLowerCase().indexOf(q)!==-1;
+    });
+    var grouped = {};
+    EXERCISE_BANK_CATEGORIES.forEach(function(cat){ grouped[cat] = filtered.filter(function(ex){return ex.category===cat;}); });
+    var typeColors = { weight:'#2a78d6', reps:'#1baf7a', time:'#eb6834' };
+
+    function addExercise() {
+      var name = bankForm.name.trim();
+      if (!name) return;
+      var entry = { id:makeExerciseBankId(), name:name, category:bankForm.category, type:bankForm.type, notes:bankForm.notes.trim() };
+      var next = exerciseBank.concat([entry]);
+      setExerciseBank(next); save('exerciseBank', next);
+      setBankForm({ name:'', category:'Upper Body', type:'weight', notes:'' });
+      setShowAddExercise(false);
+    }
+
+    function deleteExercise(id) {
+      if (!confirm('Delete this exercise from the bank?')) return;
+      var next = exerciseBank.filter(function(ex){return ex.id!==id;});
+      setExerciseBank(next); save('exerciseBank', next);
+    }
+
+    return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      // Header
+      e('div', {style:{display:'flex',alignItems:'center',gap:10}},
+        e('button', {onClick:function(){setView('log');}, style:{background:'none',border:'none',color:MUTED,fontSize:14,cursor:'pointer',fontFamily:'inherit',padding:0}}, '← Back'),
+        e('div', {style:{fontSize:16,fontWeight:800,color:TEXT}}, '🗂️ Exercise Bank')
+      ),
+
+      // Add Exercise button / form
+      !showAddExercise ? e('button', {onClick:function(){setShowAddExercise(true);}, style:{
+        padding:'13px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:14,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
+      }}, '+ Add Exercise') : e('div', {style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER,display:'flex',flexDirection:'column',gap:10}},
+        e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, 'New Exercise'),
+        e('input', {className:'input', style:{marginBottom:0}, placeholder:'Exercise name', value:bankForm.name,
+          onInput:function(ev){setBankForm(Object.assign({},bankForm,{name:ev.target.value}));}
+        }),
+        e('select', {className:'input', style:{marginBottom:0}, value:bankForm.category,
+          onChange:function(ev){setBankForm(Object.assign({},bankForm,{category:ev.target.value}));}
+        },
+          ...EXERCISE_BANK_CATEGORIES.map(function(cat){ return e('option', {key:cat, value:cat}, cat); })
+        ),
+        e('div', {style:{display:'flex',gap:8}},
+          ...EXERCISE_BANK_TYPES.map(function(t){
+            var active = bankForm.type===t[0];
+            return e('button', {key:t[0], onClick:function(){setBankForm(Object.assign({},bankForm,{type:t[0]}));}, style:{
+              flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+(active?ACCENT:BORDER),
+              background:active?ACCENT+'18':'#F8FAFC',color:active?ACCENT:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+            }}, t[1]);
+          })
+        ),
+        e('input', {className:'input', style:{marginBottom:0}, placeholder:'Notes (optional)', value:bankForm.notes,
+          onInput:function(ev){setBankForm(Object.assign({},bankForm,{notes:ev.target.value}));}
+        }),
+        e('div', {style:{display:'flex',gap:8}},
+          e('button', {onClick:function(){setShowAddExercise(false);setBankForm({ name:'', category:'Upper Body', type:'weight', notes:'' });}, style:{
+            flex:1,padding:'12px',borderRadius:12,border:'1px solid '+BORDER,background:'#fff',color:MUTED,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+          }}, 'Cancel'),
+          e('button', {onClick:addExercise, style:{
+            flex:2,padding:'12px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
+          }}, 'Save')
+        )
+      ),
+
+      // Search
+      e('input', {className:'input', style:{marginBottom:0}, placeholder:'🔍 Search exercises...', value:bankSearch,
+        onInput:function(ev){setBankSearch(ev.target.value);}
+      }),
+
+      // Grouped list
+      exerciseBank.length===0 ? e('div', {style:{padding:'30px 16px',textAlign:'center',color:MUTED}},
+        e('div',{style:{fontSize:40,marginBottom:10}},'🗂️'),
+        e('div',{style:{fontSize:13}},'No exercises yet — add your first one above')
+      ) : e('div', {style:{display:'flex',flexDirection:'column',gap:14}},
+        ...EXERCISE_BANK_CATEGORIES.map(function(cat){
+          if (!grouped[cat].length) return null;
+          return e('div', {key:cat},
+            e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:0.5,marginBottom:6}}, cat.toUpperCase()),
+            e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
+              ...grouped[cat].map(function(ex){
+                return e('div', {key:ex.id, style:{background:'#fff',borderRadius:12,padding:'12px',border:'1px solid '+BORDER,display:'flex',alignItems:'center',gap:10}},
+                  e('div', {style:{flex:1,minWidth:0}},
+                    e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, ex.name),
+                    ex.notes ? e('div', {style:{fontSize:11,color:MUTED,marginTop:2}}, ex.notes) : null
+                  ),
+                  e('div', {style:{fontSize:10,fontWeight:700,color:typeColors[ex.type],background:typeColors[ex.type]+'18',padding:'4px 9px',borderRadius:20,whiteSpace:'nowrap'}}, EXERCISE_BANK_TYPE_LABELS[ex.type]),
+                  e('button', {onClick:function(){deleteExercise(ex.id);}, style:{background:'none',border:'none',color:MUTED,fontSize:16,cursor:'pointer',padding:'4px'}}, '🗑️')
+                );
+              })
+            )
+          );
+        })
+      )
+    );
+  }
+
   function renderCoach() {
     if(coachPhase==='onboarding') return renderOnboarding();
     if(coachPhase==='checkin') return renderCheckinForm();
@@ -2178,7 +2840,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['progress','📈 Progress'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
+        ...[ ['progress','📈 Progress'], ['lifts','📊 Lifts'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
             flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
@@ -2195,6 +2857,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       view==='watch'    ? renderWatch()    :
       view==='history'  ? renderHistory()  :
       view==='progress' ? renderProgress() :
+      view==='lifts'    ? renderLiftProgress() :
+      view==='bank'     ? renderExerciseBank() :
       renderCoach()
     ),
     // Execute overlay — full-screen, outside scroll container
