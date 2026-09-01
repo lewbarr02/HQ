@@ -668,7 +668,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var sets = {};
     (day.exercises||[]).forEach(function(ex){
       var arr = [];
-      for(var i=0;i<(ex.sets||3);i++) arr.push({weight:'',reps:'',done:false});
+      var slot = ex.type==='time' ? {duration:'',done:false} : ex.type==='reps' ? {reps:'',done:false} : {weight:'',reps:'',done:false};
+      for(var i=0;i<(ex.sets||3);i++) arr.push(Object.assign({},slot));
       sets[ex.name] = arr;
     });
     var startTime = Date.now();
@@ -694,8 +695,16 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     var exercises = (executeDay.exercises||[]).map(function(ex){
       var logged = (executeSets[ex.name]||[]).filter(function(s){return s.done;});
       if(!logged.length) return null;
-      // Use last done set's weight/reps as the representative value
+      // Use last done set's value as the representative value
       var last = logged[logged.length-1];
+      if (ex.type === 'time') {
+        return { name:ex.name, type:'time', duration: last.duration!=null?parseInt(last.duration):null,
+          sets: logged.length, allSets: logged.map(function(s){return {duration:s.duration!=null?parseInt(s.duration):null};}) };
+      }
+      if (ex.type === 'reps') {
+        return { name:ex.name, type:'reps', reps: last.reps!=null?parseInt(last.reps):null,
+          sets: logged.length, allSets: logged.map(function(s){return {reps:s.reps!=null?parseInt(s.reps):null};}) };
+      }
       return {
         name: ex.name,
         weight: last.weight ? parseFloat(last.weight) : null,
@@ -796,20 +805,33 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
 
     function logSet(exName) {
       var draft = executeDraft[exName]||{};
-      var w = draft.weight||'';
-      var r = draft.reps||'';
-      if(!w||!r){
-        var msg = (!w&&!r) ? 'Enter weight and reps to log this set' : !w ? 'Enter weight to log this set' : 'Enter reps to log this set';
-        setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:msg});});
-        return;
+      var exDef = exercises.find(function(e){return e.name===exName;}) || {};
+      var newSlot;
+      if (exDef.type === 'time') {
+        var secs = parseInt(draft.duration);
+        if (!secs) { setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:'Start the timer or enter a duration to log this set'});}); return; }
+        newSlot = { duration: secs, done: true };
+      } else if (exDef.type === 'reps') {
+        var r0 = draft.reps||'';
+        if (!r0) { setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:'Enter reps to log this set'});}); return; }
+        newSlot = { reps: r0, done: true };
+      } else {
+        var w = draft.weight||'';
+        var r = draft.reps||'';
+        if(!w||!r){
+          var msg = (!w&&!r) ? 'Enter weight and reps to log this set' : !w ? 'Enter weight to log this set' : 'Enter reps to log this set';
+          setExecuteSetError(function(errs){return Object.assign({},errs,{[exName]:msg});});
+          return;
+        }
+        newSlot = {weight:w, reps:r, done:true};
       }
       setExecuteSetError(function(errs){ if(!errs[exName]) return errs; var n=Object.assign({},errs); delete n[exName]; return n; });
       var sets = (executeSets[exName]||[]).slice();
       var idx = sets.findIndex(function(s){return !s.done;});
       if(idx===-1) return;
-      sets[idx] = {weight:w, reps:r, done:true};
+      sets[idx] = newSlot;
       var newSets = Object.assign({},executeSets,{[exName]:sets});
-      var newDraft = Object.assign({},executeDraft,{[exName]:{weight:w,reps:''}});
+      var newDraft = Object.assign({},executeDraft,{[exName]: exDef.type==='time' ? {duration:''} : exDef.type==='reps' ? {reps:''} : {weight:newSlot.weight,reps:''}});
       var nextEx = executeActiveEx;
       var allDone = sets.every(function(s){return s.done;});
       if(allDone){
@@ -964,6 +986,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       ):null,
       e('div',{style:{flex:1,padding:'12px 16px',display:'flex',flexDirection:'column',gap:10}},
         ...exercises.map(function(ex){
+          var exType = ex.type || 'weight';
           var sets = executeSets[ex.name]||[];
           var doneCt = sets.filter(function(s){return s.done;}).length;
           var allDone = doneCt===sets.length&&sets.length>0;
@@ -974,6 +997,13 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           var targetW = ex.lastWeight||ex.targetWeight;
           var prevSession = getPrevSession(ex.name);
           var prevSetForNext = prevSession && prevSession.sets[nextSetNum-1] ? prevSession.sets[nextSetNum-1] : null;
+          var running = executeTimeRunning[ex.name];
+          var liveSecs = running ? Math.max(0,Math.floor((Date.now()-running)/1000)) : null;
+          function setSummaryLine(s) {
+            if (exType==='time') return s.duration!=null?s.duration+'s':'—';
+            if (exType==='reps') return s.reps!=null?String(s.reps):'—';
+            return (s.weight!=null?s.weight:'—')+'×'+(s.reps!=null?s.reps:'—');
+          }
           return e('div',{key:ex.name,onClick:function(){if(!allDone)setExecuteActiveEx(ex.name);},style:{
             background:allDone?'rgba(16,185,129,0.12)':isActive?'rgba(123,47,255,0.15)':'rgba(255,255,255,0.05)',
             borderRadius:16,border:'1.5px solid '+(allDone?'rgba(16,185,129,0.4)':isActive?PURPLE+'66':'rgba(255,255,255,0.08)'),
@@ -982,8 +1012,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:isActive&&!allDone?12:0}},
               e('div',{},
                 e('div',{style:{fontSize:14,fontWeight:800,color:allDone?'#10B981':'white'}},ex.name),
-                e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:2}},ex.sets+'×'+ex.reps+(targetW?' · '+targetW+'lbs':'')),
-                prevSession?e('div',{style:{fontSize:11,color:'#34D399',marginTop:3,fontWeight:600}},'Last time: '+prevSession.sets.map(function(s){return (s.weight!=null?s.weight:'—')+'×'+(s.reps!=null?s.reps:'—');}).join(', ')):null
+                e('div',{style:{fontSize:11,color:'rgba(255,255,255,0.45)',marginTop:2}},
+                  exType==='time' ? ex.sets+'×'+(ex.repsText||(ex.targetSecs?ex.targetSecs+'s':'?'))
+                    : exType==='reps' ? ex.sets+'×'+ex.reps
+                    : ex.sets+'×'+ex.reps+(targetW?' · '+targetW+'lbs':'')
+                ),
+                prevSession?e('div',{style:{fontSize:11,color:'#34D399',marginTop:3,fontWeight:600}},'Last time: '+prevSession.sets.map(setSummaryLine).join(', ')):null
               ),
               e('div',{style:{display:'flex',gap:5,alignItems:'center'}},
                 ...sets.map(function(s,i){
@@ -992,9 +1026,9 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               )
             ),
             isActive&&!allDone?e('div',{},
-              prevSetForNext?e('div',{style:{fontSize:12,color:'#34D399',fontWeight:700,marginBottom:8,display:'flex',alignItems:'center',gap:4}},'✓ Set '+nextSetNum+' last time: '+(prevSetForNext.weight!=null?prevSetForNext.weight+' lbs':'—')+' × '+(prevSetForNext.reps!=null?prevSetForNext.reps+' reps':'—')):null,
+              prevSetForNext?e('div',{style:{fontSize:12,color:'#34D399',fontWeight:700,marginBottom:8,display:'flex',alignItems:'center',gap:4}},'✓ Set '+nextSetNum+' last time: '+setSummaryLine(prevSetForNext)):null,
               e('div',{style:{display:'flex',gap:8,alignItems:'flex-end'}},
-                e('div',{style:{flex:1}},
+                exType==='weight' ? e('div',{style:{flex:1}},
                   e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Set '+nextSetNum+' — Weight (lbs)'),
                   e('input',{
                     className:'input',type:'number',
@@ -1004,8 +1038,8 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
                     onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{weight:v})});});setExecuteSetError(function(errs){ if(!errs[ex.name]) return errs; var n=Object.assign({},errs); delete n[ex.name]; return n; });},
                     onClick:function(ev){ev.stopPropagation();}
                   })
-                ),
-                e('div',{style:{flex:1}},
+                ) : null,
+                exType!=='time' ? e('div',{style:{flex:1}},
                   e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Reps'),
                   e('input',{
                     className:'input',type:'number',
@@ -1015,14 +1049,25 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
                     onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{reps:v})});});setExecuteSetError(function(errs){ if(!errs[ex.name]) return errs; var n=Object.assign({},errs); delete n[ex.name]; return n; });},
                     onClick:function(ev){ev.stopPropagation();}
                   })
+                ) : e('div',{style:{flex:1}},
+                  e('div',{style:{fontSize:10,color:'rgba(255,255,255,0.5)',marginBottom:4,fontWeight:600}},'Duration (sec)'),
+                  e('input',{
+                    className:'input',type:'number',
+                    style:{marginBottom:0,background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.2)',color:'white',fontSize:15,fontWeight:700},
+                    placeholder:prevSetForNext&&prevSetForNext.duration!=null?String(prevSetForNext.duration):(ex.targetSecs?String(ex.targetSecs):'seconds'),
+                    value:running?String(liveSecs):(draft.duration||''), disabled:!!running,
+                    onInput:function(ev){var v=ev.target.value;setExecuteDraft(function(d){return Object.assign({},d,{[ex.name]:Object.assign({},d[ex.name]||{},{duration:v})});});setExecuteSetError(function(errs){ if(!errs[ex.name]) return errs; var n=Object.assign({},errs); delete n[ex.name]; return n; });},
+                    onClick:function(ev){ev.stopPropagation();}
+                  })
                 ),
+                exType==='time' ? e('button',{onClick:function(ev){ev.stopPropagation();toggleAdHocTimer(ex.name);},style:{padding:'12px 14px',borderRadius:12,border:'none',background:running?'#EF4444':'rgba(255,255,255,0.15)',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}},running?'⏹ Stop':'▶ Start') : null,
                 e('button',{onClick:function(ev){ev.stopPropagation();logSet(ex.name);},style:{padding:'12px 14px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}},'Log Set')
               ),
               exErr?e('div',{style:{marginTop:6,fontSize:11,color:'#F59E0B',fontWeight:600,display:'flex',alignItems:'center',gap:4}},'⚠ '+exErr):null
             ):null,
             isActive&&doneCt>0?e('div',{style:{marginTop:8,display:'flex',flexWrap:'wrap',gap:6}},
               ...sets.filter(function(s){return s.done;}).map(function(s,i){
-                return e('div',{key:i,style:{fontSize:11,color:'rgba(255,255,255,0.5)',background:'rgba(255,255,255,0.06)',borderRadius:8,padding:'4px 8px'}},'Set '+(i+1)+': '+(s.weight?s.weight+'lbs':'—')+(s.reps?' × '+s.reps:''));
+                return e('div',{key:i,style:{fontSize:11,color:'rgba(255,255,255,0.5)',background:'rgba(255,255,255,0.06)',borderRadius:8,padding:'4px 8px'}},'Set '+(i+1)+': '+setSummaryLine(s));
               })
             ):null
           );
@@ -1230,15 +1275,27 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         e('div', {style:{display:'flex',flexDirection:'column',gap:10}},
           ...(selDay.exercises||[]).map(function(ex){
             var exLog = programExerciseLogs[ex.name] || {};
+            var exType = ex.type || 'weight';
             var prevWeight = ex.lastWeight;
             var suggestion = prevWeight ? (ex.lastReps && parseInt(ex.reps.toString().split('-')[1]||ex.reps) <= (ex.lastReps||0) ? prevWeight + (selDay.dayLabel.toLowerCase().includes('upper')||selDay.dayLabel.toLowerCase().includes('a')?5:10) : prevWeight) : ex.targetWeight;
             return e('div', {key:ex.name, style:{background:'#F8FAFC',borderRadius:12,padding:'12px'}},
               e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}},
                 e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, ex.name),
-                e('div', {style:{fontSize:11,fontWeight:700,color:PURPLE,background:PURPLE+'10',padding:'3px 8px',borderRadius:20}}, ex.sets+'×'+ex.reps)
+                e('div', {style:{fontSize:11,fontWeight:700,color:PURPLE,background:PURPLE+'10',padding:'3px 8px',borderRadius:20}},
+                  exType==='time' ? ex.sets+'×'+(ex.repsText||(ex.targetSecs?ex.targetSecs+'s':'?')) : ex.sets+'×'+ex.reps
+                )
               ),
               ex.notes ? e('div', {style:{fontSize:11,color:MUTED,marginBottom:8,fontStyle:'italic'}}, ex.notes) : null,
-              e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
+              exType==='time' ? e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
+                e('div', {style:{flex:1}},
+                  e('div', {style:{fontSize:10,color:MUTED,fontWeight:600,marginBottom:3}}, 'Duration (sec)'),
+                  e('input', {className:'input', type:'number', style:{marginBottom:0,fontSize:13},
+                    placeholder: ex.targetSecs ? String(ex.targetSecs) : 'seconds',
+                    value: exLog.duration||'',
+                    onInput:function(ev){updateExLog(ex.name,'duration',ev.target.value);}
+                  })
+                )
+              ) : e('div', {style:{display:'flex',gap:8,alignItems:'center'}},
                 e('div', {style:{flex:1}},
                   e('div', {style:{fontSize:10,color:MUTED,fontWeight:600,marginBottom:3}}, 'Weight (lbs)'),
                   e('input', {className:'input', type:'number', style:{marginBottom:0,fontSize:13},
@@ -1284,7 +1341,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       e('button', {
         onClick:function(){
           if(!selectedProgramDay && !sessionNote.trim() && !Object.keys(programExerciseLogs).length) return;
-          var exData = selDay ? Object.keys(programExerciseLogs).filter(function(k){return programExerciseLogs[k].weight||programExerciseLogs[k].reps;}).map(function(k){return {name:k, weight:programExerciseLogs[k].weight, reps:programExerciseLogs[k].reps};}) : [];
+          var exData = selDay ? Object.keys(programExerciseLogs).filter(function(k){return programExerciseLogs[k].weight||programExerciseLogs[k].reps||programExerciseLogs[k].duration;}).map(function(k){
+            var log = programExerciseLogs[k];
+            var exDef = (selDay.exercises||[]).find(function(e){return e.name===k;}) || {};
+            if (exDef.type==='time') return {name:k, type:'time', duration: log.duration!=null?parseInt(log.duration):null};
+            return {name:k, weight:log.weight, reps:log.reps};
+          }) : [];
           var entry = { id:'w'+Date.now(), groups:selectedGroups, sets:sessionSets?parseInt(sessionSets):null, note:sessionNote.trim(), programDay:selectedProgramDay||null, exercises:exData };
           var day = safeLog[logDate] || [];
           var newLog = Object.assign({}, safeLog, {[logDate]: [...day, entry]});
@@ -1301,7 +1363,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               if (i !== selDay._rotationIdx) return d;
               return Object.assign({}, d, {exercises: d.exercises.map(function(ex){
                 var logged = programExerciseLogs[ex.name];
-                if (!logged || (!logged.weight && !logged.reps)) return ex;
+                if (!logged || (!logged.weight && !logged.reps && !logged.duration)) return ex;
+                if (ex.type === 'time') {
+                  return Object.assign({}, ex, { lastLogged: new Date().toISOString() });
+                }
                 return Object.assign({}, ex, {
                   lastWeight: logged.weight ? parseFloat(logged.weight) : ex.lastWeight,
                   lastReps: logged.reps ? parseInt(logged.reps) : ex.lastReps,
@@ -2577,7 +2642,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         var day = programDayByType(prog, label);
         if (!day) return;
         (day.exercises||[]).forEach(function(ex){
-          list.push({ name: ex.name, group: label, key: label+'::'+ex.name, exType:'weight', targetWeight: ex.targetWeight!=null?parseFloat(ex.targetWeight):null });
+          list.push({ name: ex.name, group: label, key: label+'::'+ex.name, exType: ex.type||'weight', targetWeight: ex.targetWeight!=null?parseFloat(ex.targetWeight):null });
         });
       });
     }
@@ -3537,7 +3602,7 @@ function seedBrittanieProgram() {
           { name: 'Cable Kickback', sets: 3, reps: '15-20 each', targetWeight: 15, lastWeight: null, lastReps: null, lastLogged: null, notes: '2-sec squeeze at full extension. No swinging — this is an isolation movement.' },
           { name: 'Lying Leg Curl', sets: 3, reps: '12-15', targetWeight: 20, lastWeight: null, lastReps: null, lastLogged: null, notes: 'Full ROM — all the way up, controlled negative. 5RM was 30 lbs.' },
           { name: 'Abductor Machine (leaning forward)', sets: 3, reps: '15-20', targetWeight: 45, lastWeight: null, lastReps: null, lastLogged: null, notes: 'Chest toward thighs, 30-45° forward lean. Shifts load to glute med. 5RM was 60 lbs.' },
-          { name: 'Plank Hold', sets: 3, reps: '30-45 sec', targetWeight: 0, lastWeight: null, lastReps: null, lastLogged: null, notes: 'Deep core engagement — brace like you\'re about to take a punch.' },
+          { name: 'Plank Hold', type: 'time', sets: 3, repsText: '30-45 sec', targetSecs: 35, lastLogged: null, notes: 'Deep core engagement — brace like you\'re about to take a punch.' },
         ]
       },
       {
