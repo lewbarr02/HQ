@@ -183,13 +183,13 @@ async function pushAllToSupabase() {
 }
 
 // ── Seed / re-seed ──────────────────────────────────────────────────────────
-// Exercise definitions live in code (SECTIONS). Logged history lives in the
-// cloud. When PROGRAM_VERSION changes we refresh `sections` from code and leave
-// `sessionLog` untouched. Runs once at module load for the offline first paint;
-// App re-runs the version check after the cloud pull so code always wins for
-// exercise content.
+// Exercise definitions used to live only in code (SECTIONS), re-applied on every
+// version bump. Now that exercises can be edited live from Lewis's Clients tab,
+// SECTIONS is a one-time-only seed — first load ever, never overwrites afterward
+// — matching the seedBrittanieProgram()/seedCamProgram() convention in the other
+// forks. Runs once at module load for the offline first paint.
 function seedMom() {
-  if (load('programVersion') !== PROGRAM_VERSION) {
+  if (load('sections') == null) {
     save('sections', SECTIONS);
     save('programVersion', PROGRAM_VERSION);
   }
@@ -701,13 +701,9 @@ function App() {
 
   useEffect(() => {
     syncFromSupabase().then(pulled => {
-      // Code is the source of truth for exercise definitions. If the cloud copy
-      // is from an older PROGRAM_VERSION, refresh `sections` from code and keep
-      // the pulled history.
-      if (load('programVersion') !== PROGRAM_VERSION) {
-        save('sections', SECTIONS);
-        save('programVersion', PROGRAM_VERSION);
-      }
+      // Cloud is the source of truth for exercise definitions now that they can
+      // be edited live (from Lewis's Clients tab, or in-app in the future) —
+      // whatever synced down from the cloud wins, code is only the first-ever seed.
       setSections(load('sections') || SECTIONS);
       setSessionLog(load('sessionLog') || {});
     });

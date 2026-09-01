@@ -77,6 +77,18 @@ const _SB = supabase.createClient(
   'sb_publishable_8_szpJNSWkEdZPdl0fDJpw_U8Q0DWg4'
 );
 
+// ── Client apps (Brittanie / Cam / Mom) — separate Supabase project, shared by
+// all three forks and scoped by user_id in the same hq_data key/value table. ──
+const _CLIENTS_SB = supabase.createClient(
+  'https://axybbtnkihoqwcmmmwae.supabase.co',
+  'sb_publishable_vYCFYjguIei_WXAHN5ig2Q_y1z45Sjl'
+);
+const CLIENTS = [
+  { id:'brittanie', name:'Brittanie', emoji:'💗', dataKey:'currentProgram', model:'rotation' },
+  { id:'cam',       name:'Cam',       emoji:'💪', dataKey:'currentProgram', model:'rotation' },
+  { id:'mom',       name:'Mom',       emoji:'🖐️', dataKey:'sections',       model:'sections' },
+];
+
 const VAPID_PUBLIC_KEY = 'BPHwTkV4M4QJJFLH9s32fuIjWZSTbhUVoUYUQK5OnkNBR6b89GxTP6JLS4yb_6wri_qLRk_NLhww2OikATuokNw';
 
 // ── Google Calendar OAuth ──────────────────────────────────────────────────
@@ -10701,7 +10713,6 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [sessionNote, setSessionNote] = useState('');
   const [sessionSets, setSessionSets] = useState('');
   const [historyFilter, setHistoryFilter] = useState('all');
-  const [expandedDay, setExpandedDay] = useState(null);
   // Coach state
   const [watchLog, setWatchLog] = useState(function(){ return load('watchLog') || []; });
   const [watchUploading, setWatchUploading] = useState(false);
@@ -10710,26 +10721,31 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [activityUploading, setActivityUploading] = useState(false);
   const [activityError, setActivityError] = useState(null);
   const [activityJustSaved, setActivityJustSaved] = useState(false);
-  // ── Britt's workouts (read-only, pulled from her app's Supabase sync) ────
-  const [brittWorkoutLog, setBrittWorkoutLog] = useState(null); // null = not loaded yet
-  const [brittLoading, setBrittLoading] = useState(false);
-  const [brittError, setBrittError] = useState(null);
-  const [brittSyncedAt, setBrittSyncedAt] = useState(null);
-  const [brittExpandedDay, setBrittExpandedDay] = useState(null);
-  function fetchBrittWorkouts() {
-    setBrittLoading(true); setBrittError(null);
-    _SB.from('hq_data').select('value,updated_at').eq('user_id','brittanie').eq('key','workoutLog').maybeSingle()
+  // ── Clients tab (view/edit Brittanie/Cam/Mom's programs, separate Supabase project) ──
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [clientData, setClientData] = useState(null); // raw value from hq_data — shape depends on client.model
+  const [clientLoading, setClientLoading] = useState(false);
+  const [clientError, setClientError] = useState(null);
+  const [clientSyncedAt, setClientSyncedAt] = useState(null);
+  const [clientAddForm, setClientAddForm] = useState(null); // {groupKey, name, type, sets, reps, targetWeight, targetSecs, note}
+  function fetchClientData(clientId) {
+    var client = CLIENTS.find(function(c){return c.id===clientId;});
+    setClientLoading(true); setClientError(null); setClientData(null);
+    _CLIENTS_SB.from('hq_data').select('value,updated_at').eq('user_id',clientId).eq('key',client.dataKey).maybeSingle()
       .then(function(res){
-        setBrittLoading(false);
-        if(res.error){ setBrittError('Could not load Britt\'s workouts'); return; }
-        setBrittWorkoutLog((res.data && res.data.value) || {});
-        setBrittSyncedAt(res.data ? res.data.updated_at : null);
+        setClientLoading(false);
+        if(res.error){ setClientError('Could not load '+client.name+'\'s program'); return; }
+        setClientData(res.data ? res.data.value : null);
+        setClientSyncedAt(res.data ? res.data.updated_at : null);
       })
-      .catch(function(){ setBrittLoading(false); setBrittError('Could not load Britt\'s workouts'); });
+      .catch(function(){ setClientLoading(false); setClientError('Could not load '+client.name+'\'s program'); });
   }
-  useEffect(function(){
-    if(view==='britt' && brittWorkoutLog===null && !brittLoading) fetchBrittWorkouts();
-  }, [view]);
+  function saveClientData(clientId, value) {
+    var client = CLIENTS.find(function(c){return c.id===clientId;});
+    setClientData(value);
+    return _CLIENTS_SB.from('hq_data').upsert({user_id:clientId, key:client.dataKey, value:value, updated_at:new Date().toISOString()}, {onConflict:'user_id,key'})
+      .then(function(res){ if(res.error) setClientError('Could not save change'); else setClientSyncedAt(new Date().toISOString()); });
+  }
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
   const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
@@ -11635,154 +11651,159 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     );
   }
 
-  // ── History ───────────────────────────────────────────────────────────────
-  function deleteSession(date, sessionId) {
-    var day = (safeLog[date]||[]).filter(function(s){return s.id!==sessionId;});
-    var newLog = Object.assign({}, safeLog);
-    if(day.length===0) delete newLog[date]; else newLog[date]=day;
-    setWorkoutLog(newLog); save('workoutLog', newLog);
-  }
+  // ── Clients (view/edit Brittanie/Cam/Mom's programs) ────────────────────────
+  function renderClients() {
+    var client = selectedClient ? CLIENTS.find(function(c){return c.id===selectedClient;}) : null;
 
-  function renderHistory() {
-    var sortedDays = Object.keys(safeLog).sort().reverse();
-    if(sortedDays.length===0) return e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
-      e('div',{style:{fontSize:48,marginBottom:12}},'💪'),
-      e('div',{style:{fontSize:16,fontWeight:700,marginBottom:6}},'No workouts logged yet'),
-      e('div',{style:{fontSize:13}},  'Tap "Log Workout" to add your first session')
-    );
-    return e('div', {style:{display:'flex',flexDirection:'column',gap:10,padding:'16px'}},
-      ...sortedDays.map(function(date){
-        var sessions = safeLog[date];
-        var allGroups = sessions.reduce(function(a,s){return a.concat(s.groups||[]);}, []);
-        var uniq = allGroups.filter(function(x,i){return allGroups.indexOf(x)===i;});
-        var isOpen = expandedDay === date;
-        return e('div', {key:date, style:{background:'#fff',borderRadius:16,overflow:'hidden',border:'1px solid '+BORDER}},
-          e('button', {
-            onClick:function(){setExpandedDay(isOpen?null:date);},
-            style:{width:'100%',padding:'14px 16px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'space-between',textAlign:'left'}
-          },
-            e('div', {},
-              e('div', {style:{fontSize:13,fontWeight:800,color:TEXT}}, new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-              e('div', {style:{display:'flex',flexWrap:'wrap',gap:4,marginTop:5}},
-                ...uniq.slice(0,6).map(function(gid){
-                  var g = MUSCLE_GROUPS.find(function(x){return x.id===gid;});
-                  if(!g) return null;
-                  var col = CATEGORY_COLORS[g.category];
-                  return e('span',{key:gid,style:{fontSize:10,padding:'2px 7px',borderRadius:20,background:col.bg,color:col.text,fontWeight:700,border:'1px solid '+col.border}}, g.emoji+' '+g.name);
-                }),
-                uniq.length>6?e('span',{style:{fontSize:10,color:MUTED}},'+'+  (uniq.length-6)+' more'):null
-              )
-            ),
-            e('div', {style:{fontSize:12,color:MUTED,display:'flex',alignItems:'center',gap:6}},
-              sessions.length+' session'+(sessions.length>1?'s':''),
-              e('span',{},isOpen?'▲':'▼')
-            )
+    function selectClient(id) {
+      setSelectedClient(id);
+      setClientAddForm(null);
+      fetchClientData(id);
+    }
+
+    // Normalize whichever shape this client's data is into a flat list of "groups" —
+    // a rotation day for Brittanie/Cam, a fixed section for Mom.
+    function getGroups() {
+      if (!client || clientData==null) return [];
+      if (client.model === 'rotation') {
+        return (clientData.days||[]).map(function(d,i){
+          return { key:String(i), label:d.dayLabel, sub:(d.focus||[]).join(' · '), exercises:d.exercises||[] };
+        });
+      }
+      return (clientData||[]).map(function(s){
+        return { key:s.id, label:(s.emoji?s.emoji+' ':'')+s.label, sub:null, exercises:s.exercises||[] };
+      });
+    }
+
+    function updateGroupExercises(groupKey, nextExercises) {
+      var next = JSON.parse(JSON.stringify(clientData));
+      if (client.model === 'rotation') {
+        next.days[parseInt(groupKey)].exercises = nextExercises;
+      } else {
+        var idx = next.findIndex(function(s){return s.id===groupKey;});
+        if (idx!==-1) next[idx].exercises = nextExercises;
+      }
+      saveClientData(selectedClient, next);
+    }
+
+    function removeExercise(group, exIdx) {
+      if (!confirm('Remove "'+group.exercises[exIdx].name+'" from '+group.label+'?')) return;
+      updateGroupExercises(group.key, group.exercises.filter(function(_,i){return i!==exIdx;}));
+    }
+
+    function submitAddExercise() {
+      var f = clientAddForm;
+      if (!f || !f.name.trim()) return;
+      var groups = getGroups();
+      var g = groups.find(function(x){return x.key===f.groupKey;});
+      if (!g) return;
+      var entry = { name: f.name.trim(), type: f.type, sets: parseInt(f.sets)||3 };
+      if (f.type==='time') {
+        entry.targetSecs = f.targetSecs?parseInt(f.targetSecs):null;
+        entry.repsText = entry.targetSecs ? entry.targetSecs+' sec' : '';
+      } else {
+        entry.reps = f.reps || '10';
+        if (f.type==='weight') entry.targetWeight = f.targetWeight?parseFloat(f.targetWeight):null;
+      }
+      if (f.note && f.note.trim()) entry.note = f.note.trim();
+      updateGroupExercises(f.groupKey, g.exercises.concat([entry]));
+      setClientAddForm(null);
+    }
+
+    function exerciseLine(ex) {
+      var t = ex.type || 'weight';
+      if (t==='time') return (ex.sets||'?')+'×'+(ex.repsText||(ex.targetSecs?ex.targetSecs+'s':'?'));
+      if (t==='reps') return (ex.sets||'?')+'×'+(ex.reps||'?');
+      return (ex.sets||'?')+'×'+(ex.reps||'?')+(ex.targetWeight!=null?' @ '+ex.targetWeight+'lbs':'');
+    }
+
+    var groups = getGroups();
+
+    return e('div', {style:{display:'flex',flexDirection:'column',gap:16,padding:'16px'}},
+      // Client picker
+      e('div', {style:{display:'flex',gap:8}},
+        ...CLIENTS.map(function(c){
+          var active = selectedClient===c.id;
+          return e('button',{key:c.id,onClick:function(){selectClient(c.id);},style:{
+            flex:1,padding:'12px',borderRadius:14,border:'1.5px solid '+(active?ACCENT:BORDER),
+            background:active?ACCENT+'18':'#fff',color:active?ACCENT:TEXT,
+            fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
+          }}, c.emoji+' '+c.name);
+        })
+      ),
+
+      !selectedClient ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
+        e('div',{style:{fontSize:48,marginBottom:12}},'👥'),
+        e('div',{style:{fontSize:14}}, 'Pick a client to view and edit their program')
+      ) : null,
+
+      selectedClient && clientLoading ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading '+client.name+'\'s program…') : null,
+
+      selectedClient && !clientLoading && clientError ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:'#EF4444',fontSize:13}}, clientError) : null,
+
+      selectedClient && !clientLoading && !clientError ? e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+        e('div',{style:{fontSize:11,color:MUTED}}, clientSyncedAt ? 'Synced '+new Date(clientSyncedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not synced yet'),
+        e('button',{onClick:function(){fetchClientData(selectedClient);},style:{background:'none',border:'1px solid '+BORDER,borderRadius:20,padding:'5px 12px',fontSize:11,fontWeight:700,color:ACCENT,cursor:'pointer',fontFamily:'inherit'}}, '↻ Refresh')
+      ) : null,
+
+      selectedClient && !clientLoading && !clientError && groups.length===0 ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
+        e('div',{style:{fontSize:48,marginBottom:12}}, client.emoji),
+        e('div',{style:{fontSize:13}}, 'Nothing synced from '+client.name+'\'s app so far')
+      ) : null,
+
+      ...groups.map(function(g){
+        var addingHere = clientAddForm && clientAddForm.groupKey===g.key;
+        return e('div', {key:g.key, style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER,display:'flex',flexDirection:'column',gap:10}},
+          e('div',{},
+            e('div',{style:{fontSize:14,fontWeight:800,color:TEXT}}, g.label),
+            g.sub ? e('div',{style:{fontSize:11,color:ACCENT,fontWeight:700,marginTop:2}}, g.sub) : null
           ),
-          isOpen ? e('div', {style:{borderTop:'1px solid '+BORDER}},
-            ...sessions.map(function(s, si){
-              var cats = [...new Set((s.groups||[]).map(function(gid){var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});return g?g.category:null;}).filter(Boolean))];
-              return e('div', {key:s.id, style:{padding:'12px 16px',borderBottom:si<sessions.length-1?'1px solid '+BORDER:'none'}},
-                e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
-                  e('div', {style:{flex:1}},
-                    e('div', {style:{display:'flex',gap:5,flexWrap:'wrap',marginBottom:6}},
-                      ...cats.map(function(cat){
-                        var col = CATEGORY_COLORS[cat];
-                        return e('span',{key:cat,style:{fontSize:10,padding:'2px 8px',borderRadius:20,background:col.grad,color:'white',fontWeight:700}},cat);
-                      })
-                    ),
-                    e('div', {style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:s.note?6:0}},
-                      ...(s.groups||[]).map(function(gid){
-                        var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});
-                        return g?e('span',{key:gid,style:{fontSize:11,color:TEXT}},(g.emoji+' '+g.name)):null;
-                      })
-                    ),
-                    s.note?e('div',{style:{fontSize:12,color:MUTED,fontStyle:'italic'}},'"'+s.note+'"'):null,
-                    s.sets?e('div',{style:{fontSize:11,color:MUTED,marginTop:3}},s.sets+' total sets'):null
-                  ),
-                  e('button',{onClick:function(){deleteSession(date,s.id);},style:{background:'none',border:'none',color:'#FDA29B',fontSize:16,cursor:'pointer',padding:'0 0 0 8px',lineHeight:1}},'×')
-                )
+          g.exercises.length===0 ? e('div',{style:{fontSize:12,color:MUTED,fontStyle:'italic'}},'No exercises yet') :
+          e('div',{style:{display:'flex',flexDirection:'column',gap:6}},
+            ...g.exercises.map(function(ex,i){
+              return e('div',{key:i,style:{display:'flex',alignItems:'center',gap:10,padding:'8px 10px',background:CARD2,borderRadius:10}},
+                e('div',{style:{flex:1,minWidth:0}},
+                  e('div',{style:{fontSize:13,fontWeight:700,color:TEXT}}, ex.name),
+                  e('div',{style:{fontSize:11,color:MUTED}}, exerciseLine(ex)+(ex.note?' — '+ex.note:''))
+                ),
+                e('button',{onClick:function(){removeExercise(g,i);},style:{background:'none',border:'none',color:MUTED,fontSize:16,cursor:'pointer',padding:'4px'}}, '🗑️')
               );
             })
-          ) : null
+          ),
+          !addingHere ? e('button',{onClick:function(){setClientAddForm({groupKey:g.key,name:'',type:'weight',sets:'3',reps:'10',targetWeight:'',targetSecs:'',note:''});},style:{
+            padding:'10px',borderRadius:10,border:'1.5px dashed '+ACCENT+'60',background:ACCENT+'10',color:ACCENT,
+            fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+          }}, '+ Add Exercise') : e('div',{style:{background:'#F8FAFC',borderRadius:12,padding:'12px',display:'flex',flexDirection:'column',gap:8}},
+            e('input',{className:'input',style:{marginBottom:0},placeholder:'Exercise name',value:clientAddForm.name,
+              onInput:function(ev){setClientAddForm(Object.assign({},clientAddForm,{name:ev.target.value}));}}),
+            e('div',{style:{display:'flex',gap:8}},
+              ...EXERCISE_BANK_TYPES.map(function(t){
+                var active = clientAddForm.type===t[0];
+                return e('button',{key:t[0],onClick:function(){setClientAddForm(Object.assign({},clientAddForm,{type:t[0]}));},style:{
+                  flex:1,padding:'10px',borderRadius:10,border:'1.5px solid '+(active?ACCENT:BORDER),
+                  background:active?ACCENT+'18':'#fff',color:active?ACCENT:MUTED,fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+                }}, t[1]);
+              })
+            ),
+            e('div',{style:{display:'flex',gap:8}},
+              e('input',{className:'input',type:'number',style:{marginBottom:0},placeholder:'Sets',value:clientAddForm.sets,
+                onInput:function(ev){setClientAddForm(Object.assign({},clientAddForm,{sets:ev.target.value}));}}),
+              clientAddForm.type!=='time' ? e('input',{className:'input',style:{marginBottom:0},placeholder:'Reps (e.g. 10 or 8-12)',value:clientAddForm.reps,
+                onInput:function(ev){setClientAddForm(Object.assign({},clientAddForm,{reps:ev.target.value}));}}) : null,
+              clientAddForm.type==='weight' ? e('input',{className:'input',type:'number',style:{marginBottom:0},placeholder:'Weight (lbs)',value:clientAddForm.targetWeight,
+                onInput:function(ev){setClientAddForm(Object.assign({},clientAddForm,{targetWeight:ev.target.value}));}}) : null,
+              clientAddForm.type==='time' ? e('input',{className:'input',type:'number',style:{marginBottom:0},placeholder:'Seconds',value:clientAddForm.targetSecs,
+                onInput:function(ev){setClientAddForm(Object.assign({},clientAddForm,{targetSecs:ev.target.value}));}}) : null
+            ),
+            e('input',{className:'input',style:{marginBottom:0},placeholder:'Note (optional)',value:clientAddForm.note,
+              onInput:function(ev){setClientAddForm(Object.assign({},clientAddForm,{note:ev.target.value}));}}),
+            e('div',{style:{display:'flex',gap:8}},
+              e('button',{onClick:function(){setClientAddForm(null);},style:{flex:1,padding:'12px',borderRadius:12,border:'1px solid '+BORDER,background:'#fff',color:MUTED,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:'inherit'}}, 'Cancel'),
+              e('button',{onClick:submitAddExercise,style:{flex:2,padding:'12px',borderRadius:12,border:'none',background:'linear-gradient(135deg,'+PURPLE+','+ACCENT+')',color:'white',fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, 'Save')
+            )
+          )
         );
       })
-    );
-  }
-
-  function renderBritt() {
-    var safeLog = brittWorkoutLog || {};
-    var sortedDays = Object.keys(safeLog).sort().reverse();
-    var header = e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 16px 12px'}},
-      e('div',{style:{fontSize:11,color:MUTED}}, brittSyncedAt ? 'Synced '+new Date(brittSyncedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : (brittLoading?'':'Not synced yet')),
-      e('button',{onClick:fetchBrittWorkouts,disabled:brittLoading,style:{background:'none',border:'1px solid '+BORDER,borderRadius:20,padding:'5px 12px',fontSize:11,fontWeight:700,color:ACCENT,cursor:brittLoading?'default':'pointer',fontFamily:'inherit',opacity:brittLoading?0.6:1}}, brittLoading?'Refreshing…':'↻ Refresh')
-    );
-    if(brittLoading && brittWorkoutLog===null) return e('div',{},header,
-      e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading Britt\'s workouts…')
-    );
-    if(brittError) return e('div',{},header,
-      e('div',{style:{padding:'40px 16px',textAlign:'center',color:'#EF4444',fontSize:13}}, brittError)
-    );
-    if(sortedDays.length===0) return e('div',{},header,
-      e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
-        e('div',{style:{fontSize:48,marginBottom:12}},'💗'),
-        e('div',{style:{fontSize:16,fontWeight:700,marginBottom:6}}, 'No workouts logged yet'),
-        e('div',{style:{fontSize:13}}, 'Nothing synced from Britt\'s app so far')
-      )
-    );
-    return e('div', {},
-      header,
-      e('div', {style:{display:'flex',flexDirection:'column',gap:10,padding:'0 16px 16px'}},
-        ...sortedDays.map(function(date){
-          var sessions = safeLog[date];
-          var allGroups = sessions.reduce(function(a,s){return a.concat(s.groups||[]);}, []);
-          var uniq = allGroups.filter(function(x,i){return allGroups.indexOf(x)===i;});
-          var isOpen = brittExpandedDay === date;
-          return e('div', {key:date, style:{background:'#fff',borderRadius:16,overflow:'hidden',border:'1px solid '+BORDER}},
-            e('button', {
-              onClick:function(){setBrittExpandedDay(isOpen?null:date);},
-              style:{width:'100%',padding:'14px 16px',background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',display:'flex',alignItems:'center',justifyContent:'space-between',textAlign:'left'}
-            },
-              e('div', {},
-                e('div', {style:{fontSize:13,fontWeight:800,color:TEXT}}, new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-                e('div', {style:{display:'flex',flexWrap:'wrap',gap:4,marginTop:5}},
-                  ...uniq.slice(0,6).map(function(gid){
-                    var g = MUSCLE_GROUPS.find(function(x){return x.id===gid;});
-                    if(!g) return null;
-                    var col = CATEGORY_COLORS[g.category];
-                    return e('span',{key:gid,style:{fontSize:10,padding:'2px 7px',borderRadius:20,background:col.bg,color:col.text,fontWeight:700,border:'1px solid '+col.border}}, g.emoji+' '+g.name);
-                  }),
-                  uniq.length>6?e('span',{style:{fontSize:10,color:MUTED}},'+'+(uniq.length-6)+' more'):null
-                )
-              ),
-              e('div', {style:{fontSize:12,color:MUTED,display:'flex',alignItems:'center',gap:6}},
-                sessions.length+' session'+(sessions.length>1?'s':''),
-                e('span',{},isOpen?'▲':'▼')
-              )
-            ),
-            isOpen ? e('div', {style:{borderTop:'1px solid '+BORDER}},
-              ...sessions.map(function(s, si){
-                var cats = [...new Set((s.groups||[]).map(function(gid){var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});return g?g.category:null;}).filter(Boolean))];
-                return e('div', {key:s.id||si, style:{padding:'12px 16px',borderBottom:si<sessions.length-1?'1px solid '+BORDER:'none'}},
-                  e('div', {style:{display:'flex',gap:5,flexWrap:'wrap',marginBottom:6}},
-                    ...cats.map(function(cat){
-                      var col = CATEGORY_COLORS[cat];
-                      return e('span',{key:cat,style:{fontSize:10,padding:'2px 8px',borderRadius:20,background:col.grad,color:'white',fontWeight:700}},cat);
-                    })
-                  ),
-                  e('div', {style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:s.note?6:0}},
-                    ...(s.groups||[]).map(function(gid){
-                      var g=MUSCLE_GROUPS.find(function(x){return x.id===gid;});
-                      return g?e('span',{key:gid,style:{fontSize:11,color:TEXT}},(g.emoji+' '+g.name)):null;
-                    })
-                  ),
-                  s.note?e('div',{style:{fontSize:12,color:MUTED,fontStyle:'italic'}},'"'+s.note+'"'):null,
-                  s.sets?e('div',{style:{fontSize:11,color:MUTED,marginTop:3}},s.sets+' total sets'):null
-                );
-              })
-            ) : null
-          );
-        })
-      )
     );
   }
 
@@ -13406,7 +13427,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     e('div', {style:{padding:'16px 20px 0',background:'#fff',borderBottom:'1px solid '+BORDER,flexShrink:0}},
       e('div', {style:{fontSize:20,fontWeight:800,marginBottom:14}}, '💪 Fitness'),
       e('div', {style:{display:'flex',gap:0}},
-        ...[ ['progress','📈 Progress'], ['lifts','📊 Lifts'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['history','📋 History'], ['coach','🤖 Coach'], ['britt','💗 Britt'] ].map(function(item){
+        ...[ ['progress','📈 Progress'], ['lifts','📊 Lifts'], ['log','+ Log Workout'], ['watch','⌚ Watch'], ['coach','🤖 Coach'], ['clients','👥 Clients'] ].map(function(item){
           var active = view===item[0];
           return e('button',{key:item[0],onClick:function(){setView(item[0]);},style:{
             flex:1,padding:'10px 2px',fontSize:11,fontWeight:700,
@@ -13421,11 +13442,10 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     e('div', {style:{flex:1,overflowY:'auto',WebkitOverflowScrolling:'touch',paddingBottom:40}},
       view==='log'      ? renderLog()      :
       view==='watch'    ? renderWatch()    :
-      view==='history'  ? renderHistory()  :
       view==='progress' ? renderProgress() :
       view==='lifts'    ? renderLiftProgress() :
       view==='bank'     ? renderExerciseBank() :
-      view==='britt'    ? renderBritt()    :
+      view==='clients'  ? renderClients()  :
       renderCoach()
     ),
     // Execute overlay — full-screen, outside scroll container
