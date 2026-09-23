@@ -525,7 +525,7 @@ async function syncFromSupabase(){
 }
 
 async function pushAllToSupabase(){
-  var keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','carWashLog','carWashItems','ideaLog','dateNights','homeItems','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog','currentProgram','macroLog','macroTargets','foodPipeline','photoIndex','pwItems','pwLog','progressStartMeta','progressCurrentMeta','progressGoalMeta'];
+  var keys=['habits','habitLog','timeLog','goals','projects','notes','groceries','brainDump','routineLog','wakeLog','areasData','morningItems','cpapLog','projectData','eveningLog','eveningItems','workoutLog','middayLog','postWorkoutLog','postWorkoutItems','cleaningLog','cleaningItems','carWashLog','carWashItems','ideaLog','dateNights','homeItems','returns','backlog','hqBacklog','flowLog','jobLog','projectItems','projectLog','currentProgram','macroLog','macroTargets','foodPipeline','photoIndex','pwItems','pwLog','progressStartMeta','progressCurrentMeta','progressGoalMeta','consistencyRings'];
   var rows=keys.map(k=>{var v=load(k);return v!==null?{user_id:'lewis',key:k,value:v,updated_at:new Date().toISOString()}:null;}).filter(Boolean);
   if(rows.length===0)return;
   var {error}=await _SB.from('hq_data').upsert(rows,{onConflict:'user_id,key'});
@@ -3304,6 +3304,95 @@ function TimeBlockBanner({priorities}) {
   );
 }
 
+// ── Consistency Rings ─────────────────────────────────────────────────────
+// Binary daily rings (closed = done today). Add a ring by adding one entry here.
+// Manual rings persist to consistencyRings[date][id]; derived rings are computed
+// from existing data each render and never stored.
+var CONSISTENCY_RINGS = [
+  {id:'protein',    label:'Protein 150g+',             color:'#FF3B30', source:'manual'},
+  {id:'resistance', label:'Resistance Training',       color:'#FF9500', source:'manual'},
+  {id:'cardio',     label:'Cardio',                    color:'#FFCC00', source:'manual'},
+  {id:'routines',   label:'Morning & Evening Routine', color:'#34C759', source:'derived'},
+  {id:'shower',     label:'Shower',                    color:'#007AFF', source:'manual'}
+];
+// A routine counts as 100% only if finished with no skips (_partial) and not a test run.
+function ringRoutineFull(log, d){
+  return !!(log && log[d+'_done'] && !log[d+'_partial'] && !log[d+'_test']);
+}
+function ringDerivedClosed(id, d, routineLog, eveningLog){
+  if(id === 'routines') return ringRoutineFull(routineLog, d) && ringRoutineFull(eveningLog, d);
+  return false;
+}
+function loadConsistencyRings(){
+  try { var v = load('consistencyRings'); return (v && typeof v === 'object') ? v : {}; } catch(err) { return {}; }
+}
+function ConsistencyRingsCard({routineLog, eveningLog}) {
+  const [ringData, setRingData] = useState(loadConsistencyRings);
+  var td = today();
+  var dayData = ringData[td] || {};
+  var rings = CONSISTENCY_RINGS.map(function(r){
+    var closed = r.source === 'derived' ? ringDerivedClosed(r.id, td, routineLog, eveningLog) : !!dayData[r.id];
+    return {id:r.id, label:r.label, color:r.color, source:r.source, closed:closed};
+  });
+  var allClosed = rings.length > 0 && rings.every(function(r){ return r.closed; });
+
+  function toggle(id){
+    var d = today();
+    var day = Object.assign({}, ringData[d] || {});
+    day[id] = !day[id];
+    var next = Object.assign({}, ringData);
+    next[d] = day;
+    setRingData(next);
+    try { save('consistencyRings', next); } catch(err) {}
+  }
+
+  // Geometry scales with ring count: fixed outer size + center hole, bands split the rest.
+  var SIZE = 170, PAD = 6, HOLE = 24, GAP = 3;
+  var avail = SIZE/2 - PAD;
+  var band = (avail - HOLE) / Math.max(rings.length, 1);
+  var sw = Math.max(band - GAP, 2);
+  var cx = SIZE/2;
+  var circles = [];
+  rings.forEach(function(r, i){
+    var rad = avail - sw/2 - i*band;
+    var circ = 2 * Math.PI * rad;
+    circles.push(e('circle', {key:r.id+'-track', cx:cx, cy:cx, r:rad, fill:'none', stroke:r.color, strokeOpacity:0.2, strokeWidth:sw}));
+    circles.push(e('circle', {key:r.id+'-fill', cx:cx, cy:cx, r:rad, fill:'none', stroke:r.color, strokeWidth:sw,
+      strokeDasharray:circ, strokeDashoffset:r.closed ? 0 : circ,
+      transform:'rotate(-90 '+cx+' '+cx+')',
+      style:{transition:'stroke-dashoffset 400ms ease-out, opacity 400ms ease-out', opacity:r.closed ? 1 : 0}}));
+  });
+  var closedCount = rings.filter(function(r){ return r.closed; }).length;
+
+  return e('div', {style:{marginBottom:16}},
+    e('div', {className:'card'},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Consistency Rings'),
+        e('div', {style:{fontSize:11,fontWeight:700,color:allClosed ? '#34C759' : MUTED}}, allClosed ? 'Perfect day ✦' : closedCount+' / '+rings.length)
+      ),
+      e('div', {style:{display:'flex',justifyContent:'center',marginBottom:12}},
+        e('div', {style:{position:'relative',width:SIZE,height:SIZE,borderRadius:'50%',transition:'box-shadow 400ms ease-out',boxShadow:allClosed ? '0 0 28px 6px rgba(52,199,89,0.35)' : 'none'}},
+          e('svg', {width:SIZE, height:SIZE, viewBox:'0 0 '+SIZE+' '+SIZE, style:{display:'block'}}, ...circles),
+          allClosed ? e('div', {style:{position:'absolute',top:0,left:0,right:0,bottom:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:800,color:'#34C759'}}, '✓') : null
+        )
+      ),
+      ...rings.map(function(r){
+        var manual = r.source === 'manual';
+        return e('button', {key:r.id, onClick:manual ? function(){ toggle(r.id); } : undefined, disabled:!manual,
+          style:{display:'flex',alignItems:'center',gap:12,width:'100%',minHeight:44,padding:'6px 4px',background:'none',border:'none',borderTop:'1px solid rgba(100,80,220,0.07)',cursor:manual ? 'pointer' : 'default',fontFamily:'inherit',textAlign:'left',color:TEXT,opacity:1}},
+          e('span', {style:{width:12,height:12,borderRadius:'50%',background:r.color,flexShrink:0}}),
+          e('span', {style:{flex:1,fontSize:14,fontWeight:600}},
+            r.label,
+            manual ? null : e('span', {style:{display:'block',fontSize:10,fontWeight:600,color:MUTED,marginTop:1}}, 'Auto · closes when both routines finish')
+          ),
+          e('span', {style:{width:26,height:26,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,
+            border:'2px solid '+r.color, background:r.closed ? r.color : 'transparent', color:r.closed ? 'white' : r.color, transition:'background 400ms ease-out'}}, r.closed ? '✓' : '')
+        );
+      })
+    )
+  );
+}
+
 function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, carWashLog, setCarWashPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
   const td = today();
   const done = habitLog[td] || {};
@@ -3556,6 +3645,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
         )
       )
     ),
+    e(ConsistencyRingsCard, {routineLog: routineLog, eveningLog: eveningLog}),
     e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
     e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog, hqBacklog, setHqBacklog}),
     e(QuickShoppingCard, {groceries, setGroceries, returns, setReturns, setTab}),
