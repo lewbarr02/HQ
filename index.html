@@ -733,7 +733,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
   function loadScheduledForDate(d) { return ((load('scheduledLog') || {})[d]) || []; }
   function saveScheduledForDate(d, next) {
-    save('dayScheduled', next); // keep flat key for today compat
+    if (d === td) save('dayScheduled', next); // keep flat key for today compat
     var sl = load('scheduledLog') || {}; sl[d] = next; save('scheduledLog', sl);
   }
   function loadActionItemsForDate(d) {
@@ -3222,7 +3222,8 @@ function TimeBlockBanner({priorities}) {
   var nowMin = now.getHours() * 60 + now.getMinutes();
 
   // Pull exclusively from Day view's scheduled blocks
-  var dayScheduled = load('dayScheduled') || [];
+  // Keyed by date so blocks from other days never leak into today's banner
+  var dayScheduled = ((load('scheduledLog') || {})[today()]) || [];
   var timed = dayScheduled.map(function(s) {
     return {name: s.label, color: s.color || ACCENT, startMin: s.minute, dur: s.durationMin || 60};
   }).sort(function(a, b) { return a.startMin - b.startMin; });
