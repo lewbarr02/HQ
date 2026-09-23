@@ -746,6 +746,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
   const [actionItems, setActionItems] = useState(() => loadActionItemsForDate(td));
   const [showActionModal, setShowActionModal] = useState(false);
+  const [actionNameError, setActionNameError] = useState(false);
+  const actionNameRef = useRef(null);
+  const COVERED_BY_OPTS = [
+    {id:'routine-morning',label:'☀️ Morning Routine'},
+    {id:'routine-midday', label:'🌤️ Midday Routine'},
+    {id:'routine-evening',label:'🌙 Evening Routine'},
+    {id:'preset-workout', label:'💪 Workout'},
+    {id:'preset-meal',    label:'🍽️ Meal'},
+    {id:'preset-work',    label:'💼 Work Session'},
+    {id:'preset-focus',   label:'🎯 Focus Block'},
+    {id:'preset-moonshot',label:'🚀 Moonshot Work'},
+    {id:'preset-break',   label:'☕ Break'},
+  ];
   const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
   const [editActionId, setEditActionId] = useState(null);
   const [actionEditMode, setActionEditMode] = useState(false);
@@ -1856,9 +1869,9 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
 
         // Name
         e('div', {style:{marginBottom:14}},
-          e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:6}}, 'NAME'),
-          e('input', {value:actionForm.name, onInput:ev=>setActionForm(f=>({...f,name:ev.target.value})), placeholder:'e.g. Exercise, Shower, Read...', autoFocus:true,
-            style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid '+BORDER,fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
+          e('div', {style:{fontSize:11,fontWeight:700,color:actionNameError?'#EF4444':MUTED,letterSpacing:'0.07em',marginBottom:6}}, actionNameError ? 'NAME — required (or pick an auto-schedule block below)' : 'NAME'),
+          e('input', {ref:actionNameRef, value:actionForm.name, onInput:ev=>{ setActionNameError(false); setActionForm(f=>({...f,name:ev.target.value})); }, placeholder:'e.g. Exercise, Shower, Read...', autoFocus:true,
+            style:{width:'100%',padding:'10px 12px',borderRadius:10,border:'1.5px solid '+(actionNameError?'#EF4444':BORDER),fontFamily:'inherit',fontSize:14,color:TEXT,outline:'none',boxSizing:'border-box'}})
         ),
 
         // Tier
@@ -1912,17 +1925,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
           e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:4}}, 'AUTO-SCHEDULE WHEN I DROP'),
           e('div', {style:{fontSize:11,color:MUTED,marginBottom:8}}, 'Which calendar block covers this item?'),
           e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
-            ...[
-              {id:'routine-morning',label:'☀️ Morning Routine'},
-              {id:'routine-midday', label:'🌤️ Midday Routine'},
-              {id:'routine-evening',label:'🌙 Evening Routine'},
-              {id:'preset-workout', label:'💪 Workout'},
-              {id:'preset-meal',    label:'🍽️ Meal'},
-              {id:'preset-work',    label:'💼 Work Session'},
-              {id:'preset-focus',   label:'🎯 Focus Block'},
-              {id:'preset-moonshot',label:'🚀 Moonshot Work'},
-              {id:'preset-break',   label:'☕ Break'},
-            ].map(function(opt) {
+            ...COVERED_BY_OPTS.map(function(opt) {
               var active = actionForm.coveredBy.includes(opt.id);
               return e('button', {key:opt.id, onClick:function(){
                 setActionForm(function(f){
@@ -1943,13 +1946,26 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
             setEditActionId(null); setShowActionModal(false);
             setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]});
           }, style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid #EF444440',background:'#EF444408',fontFamily:'inherit',fontSize:13,fontWeight:700,color:'#EF4444',cursor:'pointer'}}, 'Delete') : null,
-          e('button', {onClick:()=>{ setEditActionId(null); setShowActionModal(false); setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]}); }, style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
+          e('button', {onClick:()=>{ setEditActionId(null); setShowActionModal(false); setActionNameError(false); setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]}); }, style:{flex:1,padding:'12px',borderRadius:10,border:'1.5px solid '+BORDER,background:'transparent',fontFamily:'inherit',fontSize:14,fontWeight:600,color:MUTED,cursor:'pointer'}}, 'Cancel'),
           e('button', {onClick:()=>{
-            if (!actionForm.name.trim()) return;
+            var itemName = actionForm.name.trim(), itemEmoji = actionForm.emoji;
+            // No name typed — fall back to the first picked auto-schedule block (e.g. "☀️ Morning Routine")
+            if (!itemName && actionForm.coveredBy.length) {
+              var picked = (COVERED_BY_OPTS.find(function(o){ return o.id === actionForm.coveredBy[0]; }) || {}).label || '';
+              var sp = picked.indexOf(' ');
+              itemName = picked.slice(sp + 1);
+              if (!itemEmoji) itemEmoji = picked.slice(0, sp);
+            }
+            if (!itemName) {
+              setActionNameError(true);
+              if (actionNameRef.current) { actionNameRef.current.scrollIntoView({behavior:'smooth',block:'center'}); actionNameRef.current.focus(); }
+              return;
+            }
+            setActionNameError(false);
             if (editActionId) {
-              setActionItems(function(cur){ var next=cur.map(function(x){ return x.id===editActionId ? Object.assign({},x,{name:actionForm.name.trim(),emoji:actionForm.emoji,tier:actionForm.tier,timeOfDay:actionForm.timeOfDay,coveredBy:actionForm.coveredBy}) : x; }); saveActionItemsForDate(dayDate,next); return next; });
+              setActionItems(function(cur){ var next=cur.map(function(x){ return x.id===editActionId ? Object.assign({},x,{name:itemName,emoji:itemEmoji,tier:actionForm.tier,timeOfDay:actionForm.timeOfDay,coveredBy:actionForm.coveredBy}) : x; }); saveActionItemsForDate(dayDate,next); return next; });
             } else {
-              var newItem = {id:Date.now().toString(), name:actionForm.name.trim(), emoji:actionForm.emoji, tier:actionForm.tier, timeOfDay:actionForm.timeOfDay, state:'unplanned', coveredBy:actionForm.coveredBy};
+              var newItem = {id:Date.now().toString(), name:itemName, emoji:itemEmoji, tier:actionForm.tier, timeOfDay:actionForm.timeOfDay, state:'unplanned', coveredBy:actionForm.coveredBy};
               setActionItems(function(cur){ var next=cur.concat([newItem]); saveActionItemsForDate(dayDate,next); return next; });
             }
             setEditActionId(null); setActionForm({name:'',emoji:'',tier:'primary',timeOfDay:'am',coveredBy:[]}); setShowActionModal(false);
