@@ -3305,9 +3305,10 @@ function TimeBlockBanner({priorities}) {
 }
 
 // ── Consistency Rings ─────────────────────────────────────────────────────
-// Binary daily rings (closed = done today). Add a ring by adding one entry here.
-// Manual rings persist to consistencyRings[date][id]; derived rings are computed
-// from existing data each render and never stored.
+// Binary daily rings (closed = done that day). Add a ring by adding one entry here.
+// Manual rings persist to consistencyRings[date][id]. Derived rings are computed
+// from existing logs for any date (routineLog/eveningLog keep full per-day history),
+// so they are never stored.
 var CONSISTENCY_RINGS = [
   {id:'protein',    label:'Protein 150g+',             color:'#FF3B30', source:'manual'},
   {id:'resistance', label:'Resistance Training',       color:'#FF9500', source:'manual'},
@@ -3315,6 +3316,7 @@ var CONSISTENCY_RINGS = [
   {id:'routines',   label:'Morning & Evening Routine', color:'#34C759', source:'derived'},
   {id:'shower',     label:'Shower',                    color:'#007AFF', source:'manual'}
 ];
+var RING_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 // A routine counts as 100% only if finished with no skips (_partial) and not a test run.
 function ringRoutineFull(log, d){
   return !!(log && log[d+'_done'] && !log[d+'_partial'] && !log[d+'_test']);
@@ -3323,73 +3325,249 @@ function ringDerivedClosed(id, d, routineLog, eveningLog){
   if(id === 'routines') return ringRoutineFull(routineLog, d) && ringRoutineFull(eveningLog, d);
   return false;
 }
+function ringDateKey(y, m, d){
+  return y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}
 function loadConsistencyRings(){
   try { var v = load('consistencyRings'); return (v && typeof v === 'object') ? v : {}; } catch(err) { return {}; }
 }
-function ConsistencyRingsCard({routineLog, eveningLog}) {
-  const [ringData, setRingData] = useState(loadConsistencyRings);
-  var td = today();
-  var dayData = ringData[td] || {};
-  var rings = CONSISTENCY_RINGS.map(function(r){
-    var closed = r.source === 'derived' ? ringDerivedClosed(r.id, td, routineLog, eveningLog) : !!dayData[r.id];
-    return {id:r.id, label:r.label, color:r.color, source:r.source, closed:closed};
+// Resolved closed/open state of every configured ring for date d: { ringId: bool }.
+function ringClosedMap(ringData, d, routineLog, eveningLog){
+  var stored = (ringData && ringData[d]) || {};
+  var out = {};
+  CONSISTENCY_RINGS.forEach(function(r){
+    out[r.id] = r.source === 'derived' ? ringDerivedClosed(r.id, d, routineLog, eveningLog) : !!stored[r.id];
   });
-  var allClosed = rings.length > 0 && rings.every(function(r){ return r.closed; });
+  return out;
+}
+function ringIsPerfect(closedMap){
+  return CONSISTENCY_RINGS.length > 0 && CONSISTENCY_RINGS.every(function(r){ return !!closedMap[r.id]; });
+}
+// Earliest date with any ring data (today at the latest), used to blank out earlier calendar days.
+function ringEarliestDate(ringData){
+  var earliest = today();
+  Object.keys(ringData || {}).forEach(function(k){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(k) && k < earliest) earliest = k;
+  });
+  return earliest;
+}
 
-  function toggle(id){
-    var d = today();
-    var day = Object.assign({}, ringData[d] || {});
-    day[id] = !day[id];
-    var next = Object.assign({}, ringData);
-    next[d] = day;
-    setRingData(next);
-    try { save('consistencyRings', next); } catch(err) {}
-  }
-
-  // Geometry scales with ring count: fixed outer size + center hole, bands split the rest.
-  var SIZE = 170, PAD = 6, HOLE = 24, GAP = 3;
-  var avail = SIZE/2 - PAD;
-  var band = (avail - HOLE) / Math.max(rings.length, 1);
-  var sw = Math.max(band - GAP, 2);
-  var cx = SIZE/2;
+// Concentric ring stack. dayData = { ringId: bool } (null = dim tracks only, e.g. future days).
+// Geometry scales from size and ring count; showLabels adds the large-size perfect-day glow + center check.
+function RingStack({dayData, size, showLabels}) {
+  var n = Math.max(CONSISTENCY_RINGS.length, 1);
+  var small = size < 80;
+  var pad = showLabels ? size*0.035 : 0.5;
+  var hole = small ? size*0.07 : size*0.14;
+  var gap = small ? Math.max(0.6, size*0.02) : Math.max(2, size*0.018);
+  var avail = size/2 - pad;
+  var band = (avail - hole) / n;
+  var sw = Math.max(band - gap, 1.5);
+  var cx = size/2;
+  var perfect = !!dayData && ringIsPerfect(dayData);
   var circles = [];
-  rings.forEach(function(r, i){
+  CONSISTENCY_RINGS.forEach(function(r, i){
     var rad = avail - sw/2 - i*band;
     var circ = 2 * Math.PI * rad;
+    var closed = !!(dayData && dayData[r.id]);
     circles.push(e('circle', {key:r.id+'-track', cx:cx, cy:cx, r:rad, fill:'none', stroke:r.color, strokeOpacity:0.2, strokeWidth:sw}));
     circles.push(e('circle', {key:r.id+'-fill', cx:cx, cy:cx, r:rad, fill:'none', stroke:r.color, strokeWidth:sw,
-      strokeDasharray:circ, strokeDashoffset:r.closed ? 0 : circ,
+      strokeDasharray:circ, strokeDashoffset:closed ? 0 : circ,
       transform:'rotate(-90 '+cx+' '+cx+')',
-      style:{transition:'stroke-dashoffset 400ms ease-out, opacity 400ms ease-out', opacity:r.closed ? 1 : 0}}));
+      style:{transition:'stroke-dashoffset 400ms ease-out, opacity 400ms ease-out', opacity:closed ? 1 : 0}}));
   });
-  var closedCount = rings.filter(function(r){ return r.closed; }).length;
+  return e('div', {style:{position:'relative',width:size,height:size,borderRadius:'50%',transition:'box-shadow 400ms ease-out',boxShadow:(showLabels && perfect) ? '0 0 28px 6px rgba(52,199,89,0.35)' : 'none'}},
+    e('svg', {width:size, height:size, viewBox:'0 0 '+size+' '+size, style:{display:'block'}}, ...circles),
+    (showLabels && perfect) ? e('div', {style:{position:'absolute',top:0,left:0,right:0,bottom:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:Math.round(size*0.12),fontWeight:800,color:'#34C759'}}, '✓') : null
+  );
+}
+
+// Legend rows: tapping a manual row calls onToggle(ringId). Derived rows are read-only.
+function RingLegend({closedMap, onToggle, dark}) {
+  var textC = dark ? '#FFFFFF' : TEXT;
+  var subC = dark ? 'rgba(255,255,255,0.55)' : MUTED;
+  var lineC = dark ? 'rgba(255,255,255,0.08)' : 'rgba(100,80,220,0.07)';
+  return e('div', {},
+    ...CONSISTENCY_RINGS.map(function(r){
+      var manual = r.source === 'manual';
+      var closed = !!closedMap[r.id];
+      return e('button', {key:r.id, onClick:manual ? function(){ onToggle(r.id); } : undefined, disabled:!manual,
+        style:{display:'flex',alignItems:'center',gap:12,width:'100%',minHeight:44,padding:'6px 4px',background:'none',border:'none',borderTop:'1px solid '+lineC,cursor:manual ? 'pointer' : 'default',fontFamily:'inherit',textAlign:'left',color:textC,opacity:1}},
+        e('span', {style:{width:12,height:12,borderRadius:'50%',background:r.color,flexShrink:0}}),
+        e('span', {style:{flex:1,fontSize:14,fontWeight:600}},
+          r.label,
+          manual ? null : e('span', {style:{display:'block',fontSize:10,fontWeight:600,color:subC,marginTop:1}}, 'Auto · closes when both routines finish')
+        ),
+        e('span', {style:{width:26,height:26,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,
+          border:'2px solid '+r.color, background:closed ? r.color : 'transparent', color:closed ? 'white' : r.color, transition:'background 400ms ease-out'}}, closed ? '✓' : '')
+      );
+    })
+  );
+}
+
+// Full-screen monthly calendar with summary and a per-day detail view.
+function RingsCalendar({ringData, routineLog, eveningLog, onToggle, onClose}) {
+  var now = new Date();
+  var curY = now.getFullYear(), curM = now.getMonth();
+  const [view, setView] = useState({y:curY, m:curM});
+  const [detailDate, setDetailDate] = useState(null);
+  const touchRef = useRef(null);
+  var td = today();
+  var earliest = ringEarliestDate(ringData);
+  var isCurrentMonth = view.y === curY && view.m === curM;
+  var BG = '#1A1833', DIM = 'rgba(255,255,255,0.55)';
+
+  function shiftMonth(delta){
+    var m = view.m + delta, y = view.y;
+    if(m < 0){ m = 11; y--; }
+    if(m > 11){ m = 0; y++; }
+    if(y > curY || (y === curY && m > curM)) return;
+    setView({y:y, m:m});
+  }
+  function onTouchStart(ev){
+    var t = ev.touches && ev.touches[0];
+    touchRef.current = t ? {x:t.clientX, y:t.clientY} : null;
+  }
+  function onTouchEnd(ev){
+    var s = touchRef.current; touchRef.current = null;
+    var t = ev.changedTouches && ev.changedTouches[0];
+    if(!s || !t) return;
+    var dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if(Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)*1.5) shiftMonth(dx < 0 ? 1 : -1);
+  }
+
+  function roundBtn(onClick, label, ariaLabel){
+    return e('button', {onClick:onClick, 'aria-label':ariaLabel, style:{width:44,height:44,borderRadius:'50%',border:'none',background:'rgba(255,255,255,0.1)',color:'white',fontSize:18,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}, label);
+  }
+  function shell(children){
+    return e('div', {style:{position:'fixed',top:0,left:0,right:0,bottom:0,zIndex:5000,background:BG,color:'white',overflowY:'auto',WebkitOverflowScrolling:'touch'}},
+      e('div', {style:{maxWidth:520,margin:'0 auto',padding:'16px 16px 40px'}}, ...children)
+    );
+  }
+
+  // ── Day detail ──
+  if(detailDate){
+    var dp = detailDate.split('-');
+    var dObj = new Date(+dp[0], +dp[1]-1, +dp[2]);
+    var dMap = ringClosedMap(ringData, detailDate, routineLog, eveningLog);
+    return shell([
+      e('div', {key:'hdr', style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:20}},
+        roundBtn(function(){ setDetailDate(null); }, '‹', 'Back to calendar'),
+        e('div', {style:{fontSize:17,fontWeight:800,textAlign:'center'}}, dObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})),
+        roundBtn(onClose, '✕', 'Close')
+      ),
+      e('div', {key:'rings', style:{display:'flex',justifyContent:'center',marginBottom:20}},
+        e(RingStack, {dayData:dMap, size:200, showLabels:true})
+      ),
+      e(RingLegend, {key:'legend', closedMap:dMap, dark:true, onToggle:function(id){ onToggle(detailDate, id); }})
+    ]);
+  }
+
+  // ── Month grid + summary ──
+  var firstDow = (new Date(view.y, view.m, 1).getDay() + 6) % 7; // Monday = 0
+  var dim = new Date(view.y, view.m+1, 0).getDate();
+  var cells = [];
+  for(var b = 0; b < firstDow; b++) cells.push(e('div', {key:'b'+b}));
+  var perfectCount = 0, elapsed = 0;
+  var ringCounts = {};
+  CONSISTENCY_RINGS.forEach(function(r){ ringCounts[r.id] = 0; });
+  function dayCell(day){
+    var dk = ringDateKey(view.y, view.m, day);
+    var isFuture = dk > td, isToday = dk === td, beforeData = dk < earliest;
+    var map = (!isFuture && !beforeData) ? ringClosedMap(ringData, dk, routineLog, eveningLog) : null;
+    var perfect = !!map && ringIsPerfect(map);
+    if(map){
+      elapsed++;
+      if(perfect) perfectCount++;
+      CONSISTENCY_RINGS.forEach(function(r){ if(map[r.id]) ringCounts[r.id]++; });
+    }
+    var tappable = !isFuture;
+    return e('button', {key:dk, disabled:!tappable, onClick:tappable ? function(){ setDetailDate(dk); } : undefined,
+      style:{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'4px 0',minHeight:66,background:'none',border:'none',color:'white',fontFamily:'inherit',cursor:tappable ? 'pointer' : 'default',opacity:1}},
+      e('div', {style:{width:22,height:22,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,
+        background:isToday ? '#FF3B30' : 'transparent', color:isFuture ? 'rgba(255,255,255,0.35)' : 'white'}}, String(day)),
+      beforeData ? null : e('div', {style:{position:'relative'}},
+        e(RingStack, {dayData:map, size:38, showLabels:false}),
+        perfect ? e('div', {style:{position:'absolute',top:-1,right:-1,width:7,height:7,borderRadius:'50%',background:'#34C759',boxShadow:'0 0 0 1.5px '+BG}}) : null
+      )
+    );
+  }
+  for(var day = 1; day <= dim; day++) cells.push(dayCell(day));
+
+  function arrowBtn(label, delta, disabled){
+    return e('button', {onClick:disabled ? undefined : function(){ shiftMonth(delta); }, disabled:disabled, 'aria-label':delta < 0 ? 'Previous month' : 'Next month',
+      style:{width:44,height:44,borderRadius:'50%',border:'none',background:'rgba(255,255,255,0.08)',color:disabled ? 'rgba(255,255,255,0.2)' : 'white',fontSize:20,cursor:disabled ? 'default' : 'pointer',fontFamily:'inherit',flexShrink:0}}, label);
+  }
+
+  return shell([
+    e('div', {key:'top', style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:DIM}}, 'Consistency Rings'),
+      roundBtn(onClose, '✕', 'Close')
+    ),
+    e('div', {key:'grid', onTouchStart:onTouchStart, onTouchEnd:onTouchEnd},
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+        arrowBtn('‹', -1, false),
+        e('div', {style:{fontSize:20,fontWeight:800}}, RING_MONTHS[view.m]+' '+view.y),
+        arrowBtn('›', 1, isCurrentMonth)
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',marginBottom:4}},
+        ...['M','T','W','T','F','S','S'].map(function(w, i){
+          return e('div', {key:'w'+i, style:{textAlign:'center',fontSize:11,fontWeight:700,color:DIM}}, w);
+        })
+      ),
+      e('div', {style:{display:'grid',gridTemplateColumns:'repeat(7, 1fr)',rowGap:2}}, ...cells)
+    ),
+    e('div', {key:'sum', style:{marginTop:20,background:'rgba(255,255,255,0.06)',borderRadius:16,padding:'14px 16px'}},
+      e('div', {style:{display:'flex',alignItems:'center',gap:8,fontSize:16,fontWeight:800,marginBottom:8}},
+        e('span', {style:{width:8,height:8,borderRadius:'50%',background:'#34C759'}}),
+        'Perfect days: '+perfectCount
+      ),
+      ...CONSISTENCY_RINGS.map(function(r){
+        return e('div', {key:r.id, style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderTop:'1px solid rgba(255,255,255,0.08)'}},
+          e('span', {style:{width:10,height:10,borderRadius:'50%',background:r.color,flexShrink:0}}),
+          e('span', {style:{flex:1,fontSize:14,fontWeight:600}}, r.label),
+          e('span', {style:{fontSize:14,fontWeight:800,color:r.color}}, ringCounts[r.id]+'/'+elapsed)
+        );
+      })
+    )
+  ]);
+}
+
+function ConsistencyRingsCard({routineLog, eveningLog}) {
+  const [ringData, setRingData] = useState(loadConsistencyRings);
+  const [showCal, setShowCal] = useState(false);
+  var td = today();
+  var todayMap = ringClosedMap(ringData, td, routineLog, eveningLog);
+  var allClosed = ringIsPerfect(todayMap);
+  var closedCount = CONSISTENCY_RINGS.filter(function(r){ return todayMap[r.id]; }).length;
+
+  // Flip one manual ring for date d (today, or a backfilled past day from the calendar).
+  function toggleRing(d, id){
+    setRingData(function(prev){
+      var day = Object.assign({}, prev[d] || {});
+      day[id] = !day[id];
+      var next = Object.assign({}, prev);
+      next[d] = day;
+      try { save('consistencyRings', next); } catch(err) {}
+      return next;
+    });
+  }
 
   return e('div', {style:{marginBottom:16}},
     e('div', {className:'card'},
       e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
         e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, 'Consistency Rings'),
-        e('div', {style:{fontSize:11,fontWeight:700,color:allClosed ? '#34C759' : MUTED}}, allClosed ? 'Perfect day ✦' : closedCount+' / '+rings.length)
+        e('div', {style:{fontSize:11,fontWeight:700,color:allClosed ? '#34C759' : MUTED}}, allClosed ? 'Perfect day ✦' : closedCount+' / '+CONSISTENCY_RINGS.length)
       ),
-      e('div', {style:{display:'flex',justifyContent:'center',marginBottom:12}},
-        e('div', {style:{position:'relative',width:SIZE,height:SIZE,borderRadius:'50%',transition:'box-shadow 400ms ease-out',boxShadow:allClosed ? '0 0 28px 6px rgba(52,199,89,0.35)' : 'none'}},
-          e('svg', {width:SIZE, height:SIZE, viewBox:'0 0 '+SIZE+' '+SIZE, style:{display:'block'}}, ...circles),
-          allClosed ? e('div', {style:{position:'absolute',top:0,left:0,right:0,bottom:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:800,color:'#34C759'}}, '✓') : null
-        )
+      e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',marginBottom:12}},
+        e('button', {onClick:function(){ setShowCal(true); }, 'aria-label':'Open rings calendar', style:{background:'none',border:'none',padding:0,cursor:'pointer',borderRadius:'50%'}},
+          e(RingStack, {dayData:todayMap, size:190, showLabels:true})
+        ),
+        e('div', {style:{fontSize:10,fontWeight:600,color:MUTED,marginTop:8}}, 'Tap rings for calendar')
       ),
-      ...rings.map(function(r){
-        var manual = r.source === 'manual';
-        return e('button', {key:r.id, onClick:manual ? function(){ toggle(r.id); } : undefined, disabled:!manual,
-          style:{display:'flex',alignItems:'center',gap:12,width:'100%',minHeight:44,padding:'6px 4px',background:'none',border:'none',borderTop:'1px solid rgba(100,80,220,0.07)',cursor:manual ? 'pointer' : 'default',fontFamily:'inherit',textAlign:'left',color:TEXT,opacity:1}},
-          e('span', {style:{width:12,height:12,borderRadius:'50%',background:r.color,flexShrink:0}}),
-          e('span', {style:{flex:1,fontSize:14,fontWeight:600}},
-            r.label,
-            manual ? null : e('span', {style:{display:'block',fontSize:10,fontWeight:600,color:MUTED,marginTop:1}}, 'Auto · closes when both routines finish')
-          ),
-          e('span', {style:{width:26,height:26,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,
-            border:'2px solid '+r.color, background:r.closed ? r.color : 'transparent', color:r.closed ? 'white' : r.color, transition:'background 400ms ease-out'}}, r.closed ? '✓' : '')
-        );
-      })
-    )
+      e(RingLegend, {closedMap:todayMap, onToggle:function(id){ toggleRing(today(), id); }})
+    ),
+    showCal ? e(RingsCalendar, {ringData:ringData, routineLog:routineLog, eveningLog:eveningLog, onToggle:toggleRing, onClose:function(){ setShowCal(false); }}) : null
   );
 }
 
