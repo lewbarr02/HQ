@@ -546,6 +546,20 @@ function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth
 const GOAL_START_DATE = new Date(2026,6,24); // 5-year goal countdown start
 const GOAL_TOTAL_DAYS = 1825;
 function goalDaysLeft(){const msPerDay=86400000;const startMid=new Date(GOAL_START_DATE.getFullYear(),GOAL_START_DATE.getMonth(),GOAL_START_DATE.getDate());const now=new Date();const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate());const elapsed=Math.round((todayMid-startMid)/msPerDay);return GOAL_TOTAL_DAYS-elapsed;}
+// ── Daily Goal score ── derived from Build-a-Day "Must Happen" (tier 'primary') items; never store the live pct.
+// Same load rule as DayScreen: date key first, today falls back to the flat key.
+function loadDayActionItems(d){var items=load('dayActionItems_'+d);if(!items&&d===today())items=load('dayActionItems');return Array.isArray(items)?items:[];}
+// logs = {'routine-morning':routineLog,'routine-midday':middayLog,'routine-evening':eveningLog}. Routine-linked items count once the routine is done.
+function actionItemDone(a,d,logs){
+  if((a.state||(a.done?'done':''))==='done')return true;
+  var linked=(a.coveredBy||[]).filter(function(id){return logs.hasOwnProperty(id);});
+  return linked.length>0&&linked.every(function(id){var log=logs[id]||{};var done=log[d+'_done']||(id==='routine-midday'&&log[d]);return !!done&&!log[d+'_test'];});
+}
+function getDailyScore(items,d,logs){
+  var musts=(items||[]).filter(function(a){return (a.tier||'primary')==='primary';});
+  var done=musts.filter(function(a){return actionItemDone(a,d,logs);}).length;
+  return {done:done,total:musts.length,pct:musts.length?Math.round(done/musts.length*100):null};
+}
 // Before 4 AM counts as "still last night" for evening routine purposes
 function eveningDate(){const d=new Date();if(d.getHours()<4){d.setDate(d.getDate()-1);}return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function dateKey(y,m,d){return y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");}
@@ -762,15 +776,7 @@ function DayScreen({routineLog, eveningLog, middayLog, habits, habitLog, setMorn
   // Action items linked to a routine via coveredBy count as done once that routine is finished on the viewed day.
   var ROUTINE_COVER_LOGS = {'routine-morning': routineLog, 'routine-midday': middayLog, 'routine-evening': eveningLog};
   function withRoutineDone(a) {
-    if (a.state === 'done') return a;
-    var linked = (a.coveredBy || []).filter(function(id){ return ROUTINE_COVER_LOGS.hasOwnProperty(id); });
-    if (!linked.length) return a;
-    var allDone = linked.every(function(id) {
-      var log = ROUTINE_COVER_LOGS[id] || {};
-      var done = log[dayDate+'_done'] || (id === 'routine-midday' && log[dayDate]);
-      return !!done && !log[dayDate+'_test'];
-    });
-    return allDone ? Object.assign({}, a, {state:'done'}) : a;
+    return a.state !== 'done' && actionItemDone(a, dayDate, ROUTINE_COVER_LOGS) ? Object.assign({}, a, {state:'done'}) : a;
   }
   const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
   const [editActionId, setEditActionId] = useState(null);
@@ -3585,6 +3591,33 @@ function ConsistencyRingsCard({routineLog, eveningLog}) {
   );
 }
 
+var HOME_TILE_TITLE = {fontSize:11,fontWeight:700,letterSpacing:0.8,textTransform:'uppercase',color:MUTED,marginBottom:8,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'};
+var HOME_TILE = {marginBottom:0,display:'flex',flexDirection:'column',minWidth:0};
+function DailyGoalCard({score}) {
+  // Start at 0 and step to the real value after mount so the ring animates in each time Home is shown.
+  const [shown, setShown] = useState(0);
+  useEffect(function(){ var t = setTimeout(function(){ setShown(score.pct || 0); }, 40); return function(){ clearTimeout(t); }; }, [score.pct]);
+  var R = 40, C = 2 * Math.PI * R;
+  var color = score.pct === null ? MUTED : score.pct >= 100 ? '#10B981' : score.pct >= 50 ? '#F59E0B' : '#EF4444';
+  return e('div', {className:'card', style:HOME_TILE},
+    e('div', {style:HOME_TILE_TITLE}, 'Daily Goal'),
+    e('div', {style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}},
+      e('div', {style:{position:'relative',width:'100%',maxWidth:96}},
+        e('svg', {viewBox:'0 0 96 96', style:{display:'block',width:'100%',height:'auto'}},
+          e('circle', {cx:48, cy:48, r:R, fill:'none', stroke:CARD2, strokeWidth:9}),
+          e('circle', {cx:48, cy:48, r:R, fill:'none', stroke:color, strokeWidth:9, strokeLinecap:shown > 0 ? 'round' : 'butt',
+            strokeDasharray:C, strokeDashoffset:C * (1 - Math.min(shown,100) / 100), transform:'rotate(-90 48 48)',
+            style:{transition:'stroke-dashoffset 0.7s ease, stroke 0.3s'}})
+        ),
+        e('div', {style:{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:800,color:score.pct === null ? MUTED : TEXT}},
+          score.pct === null ? '—' : score.pct + '%')
+      ),
+      e('div', {style:{fontSize:11,fontWeight:600,color:MUTED,textAlign:'center',lineHeight:1.2}},
+        score.pct === null ? 'No must-happens set' : score.done + ' of ' + score.total + ' done')
+    )
+  );
+}
+
 function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, carWashLog, setCarWashPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
   const td = today();
   const done = habitLog[td] || {};
@@ -3780,18 +3813,20 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
         e('button', {onClick:()=>setEmailToast(null), style:{background:'rgba(255,255,255,0.08)',border:'none',borderRadius:8,color:'#8E8EAA',padding:'6px 10px',fontSize:12,cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}, 'Skip')
       )
     ) : null,
-    e('div', {style:{marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}},
-      e('div', {},
-        e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
-        e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
-      ),
-      e('div', {style:{display:'flex',alignItems:'center',gap:8,background:'linear-gradient(135deg, rgba(0,198,255,0.12), rgba(123,47,255,0.12))',border:'1px solid '+BORDER,borderRadius:14,padding:'8px 14px'}},
-        e('span', {style:{fontSize:18}}, '🎯'),
-        e('div', {},
-          e('div', {style:{fontSize:18,fontWeight:800,color:TEXT,lineHeight:1.1}}, goalDaysLeft().toLocaleString(), e('span',{style:{fontSize:11,fontWeight:700,color:MUTED,marginLeft:4}}, 'days')),
-          e('div', {style:{fontSize:9,fontWeight:700,letterSpacing:0.5,textTransform:'uppercase',color:MUTED}}, 'to goal')
+    e('div', {style:{marginBottom:16}},
+      e('div', {style:{fontSize:26,fontWeight:800}}, 'Hi Lewis. ', e('span', {className:'grad'}, '✦')),
+      e('div', {style:{fontSize:14,color:MUTED,marginTop:2}}, new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}))
+    ),
+    e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,alignItems:'stretch',marginBottom:16}},
+      e('div', {className:'card', style:Object.assign({}, HOME_TILE, {background:'linear-gradient(135deg, rgba(0,198,255,0.08), rgba(123,47,255,0.08)), #fff'})},
+        e('div', {style:HOME_TILE_TITLE}, 'Goal Countdown'),
+        e('div', {style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,textAlign:'center'}},
+          e('span', {style:{fontSize:26,lineHeight:1}}, '🎯'),
+          e('div', {style:{fontSize:28,fontWeight:800,color:TEXT,lineHeight:1.1}}, goalDaysLeft().toLocaleString()),
+          e('div', {style:{fontSize:11,fontWeight:600,color:MUTED}}, 'days to goal')
         )
-      )
+      ),
+      e(DailyGoalCard, {score: getDailyScore(loadDayActionItems(td), td, {'routine-morning':routineLog||{}, 'routine-midday':middayLog||{}, 'routine-evening':eveningLog||{}})})
     ),
     e(TimeBlockBanner, {priorities: priorities}),
     e('div', {style:{marginBottom:16}},
@@ -15281,6 +15316,28 @@ function App() {
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
   const [viewOverride, setViewOverride] = useState(() => load('viewOverride')); // null | 'wide' | 'narrow' — manual iPad/iPhone preview toggle
   const [calendarConnected, setCalendarConnected] = useState(() => !!localStorage.getItem('hq_calTokens'));
+
+  useEffect(function(){
+    // Daily Goal history. Build-a-Day items live under per-date keys (hq_dayActionItems_YYYY-MM-DD) rather than being
+    // cleared at midnight, so once a date is in the past its score is final: snapshot it on the first open after rollover.
+    function snapshotDailyScores() {
+      try {
+        var td = today(), hist = load('dailyScoreHistory') || {}, changed = false;
+        var logs = {'routine-morning':load('routineLog')||{}, 'routine-midday':load('middayLog')||{}, 'routine-evening':load('eveningLog')||{}};
+        for (var i = 0; i < localStorage.length; i++) {
+          var m = /^hq_dayActionItems_(\d{4}-\d{2}-\d{2})$/.exec(localStorage.key(i) || '');
+          if (!m || m[1] >= td || hist[m[1]]) continue;
+          hist[m[1]] = getDailyScore(loadDayActionItems(m[1]), m[1], logs);
+          changed = true;
+        }
+        if (changed) save('dailyScoreHistory', hist);
+      } catch (err) { console.warn('dailyScoreHistory snapshot failed', err); }
+    }
+    snapshotDailyScores();
+    function onVis(){ if (document.visibilityState === 'visible') snapshotDailyScores(); }
+    document.addEventListener('visibilitychange', onVis);
+    return function(){ document.removeEventListener('visibilitychange', onVis); };
+  }, []);
 
   useEffect(() => {
     // Handle Google OAuth redirect
