@@ -3593,27 +3593,74 @@ function ConsistencyRingsCard({routineLog, eveningLog}) {
 
 var HOME_TILE_TITLE = {fontSize:11,fontWeight:700,letterSpacing:0.8,textTransform:'uppercase',color:MUTED,marginBottom:8,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'};
 var HOME_TILE = {marginBottom:0,display:'flex',flexDirection:'column',minWidth:0};
-function DailyGoalCard({score}) {
-  // Start at 0 and step to the real value after mount so the ring animates in each time Home is shown.
+// Efficiency gauge: 180° arch covering 0–150%, so the 100% target sits two-thirds along with headroom beyond it.
+var EFF_MAX = 150;
+// Horizontal gradient stops; offsets are x-positions of arc fractions t via (1 - cos(PI*t)) / 2.
+var EFF_STOPS = [[0,'#FF4757'],[0.078,'#FF9F43'],[0.273,'#FFE14D'],[0.5,'#B6F26A'],[0.655,'#4ADE9A'],[0.768,'#22D3EE'],[0.922,'#3B82F6'],[1,'#7C4DFF']];
+function EfficiencyScoreCard({score}) {
+  // Tween the displayed fill from its last value so the arc and marker glide together (JS-driven: Safari-safe).
   const [shown, setShown] = useState(0);
-  useEffect(function(){ var t = setTimeout(function(){ setShown(score.pct || 0); }, 40); return function(){ clearTimeout(t); }; }, [score.pct]);
-  var R = 40, C = 2 * Math.PI * R;
-  var color = score.pct === null ? MUTED : score.pct >= 100 ? '#10B981' : score.pct >= 50 ? '#F59E0B' : '#EF4444';
+  const shownRef = useRef(0);
+  useEffect(function(){
+    var from = shownRef.current, to = score.pct || 0, start = null, raf;
+    function step(ts) {
+      if (start === null) start = ts;
+      var k = Math.min(1, (ts - start) / 700), v = from + (to - from) * (1 - Math.pow(1 - k, 3));
+      shownRef.current = v; setShown(v);
+      if (k < 1) raf = requestAnimationFrame(step);
+    }
+    raf = requestAnimationFrame(step);
+    return function(){ cancelAnimationFrame(raf); };
+  }, [score.pct]);
+  // Pick a layout from the card's real width: compact geometry keeps labels legible in a half-width iPhone card.
+  const boxRef = useRef(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(function(){
+    function measure(){ if (boxRef.current) setBoxW(boxRef.current.clientWidth); }
+    measure();
+    window.addEventListener('resize', measure);
+    return function(){ window.removeEventListener('resize', measure); };
+  }, []);
+  var G = boxW > 0 && boxW < 230
+    ? {W:136, H:92,  cx:54,  cy:70,  r:48, sw:10, mk:8,  kr:4.5, ks:2,   tdx:8,  ty1:8,  ty2:16, zy:16, cy1:5,  cy2:17, fPct:24, fCap:6.5, fSub:8.5,  fLbl:8,  fTgt:9,  lsCap:1, lsTgt:0.8, maxW:220}
+    : {W:262, H:160, cx:124, cy:124, r:86, sw:16, mk:12, kr:6.5, ks:2.5, tdx:16, ty1:20, ty2:31, zy:26, cy1:10, cy2:28, fPct:40, fCap:8.5, fSub:10.5, fLbl:11, fTgt:11, lsCap:2, lsTgt:1.5, maxW:300};
+  var cx = G.cx, cy = G.cy, r = G.r, hw = G.sw / 2, L = Math.PI * r;
+  function pt(pct, rad) { var a = Math.PI * (1 - Math.min(pct, EFF_MAX) / EFF_MAX); return [cx + rad * Math.cos(a), cy - rad * Math.sin(a)]; }
+  var arc = 'M ' + (cx - r) + ' ' + cy + ' A ' + r + ' ' + r + ' 0 0 1 ' + (cx + r) + ' ' + cy;
+  var frac = Math.min(shown, EFF_MAX) / EFF_MAX, knob = pt(shown, r);
+  var tIn = pt(100, r - G.mk), tOut = pt(100, r + G.mk), t125a = pt(125, r + hw + 2), t125b = pt(125, r + hw + 7), l125 = pt(125, r + hw + 10), l150 = pt(EFF_MAX * 0.95, r + hw + 8);
+  var has = score.pct !== null;
+  var lbl = {fill:MUTED, fontWeight:600, fontSize:G.fLbl};
   return e('div', {className:'card', style:HOME_TILE},
-    e('div', {style:HOME_TILE_TITLE}, 'Daily Goal'),
-    e('div', {style:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}},
-      e('div', {style:{position:'relative',width:'100%',maxWidth:96}},
-        e('svg', {viewBox:'0 0 96 96', style:{display:'block',width:'100%',height:'auto'}},
-          e('circle', {cx:48, cy:48, r:R, fill:'none', stroke:CARD2, strokeWidth:9}),
-          e('circle', {cx:48, cy:48, r:R, fill:'none', stroke:color, strokeWidth:9, strokeLinecap:shown > 0 ? 'round' : 'butt',
-            strokeDasharray:C, strokeDashoffset:C * (1 - Math.min(shown,100) / 100), transform:'rotate(-90 48 48)',
-            style:{transition:'stroke-dashoffset 0.7s ease, stroke 0.3s'}})
+    e('div', {style:HOME_TILE_TITLE}, 'Efficiency Score'),
+    e('div', {ref:boxRef, style:{flex:1,display:'flex',alignItems:'center',justifyContent:'center',width:'100%'}},
+      e('svg', {viewBox:'0 0 ' + G.W + ' ' + G.H, role:'img', 'aria-label':'Efficiency ' + (has ? score.pct + '%' : 'not set'), style:{display:'block',width:'100%',maxWidth:G.maxW,height:'auto',overflow:'visible'}},
+        e('defs', null,
+          e('linearGradient', {id:'effGrad', gradientUnits:'userSpaceOnUse', x1:cx - r - hw, y1:0, x2:cx + r + hw, y2:0},
+            ...EFF_STOPS.map(function(s){ return e('stop', {key:s[0], offset:s[0], stopColor:s[1]}); })
+          )
         ),
-        e('div', {style:{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,fontWeight:800,color:score.pct === null ? MUTED : TEXT}},
-          score.pct === null ? '—' : score.pct + '%')
-      ),
-      e('div', {style:{fontSize:11,fontWeight:600,color:MUTED,textAlign:'center',lineHeight:1.2}},
-        score.pct === null ? 'No must-happens set' : score.done + ' of ' + score.total + ' done')
+        // Full scale, faint; then the live fill up to today's score.
+        e('path', {d:arc, fill:'none', stroke:'url(#effGrad)', strokeWidth:G.sw, strokeLinecap:'round', opacity:0.38}),
+        has && frac > 0 ? e('path', {d:arc, fill:'none', stroke:'url(#effGrad)', strokeWidth:G.sw, strokeLinecap:'round', strokeDasharray:L, strokeDashoffset:L * (1 - frac)}) : null,
+        // 125% tick + scale labels
+        e('line', {x1:t125a[0], y1:t125a[1], x2:t125b[0], y2:t125b[1], stroke:MUTED, strokeWidth:1.2, opacity:0.6}),
+        e('text', Object.assign({x:l125[0], y:l125[1] + G.fLbl * 0.35}, lbl), '125%'),
+        e('text', Object.assign({x:l150[0], y:l150[1] + G.fLbl * 0.35}, lbl), '150%'),
+        e('text', Object.assign({x:cx - r, y:cy + G.zy, textAnchor:'middle'}, lbl), '0%'),
+        // Fixed 100% target marker (white halo keeps it crisp over the gradient)
+        e('line', {x1:tIn[0], y1:tIn[1], x2:tOut[0], y2:tOut[1], stroke:'#fff', strokeWidth:G.ks * 2.4, strokeLinecap:'round'}),
+        e('line', {x1:tIn[0], y1:tIn[1], x2:tOut[0], y2:tOut[1], stroke:TEXT, strokeWidth:G.ks, strokeLinecap:'round'}),
+        e('text', {x:tOut[0] + G.tdx, y:G.ty1, fill:TEXT, fontWeight:800, fontSize:G.fTgt, textAnchor:'middle'}, '100%'),
+        e('text', {x:tOut[0] + G.tdx, y:G.ty2, fill:MUTED, fontWeight:700, fontSize:G.fCap, textAnchor:'middle', letterSpacing:G.lsTgt}, 'TARGET'),
+        // Current-score marker
+        has ? e('circle', {cx:knob[0], cy:knob[1], r:G.kr, fill:'#fff', stroke:TEXT, strokeWidth:G.ks}) : null,
+        // Readout inside the arch
+        e('text', {x:cx, y:cy - 6, fill:has ? TEXT : MUTED, fontWeight:800, fontSize:G.fPct, textAnchor:'middle'}, has ? score.pct + '%' : '—'),
+        e('text', {x:cx, y:cy + G.cy1, fill:MUTED, fontWeight:700, fontSize:G.fCap, textAnchor:'middle', letterSpacing:G.lsCap}, 'EFFICIENCY'),
+        e('text', {x:cx, y:cy + G.cy2, fill:MUTED, fontWeight:600, fontSize:G.fSub, textAnchor:'middle'},
+          has ? score.done + ' of ' + score.total + ' achieved' : 'No must-happens set')
+      )
     )
   );
 }
@@ -3826,7 +3873,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
           e('div', {style:{fontSize:11,fontWeight:600,color:MUTED}}, 'days to goal')
         )
       ),
-      e(DailyGoalCard, {score: getDailyScore(loadDayActionItems(td), td, {'routine-morning':routineLog||{}, 'routine-midday':middayLog||{}, 'routine-evening':eveningLog||{}})})
+      e(EfficiencyScoreCard, {score: getDailyScore(loadDayActionItems(td), td, {'routine-morning':routineLog||{}, 'routine-midday':middayLog||{}, 'routine-evening':eveningLog||{}})})
     ),
     e(TimeBlockBanner, {priorities: priorities}),
     e('div', {style:{marginBottom:16}},
