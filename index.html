@@ -547,8 +547,12 @@ const GOAL_START_DATE = new Date(2026,6,24); // 5-year goal countdown start
 const GOAL_TOTAL_DAYS = 1825;
 function goalDaysLeft(){const msPerDay=86400000;const startMid=new Date(GOAL_START_DATE.getFullYear(),GOAL_START_DATE.getMonth(),GOAL_START_DATE.getDate());const now=new Date();const todayMid=new Date(now.getFullYear(),now.getMonth(),now.getDate());const elapsed=Math.round((todayMid-startMid)/msPerDay);return GOAL_TOTAL_DAYS-elapsed;}
 // ── Daily Goal score ── derived from Build-a-Day "Must Happen" (tier 'primary') items; never store the live pct.
-// Same load rule as DayScreen: date key first, today falls back to the flat key.
-function loadDayActionItems(d){var items=load('dayActionItems_'+d);if(!items&&d===today())items=load('dayActionItems');return Array.isArray(items)?items:[];}
+// Date key first. A new day with no list yet carries over the last list (flat key) with every item reset to unplanned.
+function loadDayActionItems(d){
+  var items=load('dayActionItems_'+d);
+  if(!items&&d===today())items=(load('dayActionItems')||[]).map(function(a){return Object.assign({},a,{state:'unplanned',done:false});});
+  return Array.isArray(items)?items:[];
+}
 // logs = {'routine-morning':routineLog,'routine-midday':middayLog,'routine-evening':eveningLog}. Routine-linked items count once the routine is done.
 function actionItemDone(a,d,logs){
   if((a.state||(a.done?'done':''))==='done')return true;
@@ -751,7 +755,7 @@ function DayScreen({routineLog, eveningLog, middayLog, habits, habitLog, setMorn
     var sl = load('scheduledLog') || {}; sl[d] = next; save('scheduledLog', sl);
   }
   function loadActionItemsForDate(d) {
-    var items = load('dayActionItems_'+d) || (d === td ? load('dayActionItems') || [] : []);
+    var items = loadDayActionItems(d);
     return items.map(function(a) {
       return { id:a.id, name:a.name, emoji:a.emoji||'', tier:a.tier||'primary', timeOfDay:a.timeOfDay||'am', state:a.state||(a.done?'done':'unplanned'), coveredBy:a.coveredBy||[] };
     });
