@@ -1923,7 +1923,7 @@ function DayScreen({routineLog, eveningLog, middayLog, habits, habitLog, setMorn
         e('div', {style:{marginBottom:14}},
           e('div', {style:{fontSize:11,fontWeight:700,color:MUTED,letterSpacing:'0.07em',marginBottom:8}}, 'ICON ' + (actionForm.emoji ? '— ' + actionForm.emoji : '')),
           e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
-            ...['🚿','🏋️','🦷','💊','😴','🧘','🏃','🚗','📚','✍️','🎯','💼','🚀','🍽️','🥩','👨‍👧','💡','🎮','📺','⛳','🛠️','🧹','💤'].map(function(em){
+            ...['🚿','🏋️','🦷','💊','😴','🧘','🏃','🚗','📚','✍️','🎯','💼','🚀','🍽️','🥩','👕','👨‍👧','💡','🎮','📺','⛳','🛠️','🧹','💤'].map(function(em){
               var active = actionForm.emoji === em;
               return e('button', {key:em, onClick:function(){ setActionForm(function(f){ return {...f,emoji:f.emoji===em?'':em}; }); },
                 style:{width:40,height:40,borderRadius:10,border:'2px solid '+(active?'#EF4444':'transparent'),
