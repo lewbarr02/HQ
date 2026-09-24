@@ -698,7 +698,7 @@ function Sidebar({tab, setTab, moreOpen, setMoreOpen, NAV, dateStr, groceries, p
   );
 }
 
-function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, setEveningPhase, setTab, projectItems, customRoutines}) {
+function DayScreen({routineLog, eveningLog, middayLog, habits, habitLog, setMorningPhase, setEveningPhase, setTab, projectItems, customRoutines}) {
   const td = today();
   const now = new Date();
   const currentMinute = now.getHours() * 60 + now.getMinutes();
@@ -759,6 +759,19 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     {id:'preset-moonshot',label:'🚀 Moonshot Work'},
     {id:'preset-break',   label:'☕ Break'},
   ];
+  // Action items linked to a routine via coveredBy count as done once that routine is finished on the viewed day.
+  var ROUTINE_COVER_LOGS = {'routine-morning': routineLog, 'routine-midday': middayLog, 'routine-evening': eveningLog};
+  function withRoutineDone(a) {
+    if (a.state === 'done') return a;
+    var linked = (a.coveredBy || []).filter(function(id){ return ROUTINE_COVER_LOGS.hasOwnProperty(id); });
+    if (!linked.length) return a;
+    var allDone = linked.every(function(id) {
+      var log = ROUTINE_COVER_LOGS[id] || {};
+      var done = log[dayDate+'_done'] || (id === 'routine-midday' && log[dayDate]);
+      return !!done && !log[dayDate+'_test'];
+    });
+    return allDone ? Object.assign({}, a, {state:'done'}) : a;
+  }
   const [actionForm, setActionForm] = useState({name:'', emoji:'', tier:'primary', timeOfDay:'am', coveredBy:[]});
   const [editActionId, setEditActionId] = useState(null);
   const [actionEditMode, setActionEditMode] = useState(false);
@@ -916,7 +929,7 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
     var flexPriorities = (priorities || []).filter(function(p){ return !p.done; }).map(function(p){
       return {id:'priority-'+p.id, name:p.name, category:p.cat||null, time:p.time||null, durationMin:45};
     });
-    var flexActionItems = (actionItems || []).filter(function(a){ return a.tier === 'primary' && a.state !== 'done'; }).map(function(a){
+    var flexActionItems = (actionItems || []).map(withRoutineDone).filter(function(a){ return a.tier === 'primary' && a.state !== 'done'; }).map(function(a){
       return {id:'action-'+a.id, name:a.name, category: a.timeOfDay === 'am' ? 'Must Happen AM' : 'Must Happen PM', time:null, durationMin:30};
     });
     var flexScheduled = scheduled.filter(function(s){ return !(s.id && s.id.startsWith('routine-')); }).map(function(s){
@@ -1081,8 +1094,9 @@ function DayScreen({routineLog, eveningLog, habits, habitLog, setMorningPhase, s
   }
 
   // ── Action Items bar ──────────────────────────────────────────
-  var aiPrimary = actionItems.filter(function(a){ return a.tier === 'primary'; });
-  var aiSecondary = actionItems.filter(function(a){ return a.tier === 'secondary'; });
+  var aiView = actionItems.map(withRoutineDone);
+  var aiPrimary = aiView.filter(function(a){ return a.tier === 'primary'; });
+  var aiSecondary = aiView.filter(function(a){ return a.tier === 'secondary'; });
   var aiPrimaryAM = aiPrimary.filter(function(a){ return a.timeOfDay === 'am'; });
   var aiPrimaryPM = aiPrimary.filter(function(a){ return a.timeOfDay === 'pm'; });
   var amDone = aiPrimaryAM.filter(function(a){ return a.state === 'done'; }).length;
@@ -15469,7 +15483,7 @@ function App() {
     switch(tab) {
       case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,carWashLog,setCarWashPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
-      case 'day': return e(DayScreen, {routineLog,eveningLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab,projectItems,customRoutines});
+      case 'day': return e(DayScreen, {routineLog,eveningLog,middayLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab,projectItems,customRoutines});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
       case 'projects-progress': return e(ProjectsProgressScreen, {projectItems,setProjectItems,projectLog,setProjectLog,setTab});
       case 'areas': return e(AreasScreen, {areasData,setAreasData,setTab});
