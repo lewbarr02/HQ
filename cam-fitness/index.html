@@ -1067,7 +1067,7 @@ function SettingsSheet({ onClose }) {
 
 // ── App ────────────────────────────────────────────────────────────────────
 function App() {
-  const [tab, setTab] = useState('gym');                 // gym | home | history
+  const [tab, setTab] = useState('home');                // home | gym | history
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [program, setProgram] = useState(() => load('currentProgram'));
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
@@ -1183,10 +1183,10 @@ function App() {
       : e(HistoryScreen, { workoutLog, onDelete: deleteSession })
     ),
     e('nav', { className: 'nav' },
-      e('button', { className: 'nav-btn' + (tab === 'gym' ? ' active' : ''), onClick: () => setTab('gym') },
-        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '🏋️'), 'Gym'),
       e('button', { className: 'nav-btn' + (tab === 'home' ? ' active' : ''), onClick: () => setTab('home') },
         e('div', { style: { fontSize: 22, lineHeight: 1 } }, '💪'), 'Home'),
+      e('button', { className: 'nav-btn' + (tab === 'gym' ? ' active' : ''), onClick: () => setTab('gym') },
+        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '🏋️'), 'Gym'),
       e('button', { className: 'nav-btn' + (tab === 'history' ? ' active' : ''), onClick: () => setTab('history') },
         e('div', { style: { fontSize: 22, lineHeight: 1 } }, '📋'), 'History'),
       e('button', { className: 'nav-btn' + (tab === 'photos' ? ' active' : ''), onClick: () => setTab('photos') },
