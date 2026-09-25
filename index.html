@@ -85,7 +85,7 @@ const _CLIENTS_SB = supabase.createClient(
 );
 const CLIENTS = [
   { id:'brittanie', name:'Brittanie', emoji:'💗', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog' },
-  { id:'cam',       name:'Cam',       emoji:'💪', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog', homeKey:'homeExercises' },
+  { id:'cam',       name:'Cam',       emoji:'💪', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog', homeKey:'homeExercises', photosKey:'progressPhotos' },
   { id:'mom',       name:'Mom',       emoji:'🖐️', dataKey:'sections',       model:'sections', logKey:'sessionLog' },
 ];
 // Flag a session in the Clients History view when more than this many days
@@ -11125,6 +11125,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
   const [clientHistoryError, setClientHistoryError] = useState(null);
   const [clientHistorySyncedAt, setClientHistorySyncedAt] = useState(null);
   const [expandedClientSession, setExpandedClientSession] = useState(null); // 'date:id' of the expanded History card
+  const [clientPhotoZoom, setClientPhotoZoom] = useState(null); // {label, src} for the Photos lightbox
   function fetchClientData(clientId) {
     var client = CLIENTS.find(function(c){return c.id===clientId;});
     setClientLoading(true); setClientError(null); setClientData(null);
@@ -11181,6 +11182,56 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     setClientHome(next);
     _CLIENTS_SB.from('hq_data').upsert({user_id:clientId, key:client.homeKey, value:next, updated_at:new Date().toISOString()}, {onConflict:'user_id,key'})
       .then(function(res){ if(res.error) setClientHomeError('Could not save change'); else setClientHomeSyncedAt(new Date().toISOString()); });
+  }
+  // Photos (Cam-only for now): view/replace a client's Starting Point/Current/Goal
+  // triptych. Unlike the client's own app, Starting Point is NOT locked here —
+  // this admin view is the intended override path for it.
+  const [clientPhotos, setClientPhotos] = useState(null); // {startingPoint,current,goal} each {url,date} | null
+  const [clientPhotosLoading, setClientPhotosLoading] = useState(false);
+  const [clientPhotosError, setClientPhotosError] = useState(null);
+  const [clientPhotosSyncedAt, setClientPhotosSyncedAt] = useState(null);
+  const [clientPhotoUploading, setClientPhotoUploading] = useState(null); // 'startingPoint'|'current'|'goal'
+  function fetchClientPhotos(clientId) {
+    var client = CLIENTS.find(function(c){return c.id===clientId;});
+    setClientPhotosLoading(true); setClientPhotosError(null);
+    _CLIENTS_SB.from('hq_data').select('value,updated_at').eq('user_id',clientId).eq('key',client.photosKey).maybeSingle()
+      .then(function(res){
+        setClientPhotosLoading(false);
+        if(res.error){ setClientPhotosError('Could not load '+client.name+'\'s photos'); return; }
+        setClientPhotos(res.data ? (res.data.value||{}) : {});
+        setClientPhotosSyncedAt(res.data ? res.data.updated_at : null);
+      })
+      .catch(function(){ setClientPhotosLoading(false); setClientPhotosError('Could not load '+client.name+'\'s photos'); });
+  }
+  function compressPhotoToDataUrl(file, cb) {
+    var reader = new FileReader();
+    reader.onload = function(ev){
+      var img = new Image();
+      img.onload = function(){
+        var MAX = 900;
+        var scale = Math.min(1, MAX/Math.max(img.width, img.height));
+        var w = Math.round(img.width*scale), h = Math.round(img.height*scale);
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        cb(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function saveClientPhotoSlot(clientId, slot, file) {
+    var client = CLIENTS.find(function(c){return c.id===clientId;});
+    setClientPhotoUploading(slot);
+    compressPhotoToDataUrl(file, function(dataUrl){
+      var next = Object.assign({}, clientPhotos, {[slot]: {url:dataUrl, date:today()}});
+      setClientPhotos(next);
+      _CLIENTS_SB.from('hq_data').upsert({user_id:clientId, key:client.photosKey, value:next, updated_at:new Date().toISOString()}, {onConflict:'user_id,key'})
+        .then(function(res){
+          setClientPhotoUploading(null);
+          if(res.error) setClientPhotosError('Could not save photo'); else setClientPhotosSyncedAt(new Date().toISOString());
+        });
+    });
   }
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
@@ -12162,6 +12213,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setClientView('program');
       setClientHistory(null); setClientHistoryError(null); setClientHistorySyncedAt(null);
       setClientHome(null); setClientHomeError(null); setClientHomeSyncedAt(null); setClientHomeDrafts({});
+      setClientPhotos(null); setClientPhotosError(null); setClientPhotosSyncedAt(null);
       setExpandedClientSession(null);
       fetchClientData(id);
     }
@@ -12174,6 +12226,11 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     function openHome() {
       setClientView('home');
       if (clientHome === null && !clientHomeLoading) fetchClientHome(selectedClient);
+    }
+
+    function openPhotos() {
+      setClientView('photos');
+      if (clientPhotos === null && !clientPhotosLoading) fetchClientPhotos(selectedClient);
     }
 
     // Normalize whichever shape this client's data is into a flat list of "groups" —
@@ -12307,7 +12364,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           flex:1,padding:'10px',borderRadius:12,border:'none',
           background:clientView==='home'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
           color:clientView==='home'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
-        }}, '🏠 Home Goals') : null
+        }}, '🏠 Home Goals') : null,
+        client.photosKey ? e('button',{onClick:openPhotos,style:{
+          flex:1,padding:'10px',borderRadius:12,border:'none',
+          background:clientView==='photos'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
+          color:clientView==='photos'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
+        }}, '📸 Photos') : null
       ) : null,
 
       selectedClient && clientView==='program' && clientLoading ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading '+client.name+'\'s program…') : null,
@@ -12483,7 +12545,62 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
             cursor:dirty?'pointer':'default',
           }}, 'Save')
         );
-      })
+      }),
+
+      // ── Photos (Cam-only): Starting Point / Current / Goal triptych ─────────
+      clientView==='photos' && clientPhotosLoading ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading '+client.name+'\'s photos…') : null,
+
+      clientView==='photos' && !clientPhotosLoading && clientPhotosError ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:'#EF4444',fontSize:13}}, clientPhotosError) : null,
+
+      clientView==='photos' && !clientPhotosLoading && !clientPhotosError ? e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+        e('div',{style:{fontSize:11,color:MUTED}}, clientPhotosSyncedAt ? 'Synced '+new Date(clientPhotosSyncedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not synced yet'),
+        e('button',{onClick:function(){fetchClientPhotos(selectedClient);},style:{background:'none',border:'1px solid '+BORDER,borderRadius:20,padding:'5px 12px',fontSize:11,fontWeight:700,color:ACCENT,cursor:'pointer',fontFamily:'inherit'}}, '↻ Refresh')
+      ) : null,
+
+      clientView!=='photos' || clientPhotosLoading || clientPhotosError ? null : (function(){
+        var photos = clientPhotos || {};
+        function tile(slot, label) {
+          var entry = photos[slot];
+          var dateStr = entry ? new Date(entry.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : null;
+          var isUploading = clientPhotoUploading===slot;
+          var inputId = 'client-photo-'+selectedClient+'-'+slot;
+          return e('div',{key:slot, style:{display:'flex',flexDirection:'column',gap:8,flex:1}},
+            e('div',{style:{fontSize:9,fontWeight:700,letterSpacing:0.6,textTransform:'uppercase',color:slot==='current'?ACCENT:MUTED,textAlign:'center'}}, label),
+            e('div',{
+              onClick:(entry && !isUploading) ? function(){setClientPhotoZoom({label:label, src:entry.url});} : undefined,
+              style:{aspectRatio:'3/4',borderRadius:14,overflow:'hidden',background:CARD2,
+                border: slot==='current' ? '2px solid '+ACCENT : '1px solid '+BORDER,
+                display:'flex',alignItems:'center',justifyContent:'center',cursor:(entry && !isUploading)?'zoom-in':'default'},
+            },
+              isUploading ? e('span',{style:{fontSize:12,color:MUTED,fontWeight:700}},'⏳')
+                : entry ? e('img',{src:entry.url,style:{width:'100%',height:'100%',objectFit:'cover'}})
+                : e('span',{style:{fontSize:26,color:MUTED}},'📷')
+            ),
+            e('div',{style:{fontSize:10,color:MUTED,textAlign:'center'}}, dateStr||'—'),
+            e('input',{id:inputId, type:'file', accept:'image/*', style:{display:'none'},
+              onChange:function(ev){ var f=ev.target.files&&ev.target.files[0]; ev.target.value=''; if(f) saveClientPhotoSlot(selectedClient, slot, f); }}),
+            e('label',{htmlFor:inputId, style:{
+              padding:'7px 4px',borderRadius:10,border:'1px solid '+BORDER,background:'#fff',color:TEXT,fontSize:10,fontWeight:700,
+              cursor:isUploading?'default':'pointer',fontFamily:'inherit',textAlign:'center',opacity:isUploading?0.6:1,
+            }}, isUploading?'Uploading…':(entry?'Replace Photo':'Upload Photo'))
+          );
+        }
+        return e('div',{style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER}},
+          e('div',{style:{fontSize:11,color:MUTED,marginBottom:12,lineHeight:1.5}}, 'Unlike '+client.name+'\'s own app, Starting Point can be replaced here — this is the override path for it.'),
+          e('div',{style:{display:'flex',gap:10}}, tile('startingPoint','Starting Point'), tile('current','Current'), tile('goal','Goal'))
+        );
+      })(),
+
+      clientPhotoZoom ? e('div',{
+        onClick:function(){setClientPhotoZoom(null);},
+        style:{position:'fixed',inset:0,zIndex:700,background:'rgba(0,0,0,0.9)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12,padding:20},
+      },
+        e('img',{src:clientPhotoZoom.src,style:{maxWidth:'100%',maxHeight:'75vh',borderRadius:12,objectFit:'contain'}}),
+        e('div',{style:{color:'#fff',fontWeight:700,fontSize:13}}, clientPhotoZoom.label),
+        e('button',{onClick:function(ev){ev.stopPropagation();setClientPhotoZoom(null);},style:{
+          marginTop:8,padding:'10px 20px',borderRadius:20,border:'none',background:'rgba(255,255,255,0.15)',color:'#fff',fontWeight:700,cursor:'pointer',fontFamily:'inherit',
+        }}, 'Close')
+      ) : null
     );
   }
 

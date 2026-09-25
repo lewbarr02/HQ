@@ -665,6 +665,100 @@ function HomeScreen({ homeExercises, homeLog, onLogSet }) {
   );
 }
 
+// ── Photos: Starting Point / Current / Goal triptych ─────────────────────────
+// Mirrors the layout of the Starting Point/Current/Goal triptych in the main
+// HQ Progress tab. That version stores images in Supabase Storage (a bucket +
+// table in Lewis's own project) — Cam's app instead stores a compressed base64
+// JPEG straight in progressPhotos via the same save()/hq_data pattern as
+// everything else here, since Storage isn't provisioned in the shared clients
+// project and this keeps his data isolated from Lewis's personal project
+// rather than piggybacking on it. Same 900px/0.8-quality compression as the
+// main app's compressPhotoBlob, just kept as a data URL instead of a Blob.
+function compressPhotoToDataUrl(file, cb) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 900;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function PhotosScreen({ progressPhotos, onSetPhoto }) {
+  const [zoomed, setZoomed] = useState(null); // {label, src}
+  const [uploading, setUploading] = useState(null); // 'startingPoint' | 'current' | 'goal'
+  const startRef = useRef(null), currentRef = useRef(null), goalRef = useRef(null);
+
+  function handleFile(slot, ev) {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    setUploading(slot);
+    compressPhotoToDataUrl(file, dataUrl => { onSetPhoto(slot, dataUrl); setUploading(null); });
+  }
+
+  function tile(slot, label, ref, locked) {
+    const entry = progressPhotos[slot];
+    const dateStr = entry ? new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+    const isUploading = uploading === slot;
+    const canEdit = !(locked && entry); // Starting Point locks once set — Cam can still set it the first time
+    return e('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, flex: 1 } },
+      e('div', { style: { fontSize: 9, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: slot === 'current' ? ACCENT : MUTED, textAlign: 'center' } }, label),
+      e('div', {
+        onClick: (entry && !isUploading) ? () => setZoomed({ label, src: entry.url }) : undefined,
+        style: {
+          aspectRatio: '3/4', borderRadius: 14, overflow: 'hidden', background: CARD2,
+          border: slot === 'current' ? '2px solid ' + ACCENT : '1px solid ' + BORDER,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: (entry && !isUploading) ? 'zoom-in' : 'default',
+        },
+      },
+        isUploading ? e('span', { style: { fontSize: 12, color: MUTED, fontWeight: 700 } }, '⏳')
+          : entry ? e('img', { src: entry.url, style: { width: '100%', height: '100%', objectFit: 'cover' } })
+          : e('span', { style: { fontSize: 26, color: MUTED } }, '📷')
+      ),
+      e('div', { style: { fontSize: 10, color: MUTED, textAlign: 'center' } }, dateStr || '—'),
+      canEdit
+        ? e('button', {
+            onClick: () => ref.current && ref.current.click(), disabled: isUploading,
+            style: { padding: '7px 4px', borderRadius: 10, border: '1px solid ' + BORDER, background: '#fff', color: TEXT, fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+          }, isUploading ? 'Uploading…' : (entry ? 'Retake Photo' : 'Add Photo'))
+        : e('div', { style: { fontSize: 9, color: MUTED, textAlign: 'center', fontStyle: 'italic', padding: '7px 4px' } }, 'Set by your coach')
+    );
+  }
+
+  return e('div', { style: { padding: 16 } },
+    e('input', { ref: startRef, type: 'file', accept: 'image/*', style: { display: 'none' }, onChange: ev => handleFile('startingPoint', ev) }),
+    e('input', { ref: currentRef, type: 'file', accept: 'image/*', style: { display: 'none' }, onChange: ev => handleFile('current', ev) }),
+    e('input', { ref: goalRef, type: 'file', accept: 'image/*', style: { display: 'none' }, onChange: ev => handleFile('goal', ev) }),
+    e('div', { className: 'card' },
+      e('div', { style: { fontSize: 12, fontWeight: 800, color: TEXT, marginBottom: 12 } }, '📸 Progress Photos'),
+      e('div', { style: { display: 'flex', gap: 10 } },
+        tile('startingPoint', 'Starting Point', startRef, true),
+        tile('current', 'Current', currentRef, false),
+        tile('goal', 'Goal', goalRef, false)
+      )
+    ),
+    zoomed ? e('div', {
+      onClick: () => setZoomed(null),
+      style: { position: 'fixed', inset: 0, zIndex: 700, background: 'rgba(0,0,0,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20 },
+    },
+      e('img', { src: zoomed.src, style: { maxWidth: '100%', maxHeight: '75vh', borderRadius: 12, objectFit: 'contain' } }),
+      e('div', { style: { color: '#fff', fontWeight: 700, fontSize: 13 } }, zoomed.label),
+      e('button', {
+        onClick: ev => { ev.stopPropagation(); setZoomed(null); },
+        style: { marginTop: 8, padding: '10px 20px', borderRadius: 20, border: 'none', background: 'rgba(255,255,255,0.15)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
+      }, 'Close')
+    ) : null
+  );
+}
+
 // ── Settings sheet (Push / Restore cloud) ───────────────────────────────────
 function SettingsSheet({ onClose }) {
   const [msg, setMsg] = useState('');
@@ -703,6 +797,7 @@ function App() {
   const [workoutCount, setWorkoutCount] = useState(() => load('workoutCount') || 0);
   const [homeExercises, setHomeExercises] = useState(() => load('homeExercises') || []);
   const [homeLog, setHomeLog] = useState(() => load('homeLog') || {});
+  const [progressPhotos, setProgressPhotos] = useState(() => load('progressPhotos') || {});
   const [live, setLive] = useState(() => {
     const w = readWip();
     return w ? { dayLabel: w.dayLabel, date: w.date } : null;
@@ -725,6 +820,7 @@ function App() {
       if (missing.length) save('homeExercises', merged);
       setHomeExercises(merged);
       setHomeLog(load('homeLog') || {});
+      setProgressPhotos(load('progressPhotos') || {}); // picks up a Starting Point/Goal set from the Clients admin tab
     });
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   }, []);
@@ -740,6 +836,11 @@ function App() {
     const nextDayLog = Object.assign({}, dayLog, { [exerciseId]: { sets, total, completed, updatedAt: new Date().toISOString() } });
     const nextLog = Object.assign({}, homeLog, { [td]: nextDayLog });
     setHomeLog(nextLog); save('homeLog', nextLog);
+  }
+
+  function setProgressPhoto(slot, dataUrl) {
+    const next = Object.assign({}, progressPhotos, { [slot]: { url: dataUrl, date: today() } });
+    setProgressPhotos(next); save('progressPhotos', next);
   }
 
   function startLive(day) { setLive({ dayLabel: day.dayLabel, date: today() }); }
@@ -801,6 +902,7 @@ function App() {
     e('div', { className: 'content', style: { padding: 0 } },
       tab === 'gym' ? e(WorkoutScreen, { program, workoutLog, workoutCount, onStart: startLive })
       : tab === 'home' ? e(HomeScreen, { homeExercises, homeLog, onLogSet: logHomeSet })
+      : tab === 'photos' ? e(PhotosScreen, { progressPhotos, onSetPhoto: setProgressPhoto })
       : e(HistoryScreen, { workoutLog, onDelete: deleteSession })
     ),
     e('nav', { className: 'nav' },
@@ -809,7 +911,9 @@ function App() {
       e('button', { className: 'nav-btn' + (tab === 'home' ? ' active' : ''), onClick: () => setTab('home') },
         e('div', { style: { fontSize: 22, lineHeight: 1 } }, '💪'), 'Home'),
       e('button', { className: 'nav-btn' + (tab === 'history' ? ' active' : ''), onClick: () => setTab('history') },
-        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '📋'), 'History')
+        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '📋'), 'History'),
+      e('button', { className: 'nav-btn' + (tab === 'photos' ? ' active' : ''), onClick: () => setTab('photos') },
+        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '📸'), 'Photos')
     ),
     settingsOpen ? e(SettingsSheet, { onClose: () => setSettingsOpen(false) }) : null
   );
