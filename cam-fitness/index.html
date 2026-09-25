@@ -220,17 +220,16 @@ function seedCamProgram() {
 }
 seedCamProgram();
 
-// Separate, independently-idempotent seed so it also backfills onto devices that
-// already ran seedCamProgram() before the Home section existed (that seed's guard
-// returns early once camProfile is set, so it would otherwise never create this).
-function seedHomeExercises() {
-  if (load('homeExercises')) return;
-  save('homeExercises', [
-    { id: 'pushups', name: 'Push-Ups', dailyGoal: 60, unit: 'reps' },
-  ]);
-  save('homeLog', load('homeLog') || {});
-}
-seedHomeExercises();
+// Home section defaults. Merged additively into homeExercises (see App's mount
+// effect) rather than seeded once at load — that keeps adding a new default
+// exercise later from clobbering a dailyGoal an admin already tuned, and avoids
+// racing the cloud pull (a plain load()-time seed here would sometimes lose a
+// just-added default when syncFromSupabase's unconditional overwrite lands
+// right after it).
+const HOME_EXERCISE_DEFAULTS = [
+  { id: 'pushups', name: 'Push-Ups', dailyGoal: 60, unit: 'reps' },
+  { id: 'laps', name: 'Neighborhood Laps', dailyGoal: 3, unit: 'laps' },
+];
 
 // ── Progress-readiness (on-device hint, no AI) ───────────────────────────────
 // Green flag only. Never auto-bumps the number — Cam's coach makes the actual call.
@@ -654,7 +653,7 @@ function HomeScreen({ homeExercises, homeLog, onLogSet }) {
         rec.sets.length ? e('div', { style: { fontSize: 11, color: MUTED, marginTop: 12, fontWeight: 600 } }, 'Sets today: ' + rec.sets.join(', ')) : null,
         !done ? e('div', { style: { display: 'flex', gap: 8, marginTop: 16 } },
           e('input', {
-            type: 'number', inputMode: 'numeric', placeholder: 'Reps just done', value: drafts[ex.id] || '',
+            type: 'number', inputMode: 'numeric', placeholder: 'How many ' + ex.unit + '?', value: drafts[ex.id] || '',
             onInput: ev => setDrafts(d => Object.assign({}, d, { [ex.id]: ev.target.value })),
             onKeyDown: ev => { if (ev.key === 'Enter') submit(); },
             className: 'input', style: { marginBottom: 0, flex: 1, textAlign: 'center' },
@@ -711,11 +710,20 @@ function App() {
 
   useEffect(() => {
     syncFromSupabase().then(pulled => {
-      if (!pulled) return;
-      setProgram(load('currentProgram'));
-      setWorkoutLog(load('workoutLog') || {});
-      setWorkoutCount(load('workoutCount') || 0);
-      setHomeExercises(load('homeExercises') || []); // picks up dailyGoal edits made from the Clients admin tab
+      if (pulled) {
+        setProgram(load('currentProgram'));
+        setWorkoutLog(load('workoutLog') || {});
+        setWorkoutCount(load('workoutCount') || 0);
+      }
+      // Runs after the cloud pull (not at module load) so it can't race
+      // syncFromSupabase's overwrite, and merges additively so it never
+      // clobbers a dailyGoal already tuned from the Clients admin tab.
+      const existing = load('homeExercises') || [];
+      const existingIds = existing.map(x => x.id);
+      const missing = HOME_EXERCISE_DEFAULTS.filter(d => existingIds.indexOf(d.id) === -1);
+      const merged = missing.length ? existing.concat(missing) : existing;
+      if (missing.length) save('homeExercises', merged);
+      setHomeExercises(merged);
       setHomeLog(load('homeLog') || {});
     });
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
