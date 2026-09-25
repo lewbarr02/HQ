@@ -85,7 +85,7 @@ const _CLIENTS_SB = supabase.createClient(
 );
 const CLIENTS = [
   { id:'brittanie', name:'Brittanie', emoji:'💗', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog' },
-  { id:'cam',       name:'Cam',       emoji:'💪', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog' },
+  { id:'cam',       name:'Cam',       emoji:'💪', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog', homeKey:'homeExercises' },
   { id:'mom',       name:'Mom',       emoji:'🖐️', dataKey:'sections',       model:'sections', logKey:'sessionLog' },
 ];
 // Flag a session in the Clients History view when more than this many days
@@ -11155,6 +11155,33 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       })
       .catch(function(){ setClientHistoryLoading(false); setClientHistoryError('Could not load '+client.name+'\'s history'); });
   }
+  // Home Goals (Cam-only for now): edits a client's homeKey — a flat array of
+  // { id, name, dailyGoal, unit } — so dailyGoal can be adjusted without a redeploy.
+  const [clientHome, setClientHome] = useState(null);
+  const [clientHomeLoading, setClientHomeLoading] = useState(false);
+  const [clientHomeError, setClientHomeError] = useState(null);
+  const [clientHomeSyncedAt, setClientHomeSyncedAt] = useState(null);
+  const [clientHomeDrafts, setClientHomeDrafts] = useState({}); // { exerciseId: draft goal string }
+  function fetchClientHome(clientId) {
+    var client = CLIENTS.find(function(c){return c.id===clientId;});
+    setClientHomeLoading(true); setClientHomeError(null);
+    _CLIENTS_SB.from('hq_data').select('value,updated_at').eq('user_id',clientId).eq('key',client.homeKey).maybeSingle()
+      .then(function(res){
+        setClientHomeLoading(false);
+        if(res.error){ setClientHomeError('Could not load '+client.name+'\'s home goals'); return; }
+        setClientHome(res.data ? (res.data.value||[]) : []);
+        setClientHomeSyncedAt(res.data ? res.data.updated_at : null);
+        setClientHomeDrafts({});
+      })
+      .catch(function(){ setClientHomeLoading(false); setClientHomeError('Could not load '+client.name+'\'s home goals'); });
+  }
+  function saveClientHomeGoal(clientId, exerciseId, newGoal) {
+    var client = CLIENTS.find(function(c){return c.id===clientId;});
+    var next = clientHome.map(function(ex){ return ex.id===exerciseId ? Object.assign({},ex,{dailyGoal:newGoal}) : ex; });
+    setClientHome(next);
+    _CLIENTS_SB.from('hq_data').upsert({user_id:clientId, key:client.homeKey, value:next, updated_at:new Date().toISOString()}, {onConflict:'user_id,key'})
+      .then(function(res){ if(res.error) setClientHomeError('Could not save change'); else setClientHomeSyncedAt(new Date().toISOString()); });
+  }
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
   const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
@@ -12134,6 +12161,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setClientAddForm(null);
       setClientView('program');
       setClientHistory(null); setClientHistoryError(null); setClientHistorySyncedAt(null);
+      setClientHome(null); setClientHomeError(null); setClientHomeSyncedAt(null); setClientHomeDrafts({});
       setExpandedClientSession(null);
       fetchClientData(id);
     }
@@ -12141,6 +12169,11 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     function openHistory() {
       setClientView('history');
       if (clientHistory === null && !clientHistoryLoading) fetchClientHistory(selectedClient);
+    }
+
+    function openHome() {
+      setClientView('home');
+      if (clientHome === null && !clientHomeLoading) fetchClientHome(selectedClient);
     }
 
     // Normalize whichever shape this client's data is into a flat list of "groups" —
@@ -12269,7 +12302,12 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
           flex:1,padding:'10px',borderRadius:12,border:'none',
           background:clientView==='history'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
           color:clientView==='history'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
-        }}, '🕐 History')
+        }}, '🕐 History'),
+        client.homeKey ? e('button',{onClick:openHome,style:{
+          flex:1,padding:'10px',borderRadius:12,border:'none',
+          background:clientView==='home'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
+          color:clientView==='home'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
+        }}, '🏠 Home Goals') : null
       ) : null,
 
       selectedClient && clientView==='program' && clientLoading ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading '+client.name+'\'s program…') : null,
@@ -12405,6 +12443,45 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
               );
             })
           ) : null
+        );
+      }),
+
+      // ── Home Goals (Cam-only): edit dailyGoal per home exercise ─────────────
+      clientView==='home' && clientHomeLoading ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading '+client.name+'\'s home goals…') : null,
+
+      clientView==='home' && !clientHomeLoading && clientHomeError ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:'#EF4444',fontSize:13}}, clientHomeError) : null,
+
+      clientView==='home' && !clientHomeLoading && !clientHomeError ? e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+        e('div',{style:{fontSize:11,color:MUTED}}, clientHomeSyncedAt ? 'Synced '+new Date(clientHomeSyncedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not synced yet'),
+        e('button',{onClick:function(){fetchClientHome(selectedClient);},style:{background:'none',border:'1px solid '+BORDER,borderRadius:20,padding:'5px 12px',fontSize:11,fontWeight:700,color:ACCENT,cursor:'pointer',fontFamily:'inherit'}}, '↻ Refresh')
+      ) : null,
+
+      clientView==='home' && !clientHomeLoading && !clientHomeError && (clientHome||[]).length===0 ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}},
+        e('div',{style:{fontSize:48,marginBottom:12}}, '🏠'),
+        e('div',{style:{fontSize:13}}, 'Nothing synced from '+client.name+'\'s Home section yet')
+      ) : null,
+
+      clientView!=='home' ? null : (clientHome||[]).map(function(ex){
+        var draft = clientHomeDrafts[ex.id];
+        var draftVal = draft!=null ? draft : String(ex.dailyGoal);
+        var dirty = draft!=null && draft!==String(ex.dailyGoal) && draft.trim()!=='';
+        return e('div',{key:ex.id, style:{background:'#fff',borderRadius:16,padding:'16px',border:'1px solid '+BORDER,display:'flex',alignItems:'center',gap:12}},
+          e('div',{style:{flex:1,minWidth:0}},
+            e('div',{style:{fontSize:14,fontWeight:800,color:TEXT}}, ex.name),
+            e('div',{style:{fontSize:11,color:MUTED,marginTop:2}}, 'Current goal: '+ex.dailyGoal+' '+ex.unit)
+          ),
+          e('input',{className:'input',type:'number',style:{marginBottom:0,width:90,textAlign:'center'},value:draftVal,
+            onInput:function(ev){setClientHomeDrafts(Object.assign({},clientHomeDrafts,{[ex.id]:ev.target.value}));}}),
+          e('button',{disabled:!dirty,onClick:function(){
+              var n = parseInt(draft,10);
+              if(!n||n<=0) return;
+              saveClientHomeGoal(selectedClient, ex.id, n);
+              setClientHomeDrafts(function(d){ var n2=Object.assign({},d); delete n2[ex.id]; return n2; });
+            },style:{
+            padding:'12px 16px',borderRadius:12,border:'none',fontSize:13,fontWeight:800,fontFamily:'inherit',
+            background:dirty?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2, color:dirty?'#fff':MUTED,
+            cursor:dirty?'pointer':'default',
+          }}, 'Save')
         );
       })
     );

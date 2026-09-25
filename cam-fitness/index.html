@@ -220,6 +220,18 @@ function seedCamProgram() {
 }
 seedCamProgram();
 
+// Separate, independently-idempotent seed so it also backfills onto devices that
+// already ran seedCamProgram() before the Home section existed (that seed's guard
+// returns early once camProfile is set, so it would otherwise never create this).
+function seedHomeExercises() {
+  if (load('homeExercises')) return;
+  save('homeExercises', [
+    { id: 'pushups', name: 'Push-Ups', dailyGoal: 60, unit: 'reps' },
+  ]);
+  save('homeLog', load('homeLog') || {});
+}
+seedHomeExercises();
+
 // ── Progress-readiness (on-device hint, no AI) ───────────────────────────────
 // Green flag only. Never auto-bumps the number — Cam's coach makes the actual call.
 function lastSessionForDay(workoutLog, dayLabel) {
@@ -585,6 +597,75 @@ function HistoryScreen({ workoutLog, onDelete }) {
   );
 }
 
+// ── Home section: daily bodyweight goals (starts with Push-Ups) ─────────────
+// A closing activity-style ring per exercise. Always reads today's entry from
+// homeLog[today()], so a new calendar day starts at 0/goal with no extra reset
+// logic — there's simply nothing logged yet for that date.
+function progressRing(pct, done) {
+  const size = 148, stroke = 14, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.min(1, pct));
+  return e('svg', { width: size, height: size, viewBox: '0 0 ' + size + ' ' + size, style: { display: 'block', margin: '0 auto' } },
+    e('defs', {}, e('linearGradient', { id: 'homeRingGrad', x1: '0%', y1: '0%', x2: '100%', y2: '100%' },
+      e('stop', { offset: '0%', stopColor: ACCENT }), e('stop', { offset: '100%', stopColor: PURPLE }))),
+    e('circle', { cx: size / 2, cy: size / 2, r: r, fill: 'none', stroke: CARD2, strokeWidth: stroke }),
+    e('circle', {
+      cx: size / 2, cy: size / 2, r: r, fill: 'none', stroke: done ? GREEN : 'url(#homeRingGrad)', strokeWidth: stroke,
+      strokeDasharray: c, strokeDashoffset: offset, strokeLinecap: 'round',
+      transform: 'rotate(-90 ' + size / 2 + ' ' + size / 2 + ')', style: { transition: 'stroke-dashoffset .4s ease' },
+    }),
+    done
+      ? e('text', { x: size / 2, y: size / 2 + 14, textAnchor: 'middle', fontSize: 42, fill: GREEN }, '✓')
+      : e('text', { x: size / 2, y: size / 2 + 9, textAnchor: 'middle', fontSize: 26, fontWeight: 900, fill: TEXT }, Math.round(Math.min(1, pct) * 100) + '%')
+  );
+}
+function HomeScreen({ homeExercises, homeLog, onLogSet }) {
+  const [drafts, setDrafts] = useState({}); // { exerciseId: draft input string }
+  const td = today();
+  const todayLog = homeLog[td] || {};
+
+  if (!homeExercises || !homeExercises.length) {
+    return e('div', { style: { padding: 40, textAlign: 'center', color: MUTED } }, 'No home exercises set up yet.');
+  }
+
+  return e('div', { style: { padding: 16, display: 'flex', flexDirection: 'column', gap: 12 } },
+    ...homeExercises.map(ex => {
+      const rec = todayLog[ex.id] || { sets: [], total: 0, completed: false };
+      const goal = ex.dailyGoal || 1;
+      const remaining = Math.max(0, ex.dailyGoal - rec.total);
+      const done = rec.total >= ex.dailyGoal;
+
+      function submit() {
+        const v = parseInt(drafts[ex.id], 10);
+        if (!v || v <= 0) return;
+        onLogSet(ex.id, v);
+        setDrafts(d => Object.assign({}, d, { [ex.id]: '' }));
+      }
+
+      return e('div', { key: ex.id, className: 'card', style: { textAlign: 'center', padding: 22 } },
+        e('div', { style: { fontSize: 13, fontWeight: 800, color: TEXT, textTransform: 'uppercase', letterSpacing: 0.5 } }, ex.name),
+        e('div', { style: { fontSize: 12, color: MUTED, fontWeight: 700, marginTop: 2, marginBottom: 16 } }, 'Goal: ' + ex.dailyGoal + ' ' + ex.unit),
+        progressRing(rec.total / goal, done),
+        done
+          ? e('div', { style: { marginTop: 16, fontSize: 16, fontWeight: 900, color: GREEN } }, '✓ Done for today')
+          : e('div', { style: { marginTop: 16 } },
+              e('div', { style: { fontSize: 32, fontWeight: 900, color: TEXT, lineHeight: 1 } }, remaining),
+              e('div', { style: { fontSize: 11, color: MUTED, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 } }, ex.unit + ' to go')
+            ),
+        rec.sets.length ? e('div', { style: { fontSize: 11, color: MUTED, marginTop: 12, fontWeight: 600 } }, 'Sets today: ' + rec.sets.join(', ')) : null,
+        !done ? e('div', { style: { display: 'flex', gap: 8, marginTop: 16 } },
+          e('input', {
+            type: 'number', inputMode: 'numeric', placeholder: 'Reps just done', value: drafts[ex.id] || '',
+            onInput: ev => setDrafts(d => Object.assign({}, d, { [ex.id]: ev.target.value })),
+            onKeyDown: ev => { if (ev.key === 'Enter') submit(); },
+            className: 'input', style: { marginBottom: 0, flex: 1, textAlign: 'center' },
+          }),
+          e('button', { className: 'btn-primary', style: { width: 'auto', padding: '0 22px' }, onClick: submit }, 'Log Set')
+        ) : null
+      );
+    })
+  );
+}
+
 // ── Settings sheet (Push / Restore cloud) ───────────────────────────────────
 function SettingsSheet({ onClose }) {
   const [msg, setMsg] = useState('');
@@ -616,11 +697,13 @@ function SettingsSheet({ onClose }) {
 
 // ── App ────────────────────────────────────────────────────────────────────
 function App() {
-  const [tab, setTab] = useState('workout');            // workout | history
+  const [tab, setTab] = useState('gym');                 // gym | home | history
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [program, setProgram] = useState(() => load('currentProgram'));
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
   const [workoutCount, setWorkoutCount] = useState(() => load('workoutCount') || 0);
+  const [homeExercises, setHomeExercises] = useState(() => load('homeExercises') || []);
+  const [homeLog, setHomeLog] = useState(() => load('homeLog') || {});
   const [live, setLive] = useState(() => {
     const w = readWip();
     return w ? { dayLabel: w.dayLabel, date: w.date } : null;
@@ -632,9 +715,24 @@ function App() {
       setProgram(load('currentProgram'));
       setWorkoutLog(load('workoutLog') || {});
       setWorkoutCount(load('workoutCount') || 0);
+      setHomeExercises(load('homeExercises') || []); // picks up dailyGoal edits made from the Clients admin tab
+      setHomeLog(load('homeLog') || {});
     });
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   }, []);
+
+  function logHomeSet(exerciseId, value) {
+    const td = today();
+    const ex = homeExercises.find(x => x.id === exerciseId);
+    const dayLog = homeLog[td] || {};
+    const rec = dayLog[exerciseId] || { sets: [], total: 0, completed: false };
+    const sets = rec.sets.concat([value]);
+    const total = sets.reduce((a, b) => a + b, 0);
+    const completed = ex ? total >= ex.dailyGoal : false;
+    const nextDayLog = Object.assign({}, dayLog, { [exerciseId]: { sets, total, completed, updatedAt: new Date().toISOString() } });
+    const nextLog = Object.assign({}, homeLog, { [td]: nextDayLog });
+    setHomeLog(nextLog); save('homeLog', nextLog);
+  }
 
   function startLive(day) { setLive({ dayLabel: day.dayLabel, date: today() }); }
 
@@ -693,13 +791,15 @@ function App() {
         style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: MUTED, padding: '2px 4px' } }, '☁️')
     ),
     e('div', { className: 'content', style: { padding: 0 } },
-      tab === 'workout'
-        ? e(WorkoutScreen, { program, workoutLog, workoutCount, onStart: startLive })
-        : e(HistoryScreen, { workoutLog, onDelete: deleteSession })
+      tab === 'gym' ? e(WorkoutScreen, { program, workoutLog, workoutCount, onStart: startLive })
+      : tab === 'home' ? e(HomeScreen, { homeExercises, homeLog, onLogSet: logHomeSet })
+      : e(HistoryScreen, { workoutLog, onDelete: deleteSession })
     ),
     e('nav', { className: 'nav' },
-      e('button', { className: 'nav-btn' + (tab === 'workout' ? ' active' : ''), onClick: () => setTab('workout') },
-        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '🏋️'), 'Workout'),
+      e('button', { className: 'nav-btn' + (tab === 'gym' ? ' active' : ''), onClick: () => setTab('gym') },
+        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '🏋️'), 'Gym'),
+      e('button', { className: 'nav-btn' + (tab === 'home' ? ' active' : ''), onClick: () => setTab('home') },
+        e('div', { style: { fontSize: 22, lineHeight: 1 } }, '💪'), 'Home'),
       e('button', { className: 'nav-btn' + (tab === 'history' ? ' active' : ''), onClick: () => setTab('history') },
         e('div', { style: { fontSize: 22, lineHeight: 1 } }, '📋'), 'History')
     ),
