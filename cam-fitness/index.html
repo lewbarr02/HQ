@@ -231,6 +231,279 @@ const HOME_EXERCISE_DEFAULTS = [
   { id: 'laps', name: 'Neighborhood Laps', dailyGoal: 3, unit: 'laps' },
 ];
 
+// ── Consistency Rings ─────────────────────────────────────────────────────
+// Ported from the main HQ app's Consistency Rings (RingStack/RingLegend/
+// RingsCalendar/ConsistencyRingsCard) — same architecture, config-driven, just
+// a different 7-ring set for Cam. Manual rings persist to
+// camConsistencyRings[date][id]; derived rings are never stored — they're
+// recomputed for any date straight from workoutLog / homeLog, which already
+// keep full per-day history, so (like the main app's Routines ring) no
+// snapshot-on-change logic is needed: workoutLog[d] is a fixed array once
+// that date has passed, and homeLog[d].<exercise>.completed is itself already
+// a snapshot — computed once, at logging time, against whatever dailyGoal was
+// active then — so raising the goal later never re-grades past days.
+var CAM_CONSISTENCY_RINGS = [
+  { id: 'proteinShake',  label: 'Protein Shake',  color: '#FF3B30', source: 'manual' },
+  { id: 'chickenBreast', label: 'Chicken Breast', color: '#FF9500', source: 'manual' },
+  { id: 'eggs',          label: 'Eggs',           color: '#FFCC00', source: 'manual' },
+  { id: 'proteinBar',    label: 'Protein Bar',    color: '#34C759', source: 'manual' },
+  { id: 'weights',       label: 'Weights',        color: '#30B0C7', source: 'derived', deriveNote: "Auto · closes when today's workout is logged" },
+  { id: 'laps',          label: 'Laps',           color: '#007AFF', source: 'derived', deriveNote: "Auto · closes when today's laps goal is hit" },
+  { id: 'pushUps',       label: 'Push-Ups',       color: '#AF52DE', source: 'derived', deriveNote: "Auto · closes when today's push-up goal is hit" },
+];
+const RING_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function ringDateKey(y, m, d) { return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+function loadConsistencyRings() {
+  try { const v = load('camConsistencyRings'); return (v && typeof v === 'object') ? v : {}; } catch (err) { return {}; }
+}
+// Weights: any gym session logged that date. Laps / Push-Ups: that date's Home
+// entry hit its goal (homeLog stores the goal-met flag itself; not recomputed
+// against today's dailyGoal, so a later goal change doesn't retroactively
+// flip a past day).
+function ringDerivedClosed(id, d, workoutLog, homeLog) {
+  if (id === 'weights') return !!(workoutLog && workoutLog[d] && workoutLog[d].length > 0);
+  if (id === 'laps') return !!(homeLog && homeLog[d] && homeLog[d].laps && homeLog[d].laps.completed);
+  if (id === 'pushUps') return !!(homeLog && homeLog[d] && homeLog[d].pushups && homeLog[d].pushups.completed);
+  return false;
+}
+function ringClosedMap(ringData, d, workoutLog, homeLog) {
+  const stored = (ringData && ringData[d]) || {};
+  const out = {};
+  CAM_CONSISTENCY_RINGS.forEach(r => { out[r.id] = r.source === 'derived' ? ringDerivedClosed(r.id, d, workoutLog, homeLog) : !!stored[r.id]; });
+  return out;
+}
+function ringIsPerfect(closedMap) {
+  return CAM_CONSISTENCY_RINGS.length > 0 && CAM_CONSISTENCY_RINGS.every(r => !!closedMap[r.id]);
+}
+function ringEarliestDate(ringData) {
+  let earliest = today();
+  Object.keys(ringData || {}).forEach(k => { if (/^\d{4}-\d{2}-\d{2}$/.test(k) && k < earliest) earliest = k; });
+  return earliest;
+}
+
+// Concentric ring stack. dayData = { ringId: bool } (null = dim tracks only, e.g. future days).
+function RingStack({ dayData, size, showLabels }) {
+  const n = Math.max(CAM_CONSISTENCY_RINGS.length, 1);
+  const small = size < 80;
+  const pad = showLabels ? size * 0.035 : 0.5;
+  const hole = small ? size * 0.07 : size * 0.14;
+  const gap = small ? Math.max(0.6, size * 0.02) : Math.max(2, size * 0.018);
+  const avail = size / 2 - pad;
+  const band = (avail - hole) / n;
+  const sw = Math.max(band - gap, 1.5);
+  const cx = size / 2;
+  const perfect = !!dayData && ringIsPerfect(dayData);
+  const circles = [];
+  CAM_CONSISTENCY_RINGS.forEach((r, i) => {
+    const rad = avail - sw / 2 - i * band;
+    const circ = 2 * Math.PI * rad;
+    const closed = !!(dayData && dayData[r.id]);
+    circles.push(e('circle', { key: r.id + '-track', cx: cx, cy: cx, r: rad, fill: 'none', stroke: r.color, strokeOpacity: 0.2, strokeWidth: sw }));
+    circles.push(e('circle', {
+      key: r.id + '-fill', cx: cx, cy: cx, r: rad, fill: 'none', stroke: r.color, strokeWidth: sw,
+      strokeDasharray: circ, strokeDashoffset: closed ? 0 : circ,
+      transform: 'rotate(-90 ' + cx + ' ' + cx + ')',
+      style: { transition: 'stroke-dashoffset 400ms ease-out, opacity 400ms ease-out', opacity: closed ? 1 : 0 },
+    }));
+  });
+  return e('div', { style: { position: 'relative', width: size, height: size, borderRadius: '50%', transition: 'box-shadow 400ms ease-out', boxShadow: (showLabels && perfect) ? '0 0 28px 6px rgba(52,199,89,0.35)' : 'none' } },
+    e('svg', { width: size, height: size, viewBox: '0 0 ' + size + ' ' + size, style: { display: 'block' } }, ...circles),
+    (showLabels && perfect) ? e('div', { style: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(size * 0.12), fontWeight: 800, color: '#34C759' } }, '✓') : null
+  );
+}
+
+// Legend rows: tapping a manual row calls onToggle(ringId). Derived rows are read-only.
+function RingLegend({ closedMap, onToggle, dark }) {
+  const textC = dark ? '#FFFFFF' : TEXT;
+  const subC = dark ? 'rgba(255,255,255,0.55)' : MUTED;
+  const lineC = dark ? 'rgba(255,255,255,0.08)' : 'rgba(100,80,220,0.07)';
+  return e('div', {},
+    ...CAM_CONSISTENCY_RINGS.map(r => {
+      const manual = r.source === 'manual';
+      const closed = !!closedMap[r.id];
+      return e('button', {
+        key: r.id, onClick: manual ? () => onToggle(r.id) : undefined, disabled: !manual,
+        style: { display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 44, padding: '6px 4px', background: 'none', border: 'none', borderTop: '1px solid ' + lineC, cursor: manual ? 'pointer' : 'default', fontFamily: 'inherit', textAlign: 'left', color: textC },
+      },
+        e('span', { style: { width: 12, height: 12, borderRadius: '50%', background: r.color, flexShrink: 0 } }),
+        e('span', { style: { flex: 1, fontSize: 14, fontWeight: 600 } },
+          r.label,
+          manual ? null : e('span', { style: { display: 'block', fontSize: 10, fontWeight: 600, color: subC, marginTop: 1 } }, r.deriveNote || 'Auto')
+        ),
+        e('span', {
+          style: {
+            width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800,
+            border: '2px solid ' + r.color, background: closed ? r.color : 'transparent', color: closed ? 'white' : r.color, transition: 'background 400ms ease-out',
+          },
+        }, closed ? '✓' : '')
+      );
+    })
+  );
+}
+
+// Full-screen monthly calendar with summary and a per-day detail view.
+function RingsCalendar({ ringData, workoutLog, homeLog, onToggle, onClose }) {
+  const now = new Date();
+  const curY = now.getFullYear(), curM = now.getMonth();
+  const [view, setView] = useState({ y: curY, m: curM });
+  const [detailDate, setDetailDate] = useState(null);
+  const touchRef = useRef(null);
+  const td = today();
+  const earliest = ringEarliestDate(ringData);
+  const isCurrentMonth = view.y === curY && view.m === curM;
+  const BG = '#1A1833', DIM = 'rgba(255,255,255,0.55)';
+
+  function shiftMonth(delta) {
+    let m = view.m + delta, y = view.y;
+    if (m < 0) { m = 11; y--; }
+    if (m > 11) { m = 0; y++; }
+    if (y > curY || (y === curY && m > curM)) return;
+    setView({ y: y, m: m });
+  }
+  function onTouchStart(ev) {
+    const t = ev.touches && ev.touches[0];
+    touchRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+  }
+  function onTouchEnd(ev) {
+    const s = touchRef.current; touchRef.current = null;
+    const t = ev.changedTouches && ev.changedTouches[0];
+    if (!s || !t) return;
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) shiftMonth(dx < 0 ? 1 : -1);
+  }
+
+  function roundBtn(onClick, label, ariaLabel) {
+    return e('button', { onClick: onClick, 'aria-label': ariaLabel, style: { width: 44, height: 44, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: 18, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 } }, label);
+  }
+  function shell(children) {
+    return e('div', { style: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 5000, background: BG, color: 'white', overflowY: 'auto', WebkitOverflowScrolling: 'touch' } },
+      e('div', { style: { maxWidth: 520, margin: '0 auto', padding: '16px 16px 40px' } }, ...children)
+    );
+  }
+
+  if (detailDate) {
+    const dp = detailDate.split('-');
+    const dObj = new Date(+dp[0], +dp[1] - 1, +dp[2]);
+    const dMap = ringClosedMap(ringData, detailDate, workoutLog, homeLog);
+    return shell([
+      e('div', { key: 'hdr', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20 } },
+        roundBtn(() => setDetailDate(null), '‹', 'Back to calendar'),
+        e('div', { style: { fontSize: 17, fontWeight: 800, textAlign: 'center' } }, dObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })),
+        roundBtn(onClose, '✕', 'Close')
+      ),
+      e('div', { key: 'rings', style: { display: 'flex', justifyContent: 'center', marginBottom: 20 } },
+        e(RingStack, { dayData: dMap, size: 200, showLabels: true })
+      ),
+      e(RingLegend, { key: 'legend', closedMap: dMap, dark: true, onToggle: id => onToggle(detailDate, id) })
+    ]);
+  }
+
+  const firstDow = (new Date(view.y, view.m, 1).getDay() + 6) % 7; // Monday = 0
+  const dim = new Date(view.y, view.m + 1, 0).getDate();
+  const cells = [];
+  for (let b = 0; b < firstDow; b++) cells.push(e('div', { key: 'b' + b }));
+  let perfectCount = 0, elapsed = 0;
+  const ringCounts = {};
+  CAM_CONSISTENCY_RINGS.forEach(r => { ringCounts[r.id] = 0; });
+  function dayCell(day) {
+    const dk = ringDateKey(view.y, view.m, day);
+    const isFuture = dk > td, isToday = dk === td, beforeData = dk < earliest;
+    const map = (!isFuture && !beforeData) ? ringClosedMap(ringData, dk, workoutLog, homeLog) : null;
+    const perfect = !!map && ringIsPerfect(map);
+    if (map) {
+      elapsed++;
+      if (perfect) perfectCount++;
+      CAM_CONSISTENCY_RINGS.forEach(r => { if (map[r.id]) ringCounts[r.id]++; });
+    }
+    const tappable = !isFuture;
+    return e('button', {
+      key: dk, disabled: !tappable, onClick: tappable ? () => setDetailDate(dk) : undefined,
+      style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '4px 0', minHeight: 66, background: 'none', border: 'none', color: 'white', fontFamily: 'inherit', cursor: tappable ? 'pointer' : 'default' },
+    },
+      e('div', { style: { width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, background: isToday ? '#FF3B30' : 'transparent', color: isFuture ? 'rgba(255,255,255,0.35)' : 'white' } }, String(day)),
+      beforeData ? null : e('div', { style: { position: 'relative' } },
+        e(RingStack, { dayData: map, size: 38, showLabels: false }),
+        perfect ? e('div', { style: { position: 'absolute', top: -1, right: -1, width: 7, height: 7, borderRadius: '50%', background: '#34C759', boxShadow: '0 0 0 1.5px ' + BG } }) : null
+      )
+    );
+  }
+  for (let day = 1; day <= dim; day++) cells.push(dayCell(day));
+
+  function arrowBtn(label, delta, disabled) {
+    return e('button', {
+      onClick: disabled ? undefined : () => shiftMonth(delta), disabled: disabled, 'aria-label': delta < 0 ? 'Previous month' : 'Next month',
+      style: { width: 44, height: 44, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.08)', color: disabled ? 'rgba(255,255,255,0.2)' : 'white', fontSize: 20, cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 },
+    }, label);
+  }
+
+  return shell([
+    e('div', { key: 'top', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } },
+      e('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: DIM } }, 'Consistency Rings'),
+      roundBtn(onClose, '✕', 'Close')
+    ),
+    e('div', { key: 'grid', onTouchStart: onTouchStart, onTouchEnd: onTouchEnd },
+      e('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
+        arrowBtn('‹', -1, false),
+        e('div', { style: { fontSize: 20, fontWeight: 800 } }, RING_MONTHS[view.m] + ' ' + view.y),
+        arrowBtn('›', 1, isCurrentMonth)
+      ),
+      e('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 } },
+        ...['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((w, i) => e('div', { key: 'w' + i, style: { textAlign: 'center', fontSize: 11, fontWeight: 700, color: DIM } }, w))
+      ),
+      e('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', rowGap: 2 } }, ...cells)
+    ),
+    e('div', { key: 'sum', style: { marginTop: 20, background: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: '14px 16px' } },
+      e('div', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 16, fontWeight: 800, marginBottom: 8 } },
+        e('span', { style: { width: 8, height: 8, borderRadius: '50%', background: '#34C759' } }),
+        'Perfect days: ' + perfectCount
+      ),
+      ...CAM_CONSISTENCY_RINGS.map(r => e('div', { key: r.id, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.08)' } },
+        e('span', { style: { width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0 } }),
+        e('span', { style: { flex: 1, fontSize: 14, fontWeight: 600 } }, r.label),
+        e('span', { style: { fontSize: 14, fontWeight: 800, color: r.color } }, ringCounts[r.id] + '/' + elapsed)
+      ))
+    )
+  ]);
+}
+
+function ConsistencyRingsCard({ workoutLog, homeLog }) {
+  const [ringData, setRingData] = useState(loadConsistencyRings);
+  const [showCal, setShowCal] = useState(false);
+  const td = today();
+  const todayMap = ringClosedMap(ringData, td, workoutLog, homeLog);
+  const allClosed = ringIsPerfect(todayMap);
+  const closedCount = CAM_CONSISTENCY_RINGS.filter(r => todayMap[r.id]).length;
+
+  function toggleRing(d, id) {
+    setRingData(prev => {
+      const day = Object.assign({}, prev[d] || {});
+      day[id] = !day[id];
+      const next = Object.assign({}, prev);
+      next[d] = day;
+      save('camConsistencyRings', next);
+      return next;
+    });
+  }
+
+  return e('div', { style: { marginBottom: 16 } },
+    e('div', { className: 'card' },
+      e('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 } },
+        e('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: MUTED } }, 'Consistency Rings'),
+        e('div', { style: { fontSize: 11, fontWeight: 700, color: allClosed ? '#34C759' : MUTED } }, allClosed ? 'Perfect day ✦' : closedCount + ' / ' + CAM_CONSISTENCY_RINGS.length)
+      ),
+      e('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 12 } },
+        e('button', { onClick: () => setShowCal(true), 'aria-label': 'Open rings calendar', style: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', borderRadius: '50%' } },
+          e(RingStack, { dayData: todayMap, size: 190, showLabels: true })
+        ),
+        e('div', { style: { fontSize: 10, fontWeight: 600, color: MUTED, marginTop: 8 } }, 'Tap rings for calendar')
+      ),
+      e(RingLegend, { closedMap: todayMap, onToggle: id => toggleRing(td, id) })
+    ),
+    showCal ? e(RingsCalendar, { ringData: ringData, workoutLog: workoutLog, homeLog: homeLog, onToggle: toggleRing, onClose: () => setShowCal(false) }) : null
+  );
+}
+
 // ── Progress-readiness (on-device hint, no AI) ───────────────────────────────
 // Green flag only. Never auto-bumps the number — Cam's coach makes the actual call.
 function lastSessionForDay(workoutLog, dayLabel) {
@@ -617,16 +890,20 @@ function progressRing(pct, done) {
       : e('text', { x: size / 2, y: size / 2 + 9, textAnchor: 'middle', fontSize: 26, fontWeight: 900, fill: TEXT }, Math.round(Math.min(1, pct) * 100) + '%')
   );
 }
-function HomeScreen({ homeExercises, homeLog, onLogSet }) {
+function HomeScreen({ homeExercises, homeLog, onLogSet, workoutLog }) {
   const [drafts, setDrafts] = useState({}); // { exerciseId: draft input string }
   const td = today();
   const todayLog = homeLog[td] || {};
 
   if (!homeExercises || !homeExercises.length) {
-    return e('div', { style: { padding: 40, textAlign: 'center', color: MUTED } }, 'No home exercises set up yet.');
+    return e('div', { style: { padding: 16 } },
+      e(ConsistencyRingsCard, { workoutLog, homeLog }),
+      e('div', { style: { padding: '24px 0', textAlign: 'center', color: MUTED } }, 'No home exercises set up yet.')
+    );
   }
 
   return e('div', { style: { padding: 16, display: 'flex', flexDirection: 'column', gap: 12 } },
+    e(ConsistencyRingsCard, { workoutLog, homeLog }),
     ...homeExercises.map(ex => {
       const rec = todayLog[ex.id] || { sets: [], total: 0, completed: false };
       const goal = ex.dailyGoal || 1;
@@ -901,7 +1178,7 @@ function App() {
     ),
     e('div', { className: 'content', style: { padding: 0 } },
       tab === 'gym' ? e(WorkoutScreen, { program, workoutLog, workoutCount, onStart: startLive })
-      : tab === 'home' ? e(HomeScreen, { homeExercises, homeLog, onLogSet: logHomeSet })
+      : tab === 'home' ? e(HomeScreen, { homeExercises, homeLog, onLogSet: logHomeSet, workoutLog })
       : tab === 'photos' ? e(PhotosScreen, { progressPhotos, onSetPhoto: setProgressPhoto })
       : e(HistoryScreen, { workoutLog, onDelete: deleteSession })
     ),
