@@ -229,3 +229,4 @@ Work through this in order. Check off items as they are completed.
 - `eveningLog` and `routineLog` are fully separate — stats never mix
 - Fitness `workoutLog` structure: `{ 'YYYY-MM-DD': [ { id, groups:[], sets, note } ] }`
 - Test mode in routines sets `[date+'_test']=true` which causes streak calculation to skip that day
+- Flow State lives in the Supabase `flow_sessions` table (not localStorage). App state `flowSessions` is loaded via `loadFlowSessionsInto()`; `hq_flowSessionsCache` is a device-local read cache. The `flow-checkin` cron texts "Still in it?" every 45 min; the `flow-reply` Twilio webhook handles yes/no replies. Kick-in is measured from `routineLog[date+'_doneAt']` (an ISO timestamp written on morning completion; older days fall back to parsing `_done`). The legacy `flowLog` key is kept only as a backup.

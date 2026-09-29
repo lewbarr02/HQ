@@ -951,20 +951,19 @@ function DayScreen({routineLog, eveningLog, middayLog, habits, habitLog, setMorn
       return {id:'sched-'+s.schedId, name:s.label, category:'Scheduled Block', time:minToTimeStr(s.minute), durationMin:s.durationMin};
     });
 
-    var flowLogL = load('flowLog') || [];
+    var flowLogL = readFlowCache();
     var fmtClock = function(d){ return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); };
-    var flowHistory = flowLogL.filter(function(s){ return s.date === dayDate; }).map(function(s){
-      var start = new Date(s.startTime);
-      var end = s.endTime ? new Date(s.endTime) : null;
+    var flowHistory = flowLogL.filter(function(s){ return etDateKey(new Date(s.started_at)) === dayDate; }).reverse().map(function(s){
+      var start = new Date(s.started_at);
+      var end = s.ended_at ? new Date(s.ended_at) : null;
       var durationMin = Math.round(((end ? end.getTime() : Date.now()) - start.getTime()) / 60000);
-      var peakIntensity = (s.checkIns && s.checkIns.length > 0) ? Math.max.apply(null, s.checkIns.map(function(c){ return c.intensity; })) : null;
       return {
         start: fmtClock(start),
         end: end ? fmtClock(end) : null,
         ongoing: !end,
         durationMin: durationMin,
-        peakIntensity: peakIntensity,
-        quality: s.endQuality || null,
+        peakIntensity: null,
+        quality: s.end_quality || null,
       };
     });
 
@@ -2173,100 +2172,294 @@ function DayScreen({routineLog, eveningLog, middayLog, habits, habitLog, setMorn
   ); // end split wrapper
 }
 
-function FlowStateCard({flowLog, setFlowLog, routineLog, flowModal, setFlowModal}) {
+// ── Flow State ── sessions live in Supabase flow_sessions (formerly the localStorage flowLog blob).
+// The flow-checkin edge function texts "Still in it?" every 45 min; flow-reply handles the yes/no SMS replies.
+// All "day" logic is America/New_York. hq_flowSessionsCache is a device-local read cache written with
+// plain localStorage (NOT save()) so it never syncs into hq_data.
+var FLOW_TZ = 'America/New_York';
+var FLOW_QUALITY_OPTS = [{n:1,e:'😐'},{n:2,e:'🙂'},{n:3,e:'⚡'},{n:4,e:'🔥'},{n:5,e:'🚀'}];
+
+function etParts(d) {
+  var parts = new Intl.DateTimeFormat('en-US', {timeZone:FLOW_TZ, hour12:false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'}).formatToParts(d);
+  var o = {};
+  parts.forEach(function(p){ o[p.type] = p.value; });
+  return {y:+o.year, mo:+o.month, d:+o.day, h:(+o.hour)%24, mi:+o.minute, s:+o.second};
+}
+function etDateKey(d) {
+  var p = etParts(d || new Date());
+  return p.y+'-'+String(p.mo).padStart(2,'0')+'-'+String(p.d).padStart(2,'0');
+}
+function etOffsetMs(d) {
+  var p = etParts(d);
+  return Date.UTC(p.y, p.mo-1, p.d, p.h, p.mi, p.s) - Math.floor(d.getTime()/1000)*1000;
+}
+// ET wall-clock time on a YYYY-MM-DD day → Date (DST-safe).
+function etWallToDate(dateKey, h, mi) {
+  var a = dateKey.split('-');
+  var guess = Date.UTC(+a[0], +a[1]-1, +a[2], h, mi);
+  var off1 = etOffsetMs(new Date(guess));
+  var t = guess - off1;
+  var off2 = etOffsetMs(new Date(t));
+  if(off2 !== off1) t = guess - off2;
+  return new Date(t);
+}
+// Morning routine completion as an ISO string: exact _doneAt when recorded, else the legacy
+// "7:32 AM" _done string read as ET on that day. Test runs don't count.
+function flowMorningCompletedAt(rl, dateKey) {
+  if(!rl || !dateKey || rl[dateKey+'_test']) return null;
+  if(rl[dateKey+'_doneAt']) return rl[dateKey+'_doneAt'];
+  var m = String(rl[dateKey+'_done'] || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if(!m) return null;
+  var h = (parseInt(m[1],10) % 12) + (m[3].toUpperCase() === 'PM' ? 12 : 0);
+  return etWallToDate(dateKey, h, parseInt(m[2],10)).toISOString();
+}
+function fmtFlowDur(ms) {
+  var m = Math.max(0, Math.round(ms/60000));
+  if(m < 60) return m+'m';
+  return Math.floor(m/60)+'h '+(m%60)+'m';
+}
+function fmtFlowClock(iso) {
+  return new Date(iso).toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', timeZone:FLOW_TZ});
+}
+function medianOf(arr) {
+  if(!arr.length) return null;
+  var s = arr.slice().sort(function(a,b){ return a-b; });
+  var mid = Math.floor(s.length/2);
+  return s.length % 2 ? s[mid] : (s[mid-1] + s[mid]) / 2;
+}
+function avgOf(arr) {
+  return arr.length ? arr.reduce(function(a,b){ return a+b; }, 0) / arr.length : null;
+}
+function readFlowCache() {
+  try { return JSON.parse(localStorage.getItem('hq_flowSessionsCache') || '[]') || []; } catch(ex) { return []; }
+}
+function writeFlowCache(rows) {
+  try { localStorage.setItem('hq_flowSessionsCache', JSON.stringify(rows)); } catch(ex) {}
+}
+// Fetch recent sessions (plus any active one) into a state setter. Resolves to the rows, or null on failure.
+function loadFlowSessionsInto(setter) {
+  var since = new Date(Date.now() - 90*86400000).toISOString();
+  return _SB.from('flow_sessions').select('*').eq('user_id','lewis')
+    .or('ended_at.is.null,started_at.gte."'+since+'"')
+    .order('started_at', {ascending:false}).limit(300)
+    .then(function(r){
+      if(r.error) { console.warn('flow_sessions load failed', r.error); return null; }
+      var rows = r.data || [];
+      writeFlowCache(rows);
+      setter(rows);
+      return rows;
+    });
+}
+// One-time copy of completed legacy flowLog sessions into flow_sessions. legacy_id makes it idempotent
+// across devices; the old flowLog key is left untouched as a backup.
+function importLegacyFlowLog() {
+  try { if(localStorage.getItem('hq_flowImported') === '1') return Promise.resolve(); } catch(ex) {}
+  var markDone = function(){ try { localStorage.setItem('hq_flowImported','1'); } catch(ex) {} };
+  var legacy = (load('flowLog') || []).filter(function(s){ return s && s.id && s.startTime && s.endTime; });
+  if(!legacy.length) { markDone(); return Promise.resolve(); }
+  var rl = load('routineLog') || {};
+  legacy.sort(function(a,b){ return new Date(a.startTime) - new Date(b.startTime); });
+  var rows = legacy.map(function(s){
+    return {
+      user_id: 'lewis',
+      legacy_id: String(s.id),
+      started_at: new Date(s.startTime).toISOString(),
+      ended_at: new Date(Math.max(new Date(s.startTime).getTime(), new Date(s.endTime).getTime())).toISOString(),
+      end_source: s.autoClose ? 'auto_close' : 'manual',
+      end_quality: (s.endQuality >= 1 && s.endQuality <= 5) ? s.endQuality : null,
+      morning_routine_completed_at: flowMorningCompletedAt(rl, s.date || etDateKey(new Date(s.startTime))),
+      next_check_at: new Date(s.startTime).toISOString(),
+      awaiting_reply: false,
+    };
+  });
+  return _SB.from('flow_sessions').upsert(rows, {onConflict:'legacy_id', ignoreDuplicates:true}).then(function(r){
+    if(r.error) console.warn('flowLog import failed', r.error); else markDone();
+  });
+}
+// Kick-in (ms) for a session, or null if it doesn't qualify.
+function flowKickInMs(s) {
+  if(!s.is_first_of_day || !s.morning_routine_completed_at) return null;
+  var diff = new Date(s.started_at) - new Date(s.morning_routine_completed_at);
+  return diff > 0 ? diff : null;
+}
+// Rolling 30-day kick-in + duration stats.
+function flowStats(sessions, excludeAuto) {
+  var cutoff = Date.now() - 30*86400000;
+  var win = (sessions || []).filter(function(s){ return new Date(s.started_at).getTime() >= cutoff; });
+  var kick = win.map(flowKickInMs).filter(function(v){ return v != null; });
+  var dur = win.filter(function(s){ return s.ended_at && !(excludeAuto && s.end_source === 'auto_close'); })
+    .map(function(s){ return new Date(s.ended_at) - new Date(s.started_at); });
+  return {
+    count: win.filter(function(s){ return !!s.ended_at; }).length,
+    kickN: kick.length, kickMed: medianOf(kick), kickAvg: avgOf(kick),
+    durN: dur.length, durMed: medianOf(dur), durAvg: avgOf(dur),
+  };
+}
+
+function FlowStateCard({flowSessions, setFlowSessions, routineLog}) {
   const td = today();
-  const sessions = flowLog || [];
-  const activeSession = sessions.find(function(s){return !s.endTime;});
+  const sessions = flowSessions || [];
+  const activeSession = sessions.find(function(s){ return !s.ended_at; });
   const [showHistory, setShowHistory] = useState(false);
   const [endStep, setEndStep] = useState(null); // null | 'rating'
+  const [busy, setBusy] = useState(false);
+  const [errMsg, setErrMsg] = useState(null);
+  const [excludeAuto, setExcludeAuto] = useState(function(){
+    try { return localStorage.getItem('hq_flowExcludeAuto') !== '0'; } catch(ex) { return true; }
+  });
+  const [, setTick] = useState(0);
+
+  // Re-render the live timer while a session runs.
+  useEffect(function(){
+    if(!activeSession) return;
+    var id = setInterval(function(){ setTick(function(t){ return t+1; }); }, 30000);
+    return function(){ clearInterval(id); };
+  }, [activeSession ? activeSession.id : null]);
 
   var medsISO = routineLog && routineLog[td+'_itemTimes'] && routineLog[td+'_itemTimes']['m2'];
   var medsLabel = medsISO ? new Date(medsISO).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : null;
 
-  function fmtDuration(ms) {
-    var m = Math.floor(ms/60000);
-    if(m < 60) return m+'m';
-    return Math.floor(m/60)+'h '+(m%60)+'m';
+  function toggleExcludeAuto() {
+    var next = !excludeAuto;
+    setExcludeAuto(next);
+    try { localStorage.setItem('hq_flowExcludeAuto', next ? '1' : '0'); } catch(ex) {}
   }
 
   function enterFlow() {
-    if (typeof Notification !== 'undefined' && Notification.requestPermission) Notification.requestPermission();
-    var s = {id: Date.now().toString(), date: td, startTime: new Date().toISOString(), endTime: null, checkIns: [], endQuality: null};
-    var next = [...sessions, s];
-    setFlowLog(next); save('flowLog', next);
+    if(busy || activeSession) return;
+    setBusy(true); setErrMsg(null);
+    var now = new Date();
+    var row = {
+      user_id: 'lewis',
+      started_at: now.toISOString(),
+      morning_routine_completed_at: flowMorningCompletedAt(routineLog, td),
+      next_check_at: new Date(now.getTime() + 45*60000).toISOString(),
+    };
+    _SB.from('flow_sessions').insert(row).select().single().then(function(r){
+      if(r.error) {
+        console.warn('flow start failed', r.error);
+        setErrMsg(r.error.code === '23505' ? 'A session is already running — refreshing.' : 'Couldn\'t start flow — check your connection.');
+      } else {
+        var next = [r.data].concat(sessions);
+        writeFlowCache(next); setFlowSessions(next);
+      }
+      return loadFlowSessionsInto(setFlowSessions);
+    }).then(function(){ setBusy(false); }, function(){ setBusy(false); });
   }
 
   function exitFlow(quality) {
-    var endTime = new Date().toISOString();
-    var next = sessions.map(function(s){
-      return s.endTime ? s : Object.assign({}, s, {endTime: endTime, endQuality: quality || null});
-    });
-    setFlowLog(next); save('flowLog', next);
-    setEndStep(null);
+    if(!activeSession || busy) return;
+    setBusy(true); setErrMsg(null);
+    var patch = {ended_at: new Date().toISOString(), end_source: 'manual', awaiting_reply: false, end_quality: quality || null};
+    _SB.from('flow_sessions').update(patch).eq('id', activeSession.id).is('ended_at', null).then(function(r){
+      if(r.error) { console.warn('flow stop failed', r.error); setErrMsg('Couldn\'t stop flow — check your connection.'); }
+      else setEndStep(null);
+      return loadFlowSessionsInto(setFlowSessions);
+    }).then(function(){ setBusy(false); }, function(){ setBusy(false); });
   }
 
-  function medsOffset(session) {
-    var itemTimes = routineLog && routineLog[session.date+'_itemTimes'];
+  function medsOffset(s) {
+    var itemTimes = routineLog && routineLog[etDateKey(new Date(s.started_at))+'_itemTimes'];
     if(!itemTimes || !itemTimes['m2']) return null;
-    var diff = new Date(session.startTime) - new Date(itemTimes['m2']);
-    if(diff < 0) return null;
-    return fmtDuration(diff) + ' after meds';
+    var diff = new Date(s.started_at) - new Date(itemTimes['m2']);
+    return diff >= 0 ? fmtFlowDur(diff)+' after meds' : null;
   }
-
-  var activeDuration = activeSession ? fmtDuration(Date.now() - new Date(activeSession.startTime).getTime()) : null;
-  var lastIntensity = activeSession && activeSession.checkIns.length > 0 ? activeSession.checkIns[activeSession.checkIns.length-1].intensity : null;
-  var pastSessions = sessions.filter(function(s){return !!s.endTime;}).slice(-30).reverse();
 
   var FLOW_COLOR = '#F59E0B';
   var FLOW_BG = 'rgba(245,158,11,0.08)';
-  var QUALITY_OPTS = [{n:1,e:'😐'},{n:2,e:'🙂'},{n:3,e:'⚡'},{n:4,e:'🔥'},{n:5,e:'🚀'}];
+  var stats = flowStats(sessions, excludeAuto);
+  var errLine = errMsg ? e('div', {style:{fontSize:12,color:'#DC2626',marginTop:8,textAlign:'center'}}, errMsg) : null;
+
+  function endBadge(src) {
+    var map = {reply:{label:'📱 Reply',bg:'rgba(0,198,255,0.12)',fg:'#0284C7'}, manual:{label:'✋ Manual',bg:'rgba(123,47,255,0.10)',fg:PURPLE}, auto_close:{label:'⏱ Auto',bg:CARD2,fg:MUTED}};
+    var b = map[src];
+    if(!b) return null;
+    return e('span', {style:{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:8,background:b.bg,color:b.fg,whiteSpace:'nowrap'}}, b.label);
+  }
+
+  function statCell(label, med, avg, n) {
+    return e('div', {style:{background:FLOW_BG,borderRadius:12,padding:'12px 10px',textAlign:'center'}},
+      e('div', {style:{fontSize:10,fontWeight:700,letterSpacing:0.8,textTransform:'uppercase',color:MUTED,marginBottom:6}}, label),
+      e('div', {style:{fontSize:22,fontWeight:800,color:TEXT,lineHeight:1}}, med != null ? fmtFlowDur(med) : '—'),
+      e('div', {style:{fontSize:10,color:MUTED,marginTop:3}}, 'median'),
+      e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,marginTop:8}}, avg != null ? fmtFlowDur(avg) : '—'),
+      e('div', {style:{fontSize:10,color:MUTED,marginTop:1}}, 'average · '+n+' session'+(n===1?'':'s'))
+    );
+  }
+
+  // Last 14 completed durations as a single-series bar strip (auto-closed bars muted).
+  function durationStrip(done) {
+    var list = done.slice(0, 14).reverse();
+    if(list.length < 2) return null;
+    var W = 280, H = 56, GAP = 2;
+    var bw = (W - GAP*(list.length-1)) / list.length;
+    var durs = list.map(function(s){ return new Date(s.ended_at) - new Date(s.started_at); });
+    var max = Math.max.apply(null, durs) || 1;
+    var hasAuto = list.some(function(s){ return s.end_source === 'auto_close'; });
+    return e('div', {style:{marginBottom:14}},
+      e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}},
+        e('div', {style:{fontSize:11,fontWeight:700,color:MUTED}}, 'Last '+list.length+' sessions'),
+        hasAuto ? e('div', {style:{fontSize:10,color:MUTED,display:'flex',alignItems:'center',gap:4}},
+          e('span', {style:{display:'inline-block',width:8,height:8,borderRadius:2,background:'#D4D4DE'}}), 'auto-closed') : null
+      ),
+      e('svg', {viewBox:'0 0 '+W+' '+(H+1), role:'img', 'aria-label':'Duration of the last '+list.length+' flow sessions', style:{display:'block',width:'100%',height:'auto'}},
+        list.map(function(s, i){
+          var h = Math.max(3, (durs[i]/max) * H);
+          var x = i*(bw+GAP), y = H - h, r = Math.min(4, bw/2, h);
+          var d = 'M'+x+','+H+' L'+x+','+(y+r)+' Q'+x+','+y+' '+(x+r)+','+y+' L'+(x+bw-r)+','+y+' Q'+(x+bw)+','+y+' '+(x+bw)+','+(y+r)+' L'+(x+bw)+','+H+' Z';
+          var tip = new Date(s.started_at).toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:FLOW_TZ})+' · '+fmtFlowDur(durs[i])+(s.end_source==='auto_close'?' (auto-closed)':'');
+          return e('g', {key:s.id},
+            e('title', null, tip),
+            e('rect', {x:x, y:0, width:bw, height:H, fill:'transparent'}),
+            e('path', {d:d, fill: s.end_source === 'auto_close' ? '#D4D4DE' : FLOW_COLOR})
+          );
+        }),
+        e('line', {x1:0, y1:H+0.5, x2:W, y2:H+0.5, stroke:BORDER, strokeWidth:1})
+      )
+    );
+  }
 
   if(showHistory) {
-    // Aggregate stats across all completed sessions
-    var completedWithMeds = pastSessions.filter(function(s){ return medsOffset(s); });
-    var avgLagMs = completedWithMeds.length > 0 ? completedWithMeds.reduce(function(acc,s){
-      var meds = new Date(routineLog[s.date+'_itemTimes']['m2']);
-      return acc + (new Date(s.startTime) - meds);
-    }, 0) / completedWithMeds.length : null;
-    var durMs = pastSessions.map(function(s){return new Date(s.endTime)-new Date(s.startTime);});
-    var avgDurMs = durMs.length > 0 ? durMs.reduce(function(a,b){return a+b;},0)/durMs.length : null;
-    var allInts = pastSessions.flatMap(function(s){return s.checkIns.map(function(c){return c.intensity;});});
-    var avgPeakInt = pastSessions.length > 0 ? (function(){
-      var peaks = pastSessions.map(function(s){return s.checkIns.length>0?Math.max.apply(null,s.checkIns.map(function(c){return c.intensity;})):null;}).filter(Boolean);
-      return peaks.length > 0 ? (peaks.reduce(function(a,b){return a+b;},0)/peaks.length).toFixed(1) : null;
-    })() : null;
-
+    var done = sessions.filter(function(s){ return !!s.ended_at; });
     return e('div', {className:'card', style:{marginBottom:12}},
       e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
-        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '⚡ Flow State History'),
+        e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '⚡ Flow Stats · 30 days'),
         e('button', {onClick:()=>setShowHistory(false), style:{fontSize:12,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, '← Back')
       ),
-      pastSessions.length >= 3 ? e('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:16,padding:'12px',background:FLOW_BG,borderRadius:12}},
-        avgLagMs ? e('div', {style:{textAlign:'center'}}, e('div',{style:{fontSize:16,fontWeight:800,color:FLOW_COLOR}}, fmtDuration(avgLagMs)), e('div',{style:{fontSize:9,color:MUTED,marginTop:2}}, 'AVG MEDS → FLOW')) : null,
-        avgDurMs ? e('div', {style:{textAlign:'center'}}, e('div',{style:{fontSize:16,fontWeight:800,color:FLOW_COLOR}}, fmtDuration(avgDurMs)), e('div',{style:{fontSize:9,color:MUTED,marginTop:2}}, 'AVG DURATION')) : null,
-        avgPeakInt ? e('div', {style:{textAlign:'center'}}, e('div',{style:{fontSize:16,fontWeight:800,color:FLOW_COLOR}}, avgPeakInt+' / 5'), e('div',{style:{fontSize:9,color:MUTED,marginTop:2}}, 'AVG PEAK INTENSITY')) : null
-      ) : null,
-      pastSessions.length === 0 ? e('div', {style:{fontSize:13,color:MUTED,textAlign:'center',padding:'16px 0'}}, 'No sessions logged yet') :
+      e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}},
+        statCell('Kick-in', stats.kickMed, stats.kickAvg, stats.kickN),
+        statCell('Duration', stats.durMed, stats.durAvg, stats.durN)
+      ),
+      e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,gap:8}},
+        e('div', {style:{fontSize:11,color:MUTED}}, stats.count+' completed session'+(stats.count===1?'':'s')+' · kick-in = routine done → first flow'),
+        e('button', {onClick:toggleExcludeAuto, 'aria-pressed':excludeAuto, style:{display:'flex',alignItems:'center',gap:6,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',padding:0,flexShrink:0}},
+          e('span', {style:{fontSize:11,color:MUTED}}, 'Skip auto'),
+          e('span', {style:{width:30,height:18,borderRadius:9,background:excludeAuto?FLOW_COLOR:'#D4D4DE',position:'relative',transition:'background 0.15s'}},
+            e('span', {style:{position:'absolute',top:2,left:excludeAuto?14:2,width:14,height:14,borderRadius:'50%',background:'#fff',transition:'left 0.15s'}})
+          )
+        )
+      ),
+      durationStrip(done),
+      done.length === 0 ? e('div', {style:{fontSize:13,color:MUTED,textAlign:'center',padding:'16px 0'}}, 'No sessions logged yet') :
       e('div', {},
-        pastSessions.map(function(s) {
-          var dur = fmtDuration(new Date(s.endTime) - new Date(s.startTime));
-          var start = new Date(s.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-          var end = new Date(s.endTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        done.slice(0, 20).map(function(s) {
+          var dk = etDateKey(new Date(s.started_at));
+          var kick = flowKickInMs(s);
           var offset = medsOffset(s);
-          var peakInt = s.checkIns.length > 0 ? Math.max.apply(null,s.checkIns.map(function(c){return c.intensity;})) : null;
-          var qualE = s.endQuality ? QUALITY_OPTS.find(function(q){return q.n===s.endQuality;}) : null;
+          var qualE = s.end_quality ? FLOW_QUALITY_OPTS.find(function(q){ return q.n === s.end_quality; }) : null;
           return e('div', {key:s.id, style:{padding:'10px 0',borderBottom:'1px solid rgba(100,80,220,0.07)'}},
-            e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:3}},
-              e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, s.date === td ? 'Today' : new Date(s.date+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
-              e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+            e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3,gap:8}},
+              e('div', {style:{fontSize:13,fontWeight:700,color:TEXT}}, dk === etDateKey() ? 'Today' : new Date(dk+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+              e('div', {style:{display:'flex',alignItems:'center',gap:6}},
                 qualE ? e('span',{style:{fontSize:14}}, qualE.e) : null,
-                e('div', {style:{fontSize:13,fontWeight:800,color:FLOW_COLOR}}, '⚡ '+dur)
+                endBadge(s.end_source),
+                e('div', {style:{fontSize:13,fontWeight:800,color:FLOW_COLOR}}, '⚡ '+fmtFlowDur(new Date(s.ended_at) - new Date(s.started_at)))
               )
             ),
             e('div', {style:{fontSize:11,color:MUTED}},
-              start+' – '+end +
-              (offset ? '  ·  '+offset : '') +
-              (peakInt ? '  ·  peak '+peakInt+'/5' : '')
+              fmtFlowClock(s.started_at)+' – '+fmtFlowClock(s.ended_at) +
+              (kick != null ? '  ·  kick-in '+fmtFlowDur(kick) : '') +
+              (offset ? '  ·  '+offset : '')
             )
           );
         })
@@ -2280,130 +2473,62 @@ function FlowStateCard({flowLog, setFlowLog, routineLog, flowModal, setFlowModal
         e('div', {style:{fontSize:15,fontWeight:800,color:TEXT,marginBottom:6,textAlign:'center'}}, 'How was that session overall?'),
         e('div', {style:{fontSize:12,color:MUTED,marginBottom:16,textAlign:'center'}}, 'Overall quality, not just peak — the whole ride.'),
         e('div', {style:{display:'flex',gap:8,justifyContent:'center',marginBottom:16}},
-          ...QUALITY_OPTS.map(function(q){
-            return e('button', {key:q.n, onClick:()=>exitFlow(q.n), style:{
+          ...FLOW_QUALITY_OPTS.map(function(q){
+            return e('button', {key:q.n, disabled:busy, onClick:()=>exitFlow(q.n), style:{
               width:52,height:52,borderRadius:14,border:'1.5px solid '+FLOW_COLOR+'40',
               background:'rgba(245,158,11,0.06)',fontSize:24,cursor:'pointer',fontFamily:'inherit',
               display:'flex',alignItems:'center',justifyContent:'center',
             }}, q.e);
           })
         ),
-        e('button', {onClick:()=>exitFlow(null), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',display:'block',margin:'0 auto'}}, 'Skip rating')
+        e('div', {style:{display:'flex',justifyContent:'center',gap:18}},
+          e('button', {onClick:()=>setEndStep(null), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, '← Keep going'),
+          e('button', {disabled:busy, onClick:()=>exitFlow(null), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Skip rating')
+        ),
+        errLine
       );
     }
+    var activeKick = flowKickInMs(activeSession);
+    var checkLine = activeSession.awaiting_reply
+      ? '📱 Check-in sent — reply yes / no (silence = still going)'
+      : (activeSession.next_check_at ? '📱 Next text check-in ~'+fmtFlowClock(activeSession.next_check_at) : null);
     return e('div', {className:'card', style:{marginBottom:12,border:'1.5px solid '+FLOW_COLOR+'50',background:FLOW_BG}},
       e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
         e('div', {style:{display:'flex',alignItems:'center',gap:8}},
           e('div', {style:{width:10,height:10,borderRadius:'50%',background:FLOW_COLOR,boxShadow:'0 0 0 3px '+FLOW_COLOR+'40',animation:'pulse 1.5s infinite'}}),
           e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:FLOW_COLOR}}, 'Flow State Active')
         ),
-        e('button', {onClick:()=>setShowHistory(true), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'History')
+        e('button', {onClick:()=>setShowHistory(true), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Stats')
       ),
-      e('div', {style:{display:'flex',gap:16,marginBottom:12}},
-        e('div', {}, e('div', {style:{fontSize:24,fontWeight:800,color:TEXT,lineHeight:1}}, activeDuration), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'duration')),
-        activeSession.checkIns.length > 0 ? e('div', {}, e('div', {style:{fontSize:24,fontWeight:800,color:FLOW_COLOR,lineHeight:1}}, ['','⚡','⚡⚡','⚡⚡⚡','⚡⚡⚡⚡','⚡⚡⚡⚡⚡'][lastIntensity]||lastIntensity), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'last intensity')) : null,
+      e('div', {style:{display:'flex',gap:16,marginBottom:10,flexWrap:'wrap'}},
+        e('div', {}, e('div', {style:{fontSize:24,fontWeight:800,color:TEXT,lineHeight:1}}, fmtFlowDur(Date.now() - new Date(activeSession.started_at).getTime())), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'since '+fmtFlowClock(activeSession.started_at))),
+        activeKick != null ? e('div', {}, e('div', {style:{fontSize:24,fontWeight:800,color:FLOW_COLOR,lineHeight:1}}, fmtFlowDur(activeKick)), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'kick-in after routine')) : null,
         medsLabel ? e('div', {}, e('div', {style:{fontSize:13,fontWeight:700,color:TEXT,lineHeight:1,marginTop:4}}, medsLabel), e('div', {style:{fontSize:10,color:MUTED,marginTop:2}}, 'meds taken')) : null
       ),
-      e('button', {onClick:()=>setEndStep('rating'), style:{width:'100%',padding:'10px',borderRadius:12,border:'none',background:'rgba(245,158,11,0.15)',color:FLOW_COLOR,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '✓ End Flow State')
+      checkLine ? e('div', {style:{fontSize:11,color:MUTED,marginBottom:10}}, checkLine) : null,
+      e('button', {onClick:()=>setEndStep('rating'), style:{width:'100%',padding:'10px',borderRadius:12,border:'none',background:'rgba(245,158,11,0.15)',color:FLOW_COLOR,fontWeight:700,fontSize:14,cursor:'pointer',fontFamily:'inherit'}}, '✓ End Flow State'),
+      errLine
     );
   }
 
+  var summary = (stats.kickMed != null || stats.durMed != null)
+    ? '30d median · '+(stats.kickMed != null ? 'kicks in '+fmtFlowDur(stats.kickMed) : 'kick-in —')+' · '+(stats.durMed != null ? 'lasts '+fmtFlowDur(stats.durMed) : 'duration —')
+    : null;
   return e('div', {className:'card', style:{marginBottom:12}},
     e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}},
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED}}, '⚡ Flow State'),
-      e('button', {onClick:()=>setShowHistory(true), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'History')
+      e('button', {onClick:()=>setShowHistory(true), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit'}}, 'Stats')
     ),
+    summary ? e('div', {style:{fontSize:12,fontWeight:600,color:TEXT,marginBottom:6}}, summary) : null,
     medsLabel ? e('div', {style:{fontSize:12,color:MUTED,marginBottom:10}}, '💊 Meds taken at '+medsLabel) : null,
-    e('button', {onClick:enterFlow, style:{
+    e('button', {onClick:enterFlow, disabled:busy, style:{
       width:'100%', padding:'14px', borderRadius:14,
       border:'2px solid '+FLOW_COLOR+'60',
       background:'linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.03))',
-      color:FLOW_COLOR, fontWeight:800, fontSize:16, cursor:'pointer', fontFamily:'inherit',
-      display:'flex', alignItems:'center', justifyContent:'center', gap:8,
-    }}, '⚡ Enter Flow State')
-  );
-}
-
-function FlowCheckinModal({activeSession, flowLog, setFlowLog, onClose}) {
-  const [step, setStep] = useState('ask'); // 'ask' | 'intensity' | 'rating'
-
-  function endFlow(quality) {
-    var endTime = new Date().toISOString();
-    var next = (flowLog||[]).map(function(s){
-      return s.endTime ? s : Object.assign({}, s, {endTime: endTime, endQuality: quality || null});
-    });
-    setFlowLog(next); save('flowLog', next);
-    onClose();
-  }
-
-  function logIntensity(n) {
-    var checkIn = {time: new Date().toISOString(), intensity: n};
-    var next = (flowLog||[]).map(function(s){
-      if(s.endTime) return s;
-      return Object.assign({}, s, {checkIns: [...s.checkIns, checkIn]});
-    });
-    setFlowLog(next); save('flowLog', next);
-    onClose();
-  }
-
-  var FLOW_COLOR = '#F59E0B';
-  var INTENSITY = [
-    {n:1,label:'Barely there',emoji:'🌱'},
-    {n:2,label:'Warming up',emoji:'🔆'},
-    {n:3,label:'In it',emoji:'⚡'},
-    {n:4,label:'Deep flow',emoji:'🔥'},
-    {n:5,label:'Zone locked',emoji:'🚀'},
-  ];
-  var QUALITY_OPTS = [{n:1,e:'😐'},{n:2,e:'🙂'},{n:3,e:'⚡'},{n:4,e:'🔥'},{n:5,e:'🚀'}];
-
-  return e('div', {style:{position:'fixed',inset:0,zIndex:9999,background:'rgba(26,24,51,0.7)',backdropFilter:'blur(8px)',display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}},
-    e('div', {style:{background:'#fff',borderRadius:24,padding:'28px 24px',maxWidth:360,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}},
-      step === 'ask' ?
-        e('div', {},
-          e('div', {style:{fontSize:32,textAlign:'center',marginBottom:12}}, '⚡'),
-          e('div', {style:{fontSize:20,fontWeight:800,textAlign:'center',color:TEXT,marginBottom:8}}, 'Still in flow?'),
-          e('div', {style:{fontSize:14,color:MUTED,textAlign:'center',marginBottom:24}}, 'Check in to keep tracking your session.'),
-          e('div', {style:{display:'flex',gap:12}},
-            e('button', {onClick:()=>setStep('rating'), style:{flex:1,padding:'14px',borderRadius:14,border:'1.5px solid rgba(100,80,220,0.18)',background:'#F0F2F8',color:TEXT,fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}, 'No, done'),
-            e('button', {onClick:()=>setStep('intensity'), style:{flex:1,padding:'14px',borderRadius:14,border:'none',background:'linear-gradient(135deg,'+FLOW_COLOR+',#f97316)',color:'white',fontWeight:700,fontSize:15,cursor:'pointer',fontFamily:'inherit'}}, 'Yes! ⚡')
-          )
-        ) : step === 'intensity' ?
-        e('div', {},
-          e('div', {style:{fontSize:32,textAlign:'center',marginBottom:12}}, '🔥'),
-          e('div', {style:{fontSize:20,fontWeight:800,textAlign:'center',color:TEXT,marginBottom:6}}, 'Flow intensity?'),
-          e('div', {style:{fontSize:13,color:MUTED,textAlign:'center',marginBottom:20}}, 'How locked in are you right now?'),
-          e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
-            ...INTENSITY.map(function(item){
-              return e('button', {key:item.n, onClick:()=>logIntensity(item.n), style:{
-                display:'flex',alignItems:'center',gap:12,padding:'12px 16px',borderRadius:14,
-                border:'1.5px solid rgba(245,158,11,0.25)',background:'rgba(245,158,11,0.06)',
-                cursor:'pointer',fontFamily:'inherit',textAlign:'left',
-              }},
-                e('span', {style:{fontSize:22,width:32}}, item.emoji),
-                e('div', {},
-                  e('div', {style:{fontSize:14,fontWeight:700,color:TEXT}}, item.label),
-                  e('div', {style:{fontSize:11,color:MUTED}}, item.n+' / 5')
-                )
-              );
-            })
-          )
-        ) :
-        e('div', {},
-          e('div', {style:{fontSize:32,textAlign:'center',marginBottom:12}}, '🏁'),
-          e('div', {style:{fontSize:20,fontWeight:800,textAlign:'center',color:TEXT,marginBottom:6}}, 'Rate this session'),
-          e('div', {style:{fontSize:13,color:MUTED,textAlign:'center',marginBottom:20}}, 'Overall quality — the whole ride, not just the peak.'),
-          e('div', {style:{display:'flex',gap:10,justifyContent:'center',marginBottom:16}},
-            ...QUALITY_OPTS.map(function(q){
-              return e('button', {key:q.n, onClick:()=>endFlow(q.n), style:{
-                width:52,height:52,borderRadius:14,border:'1.5px solid rgba(245,158,11,0.3)',
-                background:'rgba(245,158,11,0.06)',fontSize:24,cursor:'pointer',fontFamily:'inherit',
-                display:'flex',alignItems:'center',justifyContent:'center',
-              }}, q.e);
-            })
-          ),
-          e('button', {onClick:()=>endFlow(null), style:{fontSize:11,color:MUTED,background:'none',border:'none',cursor:'pointer',fontFamily:'inherit',display:'block',margin:'0 auto'}}, 'Skip rating')
-        )
-    )
+      color:FLOW_COLOR, fontWeight:800, fontSize:16, cursor:busy?'default':'pointer', fontFamily:'inherit',
+      display:'flex', alignItems:'center', justifyContent:'center', gap:8, opacity:busy?0.6:1,
+    }}, busy ? 'Starting…' : '⚡ Enter Flow State'),
+    errLine
   );
 }
 
@@ -3674,7 +3799,7 @@ function EfficiencyScoreCard({score}) {
   );
 }
 
-function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowLog, setFlowLog, flowModal, setFlowModal, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, carWashLog, setCarWashPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
+function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProjects, setTab, timeLog, setTimeLog, routineLog, setRoutineLog, setMorningPhase, cpapLog, setCpapLog, projectData, setProjectData, eveningLog, setEveningPhase, setMiddayPhase, middayLog, workoutLog, setPostWorkoutPhase, pwLog, projectItems, projectLog, setProjectLog, flowSessions, setFlowSessions, cleaningLog, setCleaningPhase, golfLog, setGolfPhase, carWashLog, setCarWashPhase, ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, backlog, setBacklog, hqBacklog, setHqBacklog, dateNights, setDateNights, homeItems, setHomeItems, returns, setReturns, customRoutines, setCustomRoutines, customRoutineLogs, setActiveCustomRoutine, setShowRoutineBuilder, golfRounds}) {
   const td = today();
   const done = habitLog[td] || {};
   const quote = QUOTES[new Date().getDay() % QUOTES.length];
@@ -3929,7 +4054,7 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       )
     ),
     e(ConsistencyRingsCard, {routineLog: routineLog, eveningLog: eveningLog}),
-    e(FlowStateCard, {flowLog, setFlowLog, routineLog, flowModal, setFlowModal}),
+    e(FlowStateCard, {flowSessions, setFlowSessions, routineLog}),
     e(QuickIdeasCard, {ideaLog, setIdeaLog, groceries, setGroceries, notes, setNotes, projects, setProjects, backlog, setBacklog, hqBacklog, setHqBacklog}),
     e(QuickShoppingCard, {groceries, setGroceries, returns, setReturns, setTab}),
     e(DateNightCard, {dateNights, setDateNights, setTab}),
@@ -4231,24 +4356,19 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       ),
       (function(){
         var FLOW_COLOR = '#F59E0B';
-        var daySessions = (flowLog||[]).filter(function(s){return s.date===qlDate && s.endTime;});
+        var daySessions = (flowSessions||[]).filter(function(s){return s.ended_at && etDateKey(new Date(s.started_at))===qlDate;}).slice().reverse();
         if(daySessions.length === 0) return null;
         return e('div', {style:{marginTop:14,paddingTop:14,borderTop:'1px solid rgba(100,80,220,0.07)'}},
           e('div', {style:{fontSize:12,fontWeight:700,color:MUTED,marginBottom:8}}, '⚡ FLOW STATE'),
           e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
             ...daySessions.map(function(s) {
-              var start = new Date(s.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-              var end = new Date(s.endTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-              var durMs = new Date(s.endTime) - new Date(s.startTime);
-              var durM = Math.floor(durMs/60000);
-              var durLabel = durM < 60 ? durM+'m' : Math.floor(durM/60)+'h '+(durM%60)+'m';
-              var peakInt = s.checkIns && s.checkIns.length > 0 ? Math.max.apply(null,s.checkIns.map(function(c){return c.intensity;})) : null;
-              var QUALITY_OPTS = [{n:1,e:'😐'},{n:2,e:'🙂'},{n:3,e:'⚡'},{n:4,e:'🔥'},{n:5,e:'🚀'}];
-              var qualE = s.endQuality ? (QUALITY_OPTS.find(function(q){return q.n===s.endQuality;})||{}).e : null;
+              var durLabel = fmtFlowDur(new Date(s.ended_at) - new Date(s.started_at));
+              var kick = flowKickInMs(s);
+              var qualE = s.end_quality ? (FLOW_QUALITY_OPTS.find(function(q){return q.n===s.end_quality;})||{}).e : null;
               return e('div', {key:s.id, style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(245,158,11,0.06)',borderRadius:10,padding:'8px 12px'}},
                 e('div', {},
                   e('div', {style:{fontSize:13,fontWeight:700,color:FLOW_COLOR}}, '⚡ '+durLabel+(qualE?' '+qualE:'')),
-                  e('div', {style:{fontSize:11,color:MUTED}}, start+' – '+end+(peakInt ? '  ·  peak '+peakInt+'/5' : '')+(s.autoClose?' ·  auto-closed':''))
+                  e('div', {style:{fontSize:11,color:MUTED}}, fmtFlowClock(s.started_at)+' – '+fmtFlowClock(s.ended_at)+(kick!=null ? '  ·  kick-in '+fmtFlowDur(kick) : '')+(s.end_source==='auto_close'?'  ·  auto-closed':''))
                 )
               );
             })
@@ -4286,7 +4406,6 @@ function TodayScreen({habits, habitLog, setHabitLog, goals, projects, setProject
       e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED,marginBottom:12}}, 'Daily Spark'),
       e('div', {style:{fontSize:15,lineHeight:1.65,color:TEXT,fontStyle:'italic',textAlign:'center'}}, '"'+quote+'"')
     ),
-    flowModal ? e(FlowCheckinModal, {activeSession: (flowLog||[]).find(function(s){return !s.endTime;}), flowLog, setFlowLog, onClose:()=>setFlowModal(false)}) : null,
     hardStopModal ? (function(){
       var p = hardStopModal;
       var activeProjects = (projects||[]).filter(function(x){return !x.done;});
@@ -7149,7 +7268,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
 
   function handleBlockerSubmit() {
     var finishTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    var newLog = {...routineLog, [td+'_done']: finishTime, [td+'_partial']: true, [td+'_blockers']: blockers};
+    var newLog = {...routineLog, [td+'_done']: finishTime, [td+'_doneAt']: new Date().toISOString(), [td+'_partial']: true, [td+'_blockers']: blockers};
     setRoutineLog(newLog);
     save('routineLog', newLog);
     addPassiveWin('Completed morning routine');
@@ -7159,7 +7278,7 @@ function MorningChecklist({ onComplete, onSkipToDashboard, routineLog, setRoutin
   function handleComplete() {
     if(!allDone) { setAttempted(true); return; }
     var finishTime = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-    var newLog = {...routineLog, [td+'_done']: finishTime};
+    var newLog = {...routineLog, [td+'_done']: finishTime, [td+'_doneAt']: new Date().toISOString()};
     setRoutineLog(newLog);
     save('routineLog', newLog);
     addPassiveWin('Completed morning routine');
@@ -15706,7 +15825,7 @@ function App() {
   const [carWashItems, setCarWashItems] = useState(() => load('carWashItems') || DEFAULT_CARWASH_HABITS);
   const [carWashPhase, setCarWashPhase] = useState('done');
   const [flowLog, setFlowLog] = useState(() => load('flowLog') || []);
-  const [flowModal, setFlowModal] = useState(false);
+  const [flowSessions, setFlowSessions] = useState(() => readFlowCache());
   const [workoutLog, setWorkoutLog] = useState(() => load('workoutLog') || {});
   const [wakeLog, setWakeLog] = useState(() => load('wakeLog') || {});
   const [cpapLog, setCpapLog] = useState(() => load('cpapLog') || {});
@@ -15846,62 +15965,17 @@ function App() {
     return ()=>{window.removeEventListener('resize',handleResize);window.removeEventListener('orientationchange',handleResize);};
   }, []);
 
-  // Flow state: auto-close abandoned sessions + 90-min check-in
+  // Flow state: sessions live in Supabase flow_sessions (check-ins are SMS via flow-checkin/flow-reply).
+  // Import legacy flowLog once, then refresh on load, when the app regains focus, and every minute
+  // while a session is active — so a "no" texted back shows up here.
   useEffect(() => {
-    function autoCloseAbandoned(sessions) {
-      var SIX_HOURS = 6 * 60 * 60 * 1000;
-      var THREE_HOURS = 3 * 60 * 60 * 1000;
-      var now = Date.now();
-      var changed = false;
-      var next = sessions.map(function(s) {
-        if(s.endTime) return s;
-        var age = now - new Date(s.startTime).getTime();
-        if(age < SIX_HOURS) return s;
-        var lastActivity = s.checkIns.length > 0
-          ? new Date(s.checkIns[s.checkIns.length-1].time).getTime()
-          : new Date(s.startTime).getTime();
-        if(now - lastActivity < THREE_HOURS) return s;
-        // Auto-close at last check-in time (or startTime + reasonable window)
-        var endTime = s.checkIns.length > 0
-          ? s.checkIns[s.checkIns.length-1].time
-          : new Date(new Date(s.startTime).getTime() + 2*60*60*1000).toISOString();
-        changed = true;
-        return Object.assign({}, s, {endTime: endTime, autoClose: true});
-      });
-      if(changed) { setFlowLog(next); save('flowLog', next); }
-      return next;
-    }
-
-    // Run once on mount to clean up any abandoned sessions from prior days
-    var initial = load('flowLog') || [];
-    autoCloseAbandoned(initial);
-
-    var INTERVAL_MS = 90 * 60 * 1000;
+    importLegacyFlowLog().then(function(){ return loadFlowSessionsInto(setFlowSessions); }).catch(function(){});
+    function onVisible() { if(document.visibilityState === 'visible') loadFlowSessionsInto(setFlowSessions).catch(function(){}); }
+    document.addEventListener('visibilitychange', onVisible);
     var id = setInterval(function() {
-      var sessions = autoCloseAbandoned(load('flowLog') || []);
-      var active = sessions.find(function(s){return !s.endTime;});
-      if(!active) return;
-      setFlowLog(sessions);
-      setFlowModal(true);
-      // In-app notification
-      if(Notification.permission === 'granted') {
-        try { new Notification('⚡ Flow State Check-in', {body: 'Are you still in flow?', tag:'flow-checkin', renotify:true}); } catch(ex){}
-      }
-      // Supabase push (works when app is backgrounded)
-      try {
-        navigator.serviceWorker.ready.then(function(reg) {
-          return reg.pushManager.getSubscription();
-        }).then(function(sub) {
-          if(!sub) return;
-          fetch(SUPABASE_FN+'/send-push', {
-            method:'POST',
-            headers:{'Content-Type':'application/json','apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON},
-            body: JSON.stringify({type:'flow-checkin', subscription: sub.toJSON()})
-          }).catch(function(){});
-        }).catch(function(){});
-      } catch(ex){}
-    }, INTERVAL_MS);
-    return function(){clearInterval(id);};
+      if(readFlowCache().some(function(s){ return !s.ended_at; })) loadFlowSessionsInto(setFlowSessions).catch(function(){});
+    }, 60000);
+    return function(){ clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 
   const now = new Date();
@@ -15936,7 +16010,7 @@ function App() {
 
   function renderScreen() {
     switch(tab) {
-      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowLog,setFlowLog,flowModal,setFlowModal,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,carWashLog,setCarWashPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
+      case 'today': return e(TodayScreen, {habits,habitLog,setHabitLog,goals,projects,setProjects,setTab,timeLog,setTimeLog,routineLog,setRoutineLog,setMorningPhase,cpapLog,setCpapLog,projectData,setProjectData,eveningLog,setEveningPhase,setMiddayPhase,middayLog,workoutLog,setPostWorkoutPhase,pwLog,projectItems,projectLog,setProjectLog,flowSessions,setFlowSessions,cleaningLog,setCleaningPhase,golfLog,setGolfPhase,carWashLog,setCarWashPhase,ideaLog,setIdeaLog,groceries,setGroceries,notes,setNotes,backlog,setBacklog,hqBacklog,setHqBacklog,dateNights,setDateNights,homeItems,setHomeItems,returns,setReturns,customRoutines,setCustomRoutines,customRoutineLogs,setActiveCustomRoutine,setShowRoutineBuilder,golfRounds});
       case 'hqbacklog': return e(HQBacklogScreen, {hqBacklog, setHqBacklog, setTab});
       case 'day': return e(DayScreen, {routineLog,eveningLog,middayLog,habits,habitLog,setMorningPhase,setEveningPhase,setTab,projectItems,customRoutines});
       case 'habits': return e(HabitsScreen, {habits,setHabits,habitLog,setHabitLog,setTab});
