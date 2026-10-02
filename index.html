@@ -85,7 +85,7 @@ const _CLIENTS_SB = supabase.createClient(
 );
 const CLIENTS = [
   { id:'brittanie', name:'Brittanie', emoji:'💗', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog' },
-  { id:'cam',       name:'Cam',       emoji:'💪', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog', homeKey:'homeExercises', photosKey:'progressPhotos' },
+  { id:'cam',       name:'Cam',       emoji:'💪', dataKey:'currentProgram', model:'rotation', logKey:'workoutLog', homeKey:'homeExercises', photosKey:'progressPhotos', ringsKey:'camConsistencyRings', homeLogKey:'homeLog', ringSet:'cam' },
   { id:'mom',       name:'Mom',       emoji:'🖐️', dataKey:'sections',       model:'sections', logKey:'sessionLog' },
 ];
 // Flag a session in the Clients History view when more than this many days
@@ -3467,7 +3467,7 @@ var CONSISTENCY_RINGS = [
   {id:'protein',    label:'Protein 150g+',             color:'#FF3B30', source:'manual'},
   {id:'resistance', label:'Resistance Training',       color:'#FF9500', source:'manual'},
   {id:'cardio',     label:'Cardio',                    color:'#FFCC00', source:'manual'},
-  {id:'routines',   label:'Morning & Evening Routine', color:'#34C759', source:'derived'},
+  {id:'routines',   label:'Morning & Evening Routine', color:'#34C759', source:'derived', deriveNote:'Auto · closes when both routines finish'},
   {id:'shower',     label:'Shower',                    color:'#007AFF', source:'manual'}
 ];
 var RING_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -3494,8 +3494,9 @@ function ringClosedMap(ringData, d, routineLog, eveningLog){
   });
   return out;
 }
-function ringIsPerfect(closedMap){
-  return CONSISTENCY_RINGS.length > 0 && CONSISTENCY_RINGS.every(function(r){ return !!closedMap[r.id]; });
+function ringIsPerfect(closedMap, rings){
+  rings = rings || CONSISTENCY_RINGS;
+  return rings.length > 0 && rings.every(function(r){ return !!closedMap[r.id]; });
 }
 // Earliest date with any ring data (today at the latest), used to blank out earlier calendar days.
 function ringEarliestDate(ringData){
@@ -3506,10 +3507,63 @@ function ringEarliestDate(ringData){
   return earliest;
 }
 
+// Cam's 8 rings, read-only, for the Fitness → Clients coach view. ⚠ KEEP IN SYNC with
+// CAM_CONSISTENCY_RINGS + ringDerivedClosed in cam-fitness/index.html (a separate app, so this is a copy):
+// add/rename a ring there → mirror it here.
+var CAM_CONSISTENCY_RINGS = [
+  {id:'proteinShake',  label:'Protein Shake',  color:'#FF3B30', source:'manual'},
+  {id:'chickenBreast', label:'Chicken Breast', color:'#FF9500', source:'manual'},
+  {id:'eggs',          label:'Eggs',           color:'#FFCC00', source:'manual'},
+  {id:'proteinBar',    label:'Protein Bar',    color:'#34C759', source:'manual'},
+  {id:'weights',       label:'Weights',        color:'#30B0C7', source:'derived', deriveNote:'Auto · closes when a workout is logged'},
+  {id:'laps',          label:'Laps',           color:'#007AFF', source:'derived', deriveNote:'Auto · closes when the laps goal is hit'},
+  {id:'pushUps',       label:'Push-Ups',       color:'#AF52DE', source:'derived', deriveNote:'Auto · closes when the push-up goal is hit'},
+  {id:'water',         label:'Water',          color:'#5856D6', source:'manual'}
+];
+function camRingDerivedClosed(id, d, ctx){
+  var workoutLog = ctx && ctx.workoutLog, homeLog = ctx && ctx.homeLog;
+  if(id === 'weights') return !!(workoutLog && workoutLog[d] && workoutLog[d].length > 0);
+  if(id === 'laps') return !!(homeLog && homeLog[d] && homeLog[d].laps && homeLog[d].laps.completed);
+  if(id === 'pushUps') return !!(homeLog && homeLog[d] && homeLog[d].pushups && homeLog[d].pushups.completed);
+  return false;
+}
+// A ring set = the ring list + how to resolve one day's closed map. ctx carries whatever logs its derived rings read.
+var RING_SETS = {
+  lewis: {rings: CONSISTENCY_RINGS, closedMap: function(ringData, d, ctx){ return ringClosedMap(ringData, d, ctx && ctx.routineLog, ctx && ctx.eveningLog); }},
+  cam:   {rings: CAM_CONSISTENCY_RINGS, closedMap: function(ringData, d, ctx){
+    var stored = (ringData && ringData[d]) || {};
+    var out = {};
+    CAM_CONSISTENCY_RINGS.forEach(function(r){ out[r.id] = r.source === 'derived' ? camRingDerivedClosed(r.id, d, ctx) : !!stored[r.id]; });
+    return out;
+  }}
+};
+function ringAddDays(key, n){
+  var p = key.split('-');
+  var dt = new Date(+p[0], +p[1]-1, +p[2]+n);
+  return ringDateKey(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+// Per-ring tally over [startKey, endKey], clipped to the first day with ring data and to today.
+// Shared by the monthly calendar summary and the coach view's rolling 7/30/90-day windows.
+function ringTally(ringSet, ringData, ctx, startKey, endKey){
+  var td = today(), earliest = ringEarliestDate(ringData);
+  var from = startKey > earliest ? startKey : earliest;
+  var to = endKey < td ? endKey : td;
+  var counts = {}, elapsed = 0, perfect = 0;
+  ringSet.rings.forEach(function(r){ counts[r.id] = 0; });
+  for(var dk = from; dk <= to; dk = ringAddDays(dk, 1)){
+    var map = ringSet.closedMap(ringData, dk, ctx);
+    elapsed++;
+    if(ringIsPerfect(map, ringSet.rings)) perfect++;
+    ringSet.rings.forEach(function(r){ if(map[r.id]) counts[r.id]++; });
+  }
+  return {elapsed:elapsed, perfect:perfect, counts:counts, from:from, to:to};
+}
+
 // Concentric ring stack. dayData = { ringId: bool } (null = dim tracks only, e.g. future days).
 // Geometry scales from size and ring count; showLabels adds the large-size perfect-day glow + center check.
-function RingStack({dayData, size, showLabels}) {
-  var n = Math.max(CONSISTENCY_RINGS.length, 1);
+function RingStack({dayData, size, showLabels, rings}) {
+  rings = rings || CONSISTENCY_RINGS;
+  var n = Math.max(rings.length, 1);
   var small = size < 80;
   var pad = showLabels ? size*0.035 : 0.5;
   var hole = small ? size*0.07 : size*0.14;
@@ -3518,9 +3572,9 @@ function RingStack({dayData, size, showLabels}) {
   var band = (avail - hole) / n;
   var sw = Math.max(band - gap, 1.5);
   var cx = size/2;
-  var perfect = !!dayData && ringIsPerfect(dayData);
+  var perfect = !!dayData && ringIsPerfect(dayData, rings);
   var circles = [];
-  CONSISTENCY_RINGS.forEach(function(r, i){
+  rings.forEach(function(r, i){
     var rad = avail - sw/2 - i*band;
     var circ = 2 * Math.PI * rad;
     var closed = !!(dayData && dayData[r.id]);
@@ -3537,20 +3591,22 @@ function RingStack({dayData, size, showLabels}) {
 }
 
 // Legend rows: tapping a manual row calls onToggle(ringId). Derived rows are read-only.
-function RingLegend({closedMap, onToggle, dark}) {
+function RingLegend({closedMap, onToggle, dark, rings, readOnly}) {
+  rings = rings || CONSISTENCY_RINGS;
   var textC = dark ? '#FFFFFF' : TEXT;
   var subC = dark ? 'rgba(255,255,255,0.55)' : MUTED;
   var lineC = dark ? 'rgba(255,255,255,0.08)' : 'rgba(100,80,220,0.07)';
   return e('div', {},
-    ...CONSISTENCY_RINGS.map(function(r){
+    ...rings.map(function(r){
       var manual = r.source === 'manual';
+      var tappable = manual && !readOnly && !!onToggle;
       var closed = !!closedMap[r.id];
-      return e('button', {key:r.id, onClick:manual ? function(){ onToggle(r.id); } : undefined, disabled:!manual,
-        style:{display:'flex',alignItems:'center',gap:12,width:'100%',minHeight:44,padding:'6px 4px',background:'none',border:'none',borderTop:'1px solid '+lineC,cursor:manual ? 'pointer' : 'default',fontFamily:'inherit',textAlign:'left',color:textC,opacity:1}},
+      return e('button', {key:r.id, onClick:tappable ? function(){ onToggle(r.id); } : undefined, disabled:!tappable,
+        style:{display:'flex',alignItems:'center',gap:12,width:'100%',minHeight:44,padding:'6px 4px',background:'none',border:'none',borderTop:'1px solid '+lineC,cursor:tappable ? 'pointer' : 'default',fontFamily:'inherit',textAlign:'left',color:textC,opacity:1}},
         e('span', {style:{width:12,height:12,borderRadius:'50%',background:r.color,flexShrink:0}}),
         e('span', {style:{flex:1,fontSize:14,fontWeight:600}},
           r.label,
-          manual ? null : e('span', {style:{display:'block',fontSize:10,fontWeight:600,color:subC,marginTop:1}}, 'Auto · closes when both routines finish')
+          manual ? null : e('span', {style:{display:'block',fontSize:10,fontWeight:600,color:subC,marginTop:1}}, r.deriveNote || 'Auto')
         ),
         e('span', {style:{width:26,height:26,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:800,
           border:'2px solid '+r.color, background:closed ? r.color : 'transparent', color:closed ? 'white' : r.color, transition:'background 400ms ease-out'}}, closed ? '✓' : '')
@@ -3560,7 +3616,10 @@ function RingLegend({closedMap, onToggle, dark}) {
 }
 
 // Full-screen monthly calendar with summary and a per-day detail view.
-function RingsCalendar({ringData, routineLog, eveningLog, onToggle, onClose}) {
+// ringSet/ctx choose whose rings these are (default: Lewis's). readOnly disables toggling (coach view).
+function RingsCalendar({ringData, ringSet, ctx, onToggle, onClose, readOnly, title}) {
+  ringSet = ringSet || RING_SETS.lewis;
+  var rings = ringSet.rings;
   var now = new Date();
   var curY = now.getFullYear(), curM = now.getMonth();
   const [view, setView] = useState({y:curY, m:curM});
@@ -3603,7 +3662,7 @@ function RingsCalendar({ringData, routineLog, eveningLog, onToggle, onClose}) {
   if(detailDate){
     var dp = detailDate.split('-');
     var dObj = new Date(+dp[0], +dp[1]-1, +dp[2]);
-    var dMap = ringClosedMap(ringData, detailDate, routineLog, eveningLog);
+    var dMap = ringSet.closedMap(ringData, detailDate, ctx);
     return shell([
       e('div', {key:'hdr', style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:20}},
         roundBtn(function(){ setDetailDate(null); }, '‹', 'Back to calendar'),
@@ -3611,9 +3670,9 @@ function RingsCalendar({ringData, routineLog, eveningLog, onToggle, onClose}) {
         roundBtn(onClose, '✕', 'Close')
       ),
       e('div', {key:'rings', style:{display:'flex',justifyContent:'center',marginBottom:20}},
-        e(RingStack, {dayData:dMap, size:200, showLabels:true})
+        e(RingStack, {dayData:dMap, size:200, showLabels:true, rings:rings})
       ),
-      e(RingLegend, {key:'legend', closedMap:dMap, dark:true, onToggle:function(id){ onToggle(detailDate, id); }})
+      e(RingLegend, {key:'legend', closedMap:dMap, dark:true, rings:rings, readOnly:readOnly, onToggle:onToggle ? function(id){ onToggle(detailDate, id); } : null})
     ]);
   }
 
@@ -3622,26 +3681,20 @@ function RingsCalendar({ringData, routineLog, eveningLog, onToggle, onClose}) {
   var dim = new Date(view.y, view.m+1, 0).getDate();
   var cells = [];
   for(var b = 0; b < firstDow; b++) cells.push(e('div', {key:'b'+b}));
-  var perfectCount = 0, elapsed = 0;
-  var ringCounts = {};
-  CONSISTENCY_RINGS.forEach(function(r){ ringCounts[r.id] = 0; });
+  var tally = ringTally(ringSet, ringData, ctx, ringDateKey(view.y, view.m, 1), ringDateKey(view.y, view.m, dim));
+  var perfectCount = tally.perfect, elapsed = tally.elapsed, ringCounts = tally.counts;
   function dayCell(day){
     var dk = ringDateKey(view.y, view.m, day);
     var isFuture = dk > td, isToday = dk === td, beforeData = dk < earliest;
-    var map = (!isFuture && !beforeData) ? ringClosedMap(ringData, dk, routineLog, eveningLog) : null;
-    var perfect = !!map && ringIsPerfect(map);
-    if(map){
-      elapsed++;
-      if(perfect) perfectCount++;
-      CONSISTENCY_RINGS.forEach(function(r){ if(map[r.id]) ringCounts[r.id]++; });
-    }
+    var map = (!isFuture && !beforeData) ? ringSet.closedMap(ringData, dk, ctx) : null;
+    var perfect = !!map && ringIsPerfect(map, rings);
     var tappable = !isFuture;
     return e('button', {key:dk, disabled:!tappable, onClick:tappable ? function(){ setDetailDate(dk); } : undefined,
       style:{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'4px 0',minHeight:66,background:'none',border:'none',color:'white',fontFamily:'inherit',cursor:tappable ? 'pointer' : 'default',opacity:1}},
       e('div', {style:{width:22,height:22,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,
         background:isToday ? '#FF3B30' : 'transparent', color:isFuture ? 'rgba(255,255,255,0.35)' : 'white'}}, String(day)),
       beforeData ? null : e('div', {style:{position:'relative'}},
-        e(RingStack, {dayData:map, size:38, showLabels:false}),
+        e(RingStack, {dayData:map, size:38, showLabels:false, rings:rings}),
         perfect ? e('div', {style:{position:'absolute',top:-1,right:-1,width:7,height:7,borderRadius:'50%',background:'#34C759',boxShadow:'0 0 0 1.5px '+BG}}) : null
       )
     );
@@ -3655,7 +3708,7 @@ function RingsCalendar({ringData, routineLog, eveningLog, onToggle, onClose}) {
 
   return shell([
     e('div', {key:'top', style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
-      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:DIM}}, 'Consistency Rings'),
+      e('div', {style:{fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:DIM}}, title || 'Consistency Rings'),
       roundBtn(onClose, '✕', 'Close')
     ),
     e('div', {key:'grid', onTouchStart:onTouchStart, onTouchEnd:onTouchEnd},
@@ -3676,7 +3729,7 @@ function RingsCalendar({ringData, routineLog, eveningLog, onToggle, onClose}) {
         e('span', {style:{width:8,height:8,borderRadius:'50%',background:'#34C759'}}),
         'Perfect days: '+perfectCount
       ),
-      ...CONSISTENCY_RINGS.map(function(r){
+      ...rings.map(function(r){
         return e('div', {key:r.id, style:{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderTop:'1px solid rgba(255,255,255,0.08)'}},
           e('span', {style:{width:10,height:10,borderRadius:'50%',background:r.color,flexShrink:0}}),
           e('span', {style:{flex:1,fontSize:14,fontWeight:600}}, r.label),
@@ -3721,7 +3774,7 @@ function ConsistencyRingsCard({routineLog, eveningLog}) {
       ),
       e(RingLegend, {closedMap:todayMap, onToggle:function(id){ toggleRing(today(), id); }})
     ),
-    showCal ? e(RingsCalendar, {ringData:ringData, routineLog:routineLog, eveningLog:eveningLog, onToggle:toggleRing, onClose:function(){ setShowCal(false); }}) : null
+    showCal ? e(RingsCalendar, {ringData:ringData, ringSet:RING_SETS.lewis, ctx:{routineLog:routineLog, eveningLog:eveningLog}, onToggle:toggleRing, onClose:function(){ setShowCal(false); }}) : null
   );
 }
 
@@ -11352,6 +11405,32 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         });
     });
   }
+  // Rings (read-only coach lens on a client's Consistency Rings). Derived rings need the client's
+  // workoutLog (logKey) + homeLog (homeLogKey) alongside the stored ring data (ringsKey).
+  const [clientRings, setClientRings] = useState(null); // {ringData, workoutLog, homeLog}
+  const [clientRingsLoading, setClientRingsLoading] = useState(false);
+  const [clientRingsError, setClientRingsError] = useState(null);
+  const [clientRingsSyncedAt, setClientRingsSyncedAt] = useState(null);
+  const [clientRingsWindow, setClientRingsWindow] = useState(30); // 7 | 30 | 90 days
+  const [clientRingsCal, setClientRingsCal] = useState(false);
+  function fetchClientRings(clientId) {
+    var client = CLIENTS.find(function(c){return c.id===clientId;});
+    var keys = [client.ringsKey, client.logKey, client.homeLogKey].filter(Boolean);
+    setClientRingsLoading(true); setClientRingsError(null);
+    _CLIENTS_SB.from('hq_data').select('key,value,updated_at').eq('user_id',clientId).in('key',keys)
+      .then(function(res){
+        setClientRingsLoading(false);
+        if(res.error){ setClientRingsError('Could not load '+client.name+'\'s rings'); return; }
+        var byKey = {}, latest = null;
+        (res.data||[]).forEach(function(row){
+          byKey[row.key] = row.value;
+          if(!latest || row.updated_at > latest) latest = row.updated_at;
+        });
+        setClientRings({ringData:byKey[client.ringsKey]||{}, workoutLog:byKey[client.logKey]||{}, homeLog:byKey[client.homeLogKey]||{}});
+        setClientRingsSyncedAt(latest);
+      })
+      .catch(function(){ setClientRingsLoading(false); setClientRingsError('Could not load '+client.name+'\'s rings'); });
+  }
   const [coachWeight, setCoachWeight] = useState(function(){ return load('coachWeight') || ''; });
   const [coachGoalWeight, setCoachGoalWeight] = useState(function(){ return load('coachGoalWeight') || '190'; });
   const [coachGoalBf, setCoachGoalBf] = useState(function(){ return load('coachGoalBf') || '12'; });
@@ -12333,6 +12412,7 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
       setClientHistory(null); setClientHistoryError(null); setClientHistorySyncedAt(null);
       setClientHome(null); setClientHomeError(null); setClientHomeSyncedAt(null); setClientHomeDrafts({});
       setClientPhotos(null); setClientPhotosError(null); setClientPhotosSyncedAt(null);
+      setClientRings(null); setClientRingsError(null); setClientRingsSyncedAt(null); setClientRingsCal(false);
       setExpandedClientSession(null);
       fetchClientData(id);
     }
@@ -12350,6 +12430,114 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
     function openPhotos() {
       setClientView('photos');
       if (clientPhotos === null && !clientPhotosLoading) fetchClientPhotos(selectedClient);
+    }
+
+    function openRings() {
+      setClientView('rings');
+      if (clientRings === null && !clientRingsLoading) fetchClientRings(selectedClient);
+    }
+
+    // Read-only Rings view: today's snapshot, perfect-day consistency + calendar, weakest rings first.
+    function renderClientRings() {
+      if (clientRingsLoading) return e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading '+client.name+'\'s rings…');
+      if (clientRingsError) return e('div',{style:{padding:'40px 16px',textAlign:'center',color:'#EF4444',fontSize:13}}, clientRingsError);
+      if (!clientRings) return null;
+      var ringSet = RING_SETS[client.ringSet];
+      var rings = ringSet.rings;
+      var ringData = clientRings.ringData;
+      var ctx = {workoutLog:clientRings.workoutLog, homeLog:clientRings.homeLog};
+      var td = today();
+      var todayMap = ringSet.closedMap(ringData, td, ctx);
+      var closedCount = rings.filter(function(r){ return todayMap[r.id]; }).length;
+      var allClosed = closedCount === rings.length;
+      var earliest = ringEarliestDate(ringData);
+
+      // Consistency: perfect days in the last 30 + current perfect-day streak
+      // (today only counts once it's perfect, so a day in progress doesn't break the streak).
+      var t30 = ringTally(ringSet, ringData, ctx, ringAddDays(td, -29), td);
+      var streak = 0;
+      var sk = ringIsPerfect(todayMap, rings) ? td : ringAddDays(td, -1);
+      while (sk >= earliest && ringIsPerfect(ringSet.closedMap(ringData, sk, ctx), rings)) { streak++; sk = ringAddDays(sk, -1); }
+
+      // Weak-ring breakdown over the selected window, lowest completion first.
+      var win = clientRingsWindow;
+      var tw = ringTally(ringSet, ringData, ctx, ringAddDays(td, -(win-1)), td);
+      var rows = rings.map(function(r, i){
+        return {r:r, i:i, n:tw.counts[r.id], pct: tw.elapsed ? tw.counts[r.id]/tw.elapsed : 0};
+      }).sort(function(a, b){ return (a.pct - b.pct) || (a.i - b.i); });
+      function daysNote(t, w){ return t.elapsed < w ? ' ('+t.elapsed+' day'+(t.elapsed===1?'':'s')+' of data)' : ''; }
+
+      var cardTitle = {fontSize:11,fontWeight:700,letterSpacing:1.2,textTransform:'uppercase',color:MUTED};
+      return e('div',{style:{display:'flex',flexDirection:'column',gap:12}},
+        e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+          e('div',{style:{fontSize:11,color:MUTED}}, clientRingsSyncedAt ? 'Synced '+new Date(clientRingsSyncedAt).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : 'Not synced yet'),
+          e('button',{onClick:function(){fetchClientRings(selectedClient);},style:{background:'none',border:'1px solid '+BORDER,borderRadius:20,padding:'5px 12px',fontSize:11,fontWeight:700,color:ACCENT,cursor:'pointer',fontFamily:'inherit'}}, '↻ Refresh')
+        ),
+
+        // Today snapshot
+        e('div',{className:'card',style:{marginBottom:0}},
+          e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
+            e('div',{style:cardTitle}, 'Today · '+new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})),
+            e('div',{style:{fontSize:12,fontWeight:800,color:allClosed?'#34C759':TEXT}}, allClosed ? 'All closed ✦' : closedCount+' of '+rings.length+' closed')
+          ),
+          e('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',marginBottom:10}},
+            e('button',{onClick:function(){setClientRingsCal(true);},'aria-label':'Open '+client.name+'\'s rings calendar',style:{background:'none',border:'none',padding:0,cursor:'pointer',borderRadius:'50%'}},
+              e(RingStack,{dayData:todayMap,size:170,showLabels:true,rings:rings})
+            )
+          ),
+          e(RingLegend,{closedMap:todayMap,rings:rings,readOnly:true})
+        ),
+
+        // Consistency
+        e('div',{className:'card',style:{marginBottom:0}},
+          e('div',{style:Object.assign({},cardTitle,{marginBottom:10})}, 'Consistency'),
+          e('div',{style:{display:'flex',gap:10,marginBottom:12}},
+            e('div',{style:{flex:1,background:CARD2,borderRadius:12,padding:'12px 10px',textAlign:'center'}},
+              e('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:6,fontSize:24,fontWeight:800,color:TEXT,lineHeight:1}},
+                e('span',{style:{width:8,height:8,borderRadius:'50%',background:'#34C759'}}), String(t30.perfect)),
+              e('div',{style:{fontSize:11,color:MUTED,marginTop:4}}, 'perfect days in the last 30'+daysNote(t30, 30))
+            ),
+            e('div',{style:{flex:1,background:CARD2,borderRadius:12,padding:'12px 10px',textAlign:'center'}},
+              e('div',{style:{fontSize:24,fontWeight:800,color:TEXT,lineHeight:1}}, String(streak)),
+              e('div',{style:{fontSize:11,color:MUTED,marginTop:4}}, 'perfect-day streak')
+            )
+          ),
+          e('button',{onClick:function(){setClientRingsCal(true);},style:{width:'100%',padding:'11px',borderRadius:12,border:'1.5px solid '+BORDER,background:'#fff',color:ACCENT,fontSize:13,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, '📅 Open calendar')
+        ),
+
+        // Weak rings
+        e('div',{className:'card',style:{marginBottom:0}},
+          e('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6,gap:8}},
+            e('div',{style:cardTitle}, 'Weakest rings'),
+            e('div',{style:{display:'flex',borderRadius:8,border:'1.5px solid '+BORDER,overflow:'hidden',flexShrink:0}},
+              ...[7,30,90].map(function(w){
+                var on = win === w;
+                return e('button',{key:w,onClick:function(){setClientRingsWindow(w);},'aria-pressed':on,style:{padding:'5px 10px',border:'none',background:on?ACCENT:'#fff',color:on?'#fff':MUTED,fontSize:11,fontWeight:800,cursor:'pointer',fontFamily:'inherit'}}, w+'d');
+              })
+            )
+          ),
+          e('div',{style:{fontSize:11,color:MUTED,marginBottom:8}}, 'Last '+win+' days'+daysNote(tw, win)+' · lowest first'),
+          tw.elapsed === 0 ? e('div',{style:{fontSize:13,color:MUTED,textAlign:'center',padding:'12px 0'}}, 'No ring data in this window yet') :
+          e('div',{},
+            ...rows.map(function(row){
+              var pctLabel = Math.round(row.pct*100)+'%';
+              return e('div',{key:row.r.id,style:{padding:'8px 0',borderTop:'1px solid rgba(100,80,220,0.07)'}},
+                e('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:5}},
+                  e('span',{style:{width:10,height:10,borderRadius:'50%',background:row.r.color,flexShrink:0}}),
+                  e('span',{style:{flex:1,fontSize:13,fontWeight:700,color:TEXT}}, row.r.label),
+                  e('span',{style:{fontSize:13,fontWeight:800,color:TEXT}}, pctLabel),
+                  e('span',{style:{fontSize:11,color:MUTED,minWidth:44,textAlign:'right'}}, '('+row.n+'/'+tw.elapsed+')')
+                ),
+                e('div',{style:{height:6,background:CARD2,borderRadius:3,overflow:'hidden',marginLeft:20}},
+                  e('div',{style:{height:'100%',width:pctLabel,background:row.r.color,borderRadius:3}})
+                )
+              );
+            })
+          )
+        ),
+
+        clientRingsCal ? e(RingsCalendar,{ringData:ringData, ringSet:ringSet, ctx:ctx, readOnly:true, title:client.name+'\'s Rings', onClose:function(){setClientRingsCal(false);}}) : null
+      );
     }
 
     // Normalize whichever shape this client's data is into a flat list of "groups" —
@@ -12467,29 +12655,26 @@ function FitnessScreen({ workoutLog, setWorkoutLog, habits, habitLog, setHabitLo
         e('div',{style:{fontSize:14}}, 'Pick a client to view and edit their program')
       ) : null,
 
-      // Program / History toggle
-      selectedClient ? e('div',{style:{display:'flex',gap:8}},
-        e('button',{onClick:function(){setClientView('program');},style:{
-          flex:1,padding:'10px',borderRadius:12,border:'none',
-          background:clientView==='program'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
-          color:clientView==='program'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
-        }}, '📋 Program'),
-        e('button',{onClick:openHistory,style:{
-          flex:1,padding:'10px',borderRadius:12,border:'none',
-          background:clientView==='history'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
-          color:clientView==='history'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
-        }}, '🕐 History'),
-        client.homeKey ? e('button',{onClick:openHome,style:{
-          flex:1,padding:'10px',borderRadius:12,border:'none',
-          background:clientView==='home'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
-          color:clientView==='home'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
-        }}, '🏠 Home Goals') : null,
-        client.photosKey ? e('button',{onClick:openPhotos,style:{
-          flex:1,padding:'10px',borderRadius:12,border:'none',
-          background:clientView==='photos'?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
-          color:clientView==='photos'?'#fff':MUTED,fontSize:12,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
-        }}, '📸 Photos') : null
+      // Program / History / Home / Photos / Rings toggle
+      selectedClient ? e('div',{style:{display:'flex',gap:6}},
+        ...[
+          {id:'program', emoji:'📋', label:'Program', onClick:function(){setClientView('program');}, show:true},
+          {id:'history', emoji:'🕐', label:'History', onClick:openHistory, show:true},
+          {id:'home',    emoji:'🏠', label:'Home',    onClick:openHome,    show:!!client.homeKey},
+          {id:'photos',  emoji:'📸', label:'Photos',  onClick:openPhotos,  show:!!client.photosKey},
+          {id:'rings',   emoji:'⭕', label:'Rings',   onClick:openRings,   show:!!client.ringsKey}
+        ].filter(function(t){ return t.show; }).map(function(t){
+          var on = clientView===t.id;
+          return e('button',{key:t.id,onClick:t.onClick,style:{
+            flex:1,minWidth:0,padding:'8px 2px',borderRadius:12,border:'none',
+            background:on?'linear-gradient(135deg,'+PURPLE+','+ACCENT+')':CARD2,
+            color:on?'#fff':MUTED,fontSize:11,fontWeight:800,cursor:'pointer',fontFamily:'inherit',
+            display:'flex',flexDirection:'column',alignItems:'center',gap:2,
+          }}, e('span',{style:{fontSize:15,lineHeight:1}}, t.emoji), e('span',{style:{whiteSpace:'nowrap'}}, t.label));
+        })
       ) : null,
+
+      selectedClient && clientView==='rings' ? renderClientRings() : null,
 
       selectedClient && clientView==='program' && clientLoading ? e('div',{style:{padding:'40px 16px',textAlign:'center',color:MUTED}}, 'Loading '+client.name+'\'s program…') : null,
 

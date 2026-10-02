@@ -242,6 +242,9 @@ const HOME_EXERCISE_DEFAULTS = [
 // that date has passed, and homeLog[d].<exercise>.completed is itself already
 // a snapshot — computed once, at logging time, against whatever dailyGoal was
 // active then — so raising the goal later never re-grades past days.
+// ⚠ KEEP IN SYNC: the main HQ app (index.html → Fitness → Clients → Rings) has a read-only
+// copy of this ring list + ringDerivedClosed (CAM_CONSISTENCY_RINGS / camRingDerivedClosed).
+// Add or rename a ring here → mirror it there.
 var CAM_CONSISTENCY_RINGS = [
   { id: 'proteinShake',  label: 'Protein Shake',  color: '#FF3B30', source: 'manual' },
   { id: 'chickenBreast', label: 'Chicken Breast', color: '#FF9500', source: 'manual' },
